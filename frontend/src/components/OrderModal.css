@@ -149,6 +149,20 @@
   border-color: var(--gold-dim);
 }
 
+.field__hint {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 6px;
+}
+
+.field__error {
+  color: var(--sell-bright);
+  font-size: 13px;
+  margin: -4px 0 6px;
+  text-align: center;
+}
+
 .modal-actions {
   display: flex;
   gap: 10px;

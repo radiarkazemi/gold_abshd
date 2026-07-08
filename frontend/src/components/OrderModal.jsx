@@ -1,22 +1,59 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { fetchOrderLimits } from "../api";
 
 const SIDE_META = {
   buy: { title: "درخواست خرید", cta: "ثبت درخواست خرید", accent: "buy" },
   sell: { title: "درخواست فروش", cta: "ثبت درخواست فروش", accent: "sell" },
 };
 
-export default function OrderModal({ side, onClose, onSubmit, submitting, result }) {
+function toFarsiNumber(n) {
+  return Number(n).toLocaleString("fa-IR", { maximumFractionDigits: 2 });
+}
+
+export default function OrderModal({ side, price, onClose, onSubmit, submitting, result, error }) {
   const [amountType, setAmountType] = useState("weight");
   const [value, setValue] = useState("");
   const [description, setDescription] = useState("");
+  const [limits, setLimits] = useState(null);
+  const [localError, setLocalError] = useState("");
   const meta = SIDE_META[side];
+
+  useEffect(() => {
+    fetchOrderLimits().then(setLimits).catch(() => {});
+  }, []);
+
+  function weightEquivalent(numeric) {
+    if (amountType === "weight") return numeric;
+    const unitPrice = side === "buy" ? price?.buy_price : price?.sell_price;
+    if (!unitPrice) return null;
+    return numeric / unitPrice;
+  }
 
   function handleSubmit(e) {
     e.preventDefault();
+    setLocalError("");
     const numeric = parseFloat(value);
-    if (!numeric || numeric <= 0) return;
+    if (!numeric || numeric <= 0) {
+      setLocalError("مقدار وارد شده معتبر نیست");
+      return;
+    }
+    if (limits) {
+      const weight = weightEquivalent(numeric);
+      if (weight != null) {
+        if (weight < limits.min_weight) {
+          setLocalError(`حداقل مقدار سفارش ${toFarsiNumber(limits.min_weight)} مثقال است`);
+          return;
+        }
+        if (weight > limits.max_weight) {
+          setLocalError(`حداکثر مقدار سفارش ${toFarsiNumber(limits.max_weight)} مثقال است`);
+          return;
+        }
+      }
+    }
     onSubmit({ side, amountType, value: numeric, description });
   }
+
+  const shownError = localError || error;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -74,6 +111,12 @@ export default function OrderModal({ side, onClose, onSubmit, submitting, result
                 placeholder={amountType === "weight" ? "مثلاً ۲.۵" : "مثلاً ۵۰۰۰۰۰۰"}
                 className="field__input"
               />
+              {limits && amountType === "weight" && (
+                <span className="field__hint">
+                  حداقل: {toFarsiNumber(limits.min_weight)} مثقال &nbsp;·&nbsp; حداکثر:{" "}
+                  {toFarsiNumber(limits.max_weight)} مثقال
+                </span>
+              )}
             </label>
 
             <label className="field">
@@ -86,6 +129,8 @@ export default function OrderModal({ side, onClose, onSubmit, submitting, result
                 rows={3}
               />
             </label>
+
+            {shownError && <p className="field__error">{shownError}</p>}
 
             <div className="modal-actions">
               <button type="button" className="modal-btn modal-btn--ghost" onClick={onClose}>

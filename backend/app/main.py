@@ -8,14 +8,25 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depe
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from app.models import Order, OrderCreate, OrderDecision, OrderStatus
 from app.price_service import price_service
 from app.ws_manager import manager
 from app.db import init_db, get_db
 from app.config import settings
 from app.schemas_auth import RequestOtpIn, RequestOtpOut, VerifyOtpIn, VerifyOtpOut, UserOut
 from app.auth import create_otp_for_phone, verify_otp_and_get_user, create_access_token, get_current_user
-from app.models_db import User
+from app.models_db import User, Order, OrderStatusEnum
+from app.schemas_order import OrderCreateIn, OrderOut, OrderDecisionIn, BalanceOut, OrderLimitsOut
+from app.schemas_admin import UserSummaryOut, UserDetailOut, TransactionOut, BalanceAdjustIn, BlockUserIn
+from app.orders_service import (
+    create_order as create_order_db,
+    decide_order as decide_order_db,
+    get_user_balance,
+    list_users_with_balance,
+    get_user_or_404,
+    adjust_balance as adjust_balance_db,
+    set_user_blocked,
+)
+from app.models_db import BalanceTransaction
 
 app = FastAPI(title="آبشده حسین - Gold Trading Server")
 
@@ -26,9 +37,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# حافظه‌ی موقت سفارش‌ها (بعدا با دیتابیس واقعی جایگزین می‌کنیم)
-orders_db: dict[str, Order] = {}
 
 
 @app.on_event("startup")
@@ -48,6 +56,10 @@ async def price_broadcaster():
             await manager.broadcast_price(price.model_dump())
     finally:
         price_service.unsubscribe(queue)
+
+
+def order_to_dict(order: Order) -> dict:
+    return json.loads(OrderOut.model_validate(order).model_dump_json())
 
 
 # ---------------- احراز هویت (OTP) ----------------
@@ -80,6 +92,11 @@ async def get_price():
     return price_service.get_price()
 
 
+@app.get("/api/order-limits", response_model=OrderLimitsOut)
+async def get_order_limits():
+    return OrderLimitsOut(min_weight=settings.MIN_ORDER_WEIGHT, max_weight=settings.MAX_ORDER_WEIGHT)
+
+
 @app.websocket("/ws/price")
 async def ws_price(websocket: WebSocket):
     await manager.connect_price(websocket)
@@ -94,64 +111,61 @@ async def ws_price(websocket: WebSocket):
         manager.disconnect_price(websocket)
 
 
-# ---------------- سفارش‌ها (کلاینت) ----------------
+# ---------------- سفارش‌ها (کلاینت - نیاز به ورود) ----------------
 
-@app.post("/api/orders", response_model=Order)
-async def create_order(order_in: OrderCreate):
+@app.post("/api/orders", response_model=OrderOut)
+async def submit_order(
+    order_in: OrderCreateIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     current_price = price_service.get_price()
-    price_at_submit = (
-        current_price.buy_price
-        if order_in.side == "buy"
-        else current_price.sell_price
+    order = create_order_db(
+        db, current_user, order_in.side, order_in.amount_type,
+        order_in.value, order_in.description, current_price,
     )
 
-    order = Order(
-        side=order_in.side,
-        amount_type=order_in.amount_type,
-        value=order_in.value,
-        description=order_in.description,
-        price_at_submit=price_at_submit,
-    )
-    orders_db[order.id] = order
-
-    # به ادمین‌های آنلاین اطلاع بده
-    await manager.broadcast_to_admins({"type": "new_order", "order": order.model_dump()})
+    await manager.broadcast_to_admins({"type": "new_order", "order": order_to_dict(order)})
 
     return order
 
 
-@app.get("/api/orders/{order_id}", response_model=Order)
-async def get_order(order_id: str):
-    order = orders_db.get(order_id)
-    if not order:
-        raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
-    return order
+@app.get("/api/my/orders", response_model=list[OrderOut])
+async def my_orders(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    orders = (
+        db.query(Order)
+        .filter(Order.user_id == current_user.id)
+        .order_by(Order.created_at.desc())
+        .all()
+    )
+    return orders
+
+
+@app.get("/api/my/balance", response_model=BalanceOut)
+async def my_balance(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_user_balance(db, current_user.id)
 
 
 # ---------------- پنل ادمین (سرور) ----------------
 
-@app.get("/api/admin/orders", response_model=list[Order])
-async def list_orders(status: OrderStatus | None = None):
-    values = list(orders_db.values())
+@app.get("/api/admin/orders", response_model=list[OrderOut])
+async def list_orders(status: str | None = None, db: Session = Depends(get_db)):
+    query = db.query(Order)
     if status:
-        values = [o for o in values if o.status == status]
-    return sorted(values, key=lambda o: o.created_at, reverse=True)
+        query = query.filter(Order.status == OrderStatusEnum(status))
+    return query.order_by(Order.created_at.desc()).all()
 
 
-@app.post("/api/admin/orders/{order_id}/decide", response_model=Order)
-async def decide_order(order_id: str, decision: OrderDecision):
-    order = orders_db.get(order_id)
-    if not order:
-        raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
-    if order.status != OrderStatus.PENDING:
-        raise HTTPException(status_code=400, detail="این سفارش قبلا تصمیم‌گیری شده")
-
-    order.status = decision.status
-    from datetime import datetime
-    order.updated_at = datetime.utcnow()
-    orders_db[order_id] = order
-
-    await manager.broadcast_to_admins({"type": "order_updated", "order": order.model_dump()})
+@app.post("/api/admin/orders/{order_id}/decide", response_model=OrderOut)
+async def decide_order(order_id: str, decision: OrderDecisionIn, db: Session = Depends(get_db)):
+    order = decide_order_db(db, order_id, decision.status)
+    await manager.broadcast_to_admins({"type": "order_updated", "order": order_to_dict(order)})
     return order
 
 
@@ -163,3 +177,63 @@ async def ws_admin(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect_admin(websocket)
+
+
+# ---------------- مدیریت کاربران (ادمین) ----------------
+
+@app.get("/api/admin/users", response_model=list[UserSummaryOut])
+async def list_users(search: str | None = None, db: Session = Depends(get_db)):
+    return list_users_with_balance(db, search)
+
+
+@app.get("/api/admin/users/{user_id}", response_model=UserDetailOut)
+async def get_user_detail(user_id: str, db: Session = Depends(get_db)):
+    user = get_user_or_404(db, user_id)
+    balance = get_user_balance(db, user_id)
+
+    orders = (
+        db.query(Order)
+        .filter(Order.user_id == user_id)
+        .order_by(Order.created_at.desc())
+        .all()
+    )
+    transactions = (
+        db.query(BalanceTransaction)
+        .filter(BalanceTransaction.user_id == user_id)
+        .order_by(BalanceTransaction.created_at.desc())
+        .all()
+    )
+
+    return UserDetailOut(
+        id=user.id,
+        phone_number=user.phone_number,
+        full_name=user.full_name,
+        is_blocked=user.is_blocked,
+        created_at=user.created_at,
+        gold_balance=balance["gold_balance"],
+        cash_balance=balance["cash_balance"],
+        orders=orders,
+        transactions=transactions,
+    )
+
+
+@app.post("/api/admin/users/{user_id}/adjust-balance", response_model=TransactionOut)
+async def adjust_user_balance(user_id: str, payload: BalanceAdjustIn, db: Session = Depends(get_db)):
+    txn = adjust_balance_db(db, user_id, payload.gold_change,
+                            payload.cash_change, payload.note)
+    return txn
+
+
+@app.post("/api/admin/users/{user_id}/block", response_model=UserSummaryOut)
+async def block_user(user_id: str, payload: BlockUserIn, db: Session = Depends(get_db)):
+    user = set_user_blocked(db, user_id, payload.is_blocked)
+    balance = get_user_balance(db, user_id)
+    return UserSummaryOut(
+        id=user.id,
+        phone_number=user.phone_number,
+        full_name=user.full_name,
+        is_blocked=user.is_blocked,
+        created_at=user.created_at,
+        gold_balance=balance["gold_balance"],
+        cash_balance=balance["cash_balance"],
+    )

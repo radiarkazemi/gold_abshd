@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { usePriceFeed } from "../hooks/usePriceFeed";
 import { submitOrder } from "../api";
 import { useAuth } from "../context/AuthContext";
@@ -11,25 +12,29 @@ export default function TraderPage() {
   const [activeSide, setActiveSide] = useState(null); // "buy" | "sell" | null
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
 
   function openModal(side) {
     setResult(null);
+    setError("");
     setActiveSide(side);
   }
 
   function closeModal() {
     setActiveSide(null);
     setResult(null);
+    setError("");
   }
 
   async function handleSubmit(payload) {
     setSubmitting(true);
+    setError("");
     try {
       const order = await submitOrder(payload);
       setResult(order);
     } catch (e) {
       console.error(e);
-      alert("ارسال درخواست با خطا مواجه شد. دوباره تلاش کنید.");
+      setError(e.message || "ارسال درخواست با خطا مواجه شد. دوباره تلاش کنید.");
     } finally {
       setSubmitting(false);
     }
@@ -44,6 +49,7 @@ export default function TraderPage() {
             <span className="app__status-dot" />
             {connected ? "قیمت زنده" : "در حال اتصال…"}
           </span>
+          <Link to="/my-orders" className="app__nav-link">سفارش‌های من</Link>
           <span className="app__user">
             {user?.phone_number}
             <button className="app__logout" onClick={logout}>خروج</button>
@@ -61,10 +67,12 @@ export default function TraderPage() {
       {activeSide && (
         <OrderModal
           side={activeSide}
+          price={price}
           onClose={closeModal}
           onSubmit={handleSubmit}
           submitting={submitting}
           result={result}
+          error={error}
         />
       )}
     </div>

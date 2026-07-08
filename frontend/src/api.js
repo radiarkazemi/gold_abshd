@@ -56,6 +56,28 @@ export async function fetchPrice() {
   return res.json();
 }
 
+export async function fetchOrderLimits() {
+  const res = await fetch(`${API_BASE}/api/order-limits`);
+  if (!res.ok) throw new Error("Failed to fetch order limits");
+  return res.json();
+}
+
+export async function fetchMyOrders() {
+  const res = await fetch(`${API_BASE}/api/my/orders`, {
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to fetch my orders");
+  return res.json();
+}
+
+export async function fetchMyBalance() {
+  const res = await fetch(`${API_BASE}/api/my/balance`, {
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to fetch balance");
+  return res.json();
+}
+
 export async function submitOrder({ side, amountType, value, description }) {
   const res = await fetch(`${API_BASE}/api/orders`, {
     method: "POST",
@@ -67,7 +89,10 @@ export async function submitOrder({ side, amountType, value, description }) {
       description,
     }),
   });
-  if (!res.ok) throw new Error("Failed to submit order");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to submit order");
+  }
   return res.json();
 }
 
@@ -92,6 +117,43 @@ export async function decideOrder(orderId, status) {
     body: JSON.stringify({ status }),
   });
   if (!res.ok) throw new Error("Failed to update order");
+  return res.json();
+}
+
+export async function fetchAdminUsers(search) {
+  const url = new URL(`${API_BASE}/api/admin/users`);
+  if (search) url.searchParams.set("search", search);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Failed to fetch users");
+  return res.json();
+}
+
+export async function fetchAdminUserDetail(userId) {
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}`);
+  if (!res.ok) throw new Error("Failed to fetch user detail");
+  return res.json();
+}
+
+export async function adjustUserBalance(userId, { goldChange, cashChange, note }) {
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}/adjust-balance`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ gold_change: goldChange, cash_change: cashChange, note }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to adjust balance");
+  }
+  return res.json();
+}
+
+export async function setUserBlocked(userId, isBlocked) {
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}/block`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ is_blocked: isBlocked }),
+  });
+  if (!res.ok) throw new Error("Failed to update block status");
   return res.json();
 }
 

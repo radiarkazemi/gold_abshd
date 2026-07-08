@@ -1,0 +1,178 @@
+.myorders {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px 18px 60px;
+}
+
+.myorders__header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.myorders__back {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.myorders__back:hover {
+  color: var(--gold-bright);
+}
+
+.myorders__title {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--gold-bright);
+  margin: 0;
+}
+
+.balance-card {
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.balance-card__item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.balance-card__label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.balance-card__value {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--gold-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.balance-card__unit {
+  font-family: var(--font-fa);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.balance-card__divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--hairline);
+}
+
+.myorders__filters {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  overflow-x: auto;
+}
+
+.myorders__empty {
+  text-align: center;
+  color: var(--text-faint);
+  padding: 60px 0;
+}
+
+.myorders__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.history-card {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  border-inline-start: 3px solid var(--hairline);
+}
+
+.history-card--buy {
+  border-inline-start-color: var(--buy);
+}
+
+.history-card--sell {
+  border-inline-start-color: var(--sell);
+}
+
+.history-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.history-card__status {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.history-card__status--pending {
+  background: rgba(201, 162, 39, 0.15);
+  color: var(--gold-bright);
+}
+
+.history-card__status--accepted {
+  background: rgba(76, 154, 114, 0.18);
+  color: var(--buy-bright);
+}
+
+.history-card__status--rejected {
+  background: rgba(207, 100, 70, 0.18);
+  color: var(--sell-bright);
+}
+
+.history-card__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.history-card__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.history-card__cell-label {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.history-card__cell-value {
+  font-size: 13px;
+  font-family: var(--font-display);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-card__desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 6px 0 0;
+  padding-top: 8px;
+  border-top: 1px dashed var(--hairline);
+}
+
+.history-card__time {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 8px;
+  font-family: var(--font-display);
+}
