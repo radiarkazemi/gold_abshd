@@ -1,0 +1,137 @@
+.price-stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  width: 100%;
+  max-width: 720px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.6);
+}
+
+@media (max-width: 640px) {
+  .price-stage {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+}
+
+.price-panel {
+  position: relative;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 20px 40px;
+  min-height: 240px;
+  color: var(--text);
+  transition: filter 160ms ease, transform 160ms ease;
+  isolation: isolate;
+}
+
+.price-panel:active {
+  transform: scale(0.99);
+}
+
+.price-panel:hover {
+  filter: brightness(1.08);
+}
+
+.price-panel--buy {
+  background: linear-gradient(160deg, #1c2e24 0%, #16211a 70%);
+}
+
+.price-panel--sell {
+  background: linear-gradient(200deg, #2c1c15 0%, #211712 70%);
+}
+
+/* molten seam between the two panels — the signature element */
+.price-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent calc(50% - 2px),
+    var(--gold) 50%,
+    transparent calc(50% + 2px),
+    transparent 100%
+  );
+  opacity: 0.55;
+  filter: blur(0.5px);
+}
+
+@media (max-width: 640px) {
+  .price-stage::after {
+    background: linear-gradient(
+      180deg,
+      transparent 0%,
+      transparent calc(50% - 2px),
+      var(--gold) 50%,
+      transparent calc(50% + 2px),
+      transparent 100%
+    );
+  }
+}
+
+.price-panel__eyebrow {
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+.price-panel__value {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 6vw, 40px);
+  font-weight: 600;
+  color: var(--gold-bright);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+  transition: color 300ms ease;
+}
+
+.price-panel__currency {
+  font-family: var(--font-fa);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.price-panel__unit {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.price-panel__cta {
+  margin-top: 10px;
+  padding: 8px 28px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.price-panel--buy .price-panel__cta {
+  background: var(--buy);
+  color: #eafff2;
+}
+
+.price-panel--sell .price-panel__cta {
+  background: var(--sell);
+  color: #ffece5;
+}
+
+.price-panel--flash-up .price-panel__value {
+  color: #7ee2ac;
+}
+
+.price-panel--flash-down .price-panel__value {
+  color: #ff9b80;
+}

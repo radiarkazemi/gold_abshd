@@ -1,0 +1,75 @@
+:root {
+  /* ---- Color tokens: molten-metal palette, not the default cream/terracotta ---- */
+  --bg: #12100b;
+  --surface: #1c1811;
+  --surface-raised: #262015;
+  --hairline: #362d1c;
+
+  --gold: #c9a227;
+  --gold-bright: #e9c768;
+  --gold-dim: #8a7228;
+
+  --buy: #2f6f4f;
+  --buy-bright: #4c9a72;
+  --sell: #a6432d;
+  --sell-bright: #cf6446;
+
+  --text: #ede6d6;
+  --text-muted: #9c927e;
+  --text-faint: #5f5847;
+
+  --radius-lg: 20px;
+  --radius-md: 14px;
+  --radius-sm: 9px;
+
+  --font-fa: "Vazirmatn", sans-serif;
+  --font-display: "Space Grotesk", "Vazirmatn", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  background-image: radial-gradient(circle at 50% -10%, #241d10 0%, #12100b 55%);
+  color: var(--text);
+  font-family: var(--font-fa);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+button {
+  font-family: inherit;
+}
+
+input,
+textarea {
+  font-family: inherit;
+}
+
+::selection {
+  background: var(--gold-dim);
+  color: var(--bg);
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
