@@ -41,6 +41,12 @@ class Settings:
     MAX_ORDER_WEIGHT: float = float(
         os.getenv("GOLDAPP_MAX_ORDER_WEIGHT", "50"))
 
+    # Admin login. ADMIN_PASSWORD_HASH is a bcrypt hash - never store the
+    # plain password. Generate one with:
+    #   python -c "import bcrypt; print(bcrypt.hashpw(b'yourpassword', bcrypt.gensalt()).decode())"
+    ADMIN_USERNAME: str = os.getenv("GOLDAPP_ADMIN_USERNAME", "admin")
+    ADMIN_PASSWORD_HASH: str = os.getenv("GOLDAPP_ADMIN_PASSWORD_HASH", "")
+
     @property
     def DATABASE_URL(self) -> str:
         return (

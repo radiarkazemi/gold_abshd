@@ -14,6 +14,38 @@ export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+const ADMIN_TOKEN_KEY = "goldapp_admin_token";
+
+export function getAdminToken() {
+  return localStorage.getItem(ADMIN_TOKEN_KEY);
+}
+
+export function setAdminToken(token) {
+  localStorage.setItem(ADMIN_TOKEN_KEY, token);
+}
+
+export function clearAdminToken() {
+  localStorage.removeItem(ADMIN_TOKEN_KEY);
+}
+
+function adminAuthHeaders() {
+  const token = getAdminToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export async function adminLogin(username, password) {
+  const res = await fetch(`${API_BASE}/api/admin/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "ورود ناموفق بود");
+  }
+  return res.json();
+}
+
 function authHeaders() {
   const token = getToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -105,7 +137,11 @@ export async function fetchOrder(orderId) {
 export async function fetchOrders(status) {
   const url = new URL(`${API_BASE}/api/admin/orders`);
   if (status) url.searchParams.set("status", status);
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: { ...adminAuthHeaders() } });
+  if (res.status === 401 || res.status === 403) {
+    clearAdminToken();
+    throw new Error("ADMIN_SESSION_EXPIRED");
+  }
   if (!res.ok) throw new Error("Failed to fetch orders");
   return res.json();
 }
@@ -113,7 +149,7 @@ export async function fetchOrders(status) {
 export async function decideOrder(orderId, status) {
   const res = await fetch(`${API_BASE}/api/admin/orders/${orderId}/decide`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
     body: JSON.stringify({ status }),
   });
   if (!res.ok) throw new Error("Failed to update order");
@@ -123,13 +159,15 @@ export async function decideOrder(orderId, status) {
 export async function fetchAdminUsers(search) {
   const url = new URL(`${API_BASE}/api/admin/users`);
   if (search) url.searchParams.set("search", search);
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: { ...adminAuthHeaders() } });
   if (!res.ok) throw new Error("Failed to fetch users");
   return res.json();
 }
 
 export async function fetchAdminUserDetail(userId) {
-  const res = await fetch(`${API_BASE}/api/admin/users/${userId}`);
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+    headers: { ...adminAuthHeaders() },
+  });
   if (!res.ok) throw new Error("Failed to fetch user detail");
   return res.json();
 }
@@ -137,7 +175,7 @@ export async function fetchAdminUserDetail(userId) {
 export async function adjustUserBalance(userId, { goldChange, cashChange, note }) {
   const res = await fetch(`${API_BASE}/api/admin/users/${userId}/adjust-balance`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
     body: JSON.stringify({ gold_change: goldChange, cash_change: cashChange, note }),
   });
   if (!res.ok) {
@@ -150,7 +188,7 @@ export async function adjustUserBalance(userId, { goldChange, cashChange, note }
 export async function setUserBlocked(userId, isBlocked) {
   const res = await fetch(`${API_BASE}/api/admin/users/${userId}/block`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
     body: JSON.stringify({ is_blocked: isBlocked }),
   });
   if (!res.ok) throw new Error("Failed to update block status");
@@ -158,7 +196,8 @@ export async function setUserBlocked(userId, isBlocked) {
 }
 
 export function openAdminSocket(onMessage) {
-  const ws = new WebSocket(`${WS_BASE}/ws/admin`);
+  const token = getAdminToken();
+  const ws = new WebSocket(`${WS_BASE}/ws/admin?token=${encodeURIComponent(token || "")}`);
   ws.onmessage = (event) => {
     try {
       onMessage(JSON.parse(event.data));

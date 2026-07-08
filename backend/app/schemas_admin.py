@@ -48,3 +48,12 @@ class BalanceAdjustIn(BaseModel):
 
 class BlockUserIn(BaseModel):
     is_blocked: bool
+
+
+class AdminLoginIn(BaseModel):
+    username: str
+    password: str
+
+
+class AdminLoginOut(BaseModel):
+    token: str

@@ -11,9 +11,8 @@ import "./pages/LoginPage.css";
 import "./pages/MyOrdersPage.css";
 import "./App.css";
 
-// NOTE: this is a hidden path, not real authentication.
-// Anyone who has this exact URL can open the admin panel.
-// Admin login is a separate, later step.
+// This path can now stay as-is or be simplified - the admin panel is
+// protected by real username/password login, not just URL obscurity.
 const ADMIN_PATH = "/admin-hs-panel";
 
 function Protected({ children }) {

@@ -105,30 +105,37 @@ export default function MyOrdersPage() {
                   {STATUS_LABEL[order.status]}
                 </span>
               </div>
-              <div className="history-card__grid">
-                <div className="history-card__cell">
-                  <span className="history-card__cell-label">مقدار</span>
-                  <span className="history-card__cell-value">{formatValue(order)}</span>
+              <div className="history-card__rows">
+                <div className="history-card__row">
+                  <span className="history-card__row-label">مقدار</span>
+                  <span className="history-card__row-value">{formatValue(order)}</span>
                 </div>
-                <div className="history-card__cell">
-                  <span className="history-card__cell-label">فی</span>
-                  <span className="history-card__cell-value">
-                    {fa(Math.round(order.price_at_submit))}
+                <div className="history-card__row">
+                  <span className="history-card__row-label">فی</span>
+                  <span className="history-card__row-value">
+                    {fa(Math.round(order.price_at_submit))} تومان
                   </span>
                 </div>
-                <div className="history-card__cell">
-                  <span className="history-card__cell-label">مبلغ کل</span>
-                  <span className="history-card__cell-value">
+                <div className="history-card__row">
+                  <span className="history-card__row-label">مبلغ کل</span>
+                  <span className="history-card__row-value">
                     {order.amount_type === "amount"
                       ? fa(Math.round(order.value))
-                      : fa(Math.round(order.value * order.price_at_submit))}
+                      : fa(Math.round(order.value * order.price_at_submit))}{" "}
+                    تومان
                   </span>
                 </div>
+                {order.description && (
+                  <div className="history-card__row">
+                    <span className="history-card__row-label">توضیحات</span>
+                    <span className="history-card__row-value">{order.description}</span>
+                  </div>
+                )}
+                <div className="history-card__row">
+                  <span className="history-card__row-label">زمان</span>
+                  <span className="history-card__row-value">{formatDate(order.created_at)}</span>
+                </div>
               </div>
-              {order.description && (
-                <p className="history-card__desc">{order.description}</p>
-              )}
-              <span className="history-card__time">{formatDate(order.created_at)}</span>
             </div>
           ))}
         </div>

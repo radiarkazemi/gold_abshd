@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchOrders, decideOrder, openAdminSocket } from "../api";
+import { fetchOrders, decideOrder, openAdminSocket, getAdminToken, clearAdminToken } from "../api";
 import AdminUsersTab from "./AdminUsersTab";
+import AdminLoginPage from "./AdminLoginPage";
 
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
 const AMOUNT_LABEL = { weight: "مثقال", amount: "تومان" };
@@ -30,7 +31,7 @@ function formatTime(iso) {
   return new Date(iso).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
 }
 
-export default function AdminPage() {
+function AdminPanel({ onLogout }) {
   const [tab, setTab] = useState("orders"); // "orders" | "users"
   const [orders, setOrders] = useState([]);
   const [filter, setFilter] = useState("pending");
@@ -43,6 +44,10 @@ export default function AdminPage() {
       const data = await fetchOrders(currentFilter || undefined);
       setOrders(data);
     } catch (e) {
+      if (e.message === "ADMIN_SESSION_EXPIRED") {
+        onLogout();
+        return;
+      }
       console.error(e);
     }
   }
@@ -81,10 +86,13 @@ export default function AdminPage() {
     <div className="admin">
       <header className="admin__header">
         <h1 className="admin__title">پنل ادمین — آبشده حسین</h1>
-        <span className={`app__status ${connected ? "is-live" : ""}`}>
-          <span className="app__status-dot" />
-          {connected ? "زنده" : "در حال اتصال…"}
-        </span>
+        <div className="app__header-right">
+          <span className={`app__status ${connected ? "is-live" : ""}`}>
+            <span className="app__status-dot" />
+            {connected ? "زنده" : "در حال اتصال…"}
+          </span>
+          <button className="app__logout" onClick={onLogout}>خروج</button>
+        </div>
       </header>
 
       <div className="admin__tabs">
@@ -178,4 +186,19 @@ export default function AdminPage() {
       )}
     </div>
   );
+}
+
+export default function AdminPage() {
+  const [loggedIn, setLoggedIn] = useState(!!getAdminToken());
+
+  function handleLogout() {
+    clearAdminToken();
+    setLoggedIn(false);
+  }
+
+  if (!loggedIn) {
+    return <AdminLoginPage onLoggedIn={() => setLoggedIn(true)} />;
+  }
+
+  return <AdminPanel onLogout={handleLogout} />;
 }
