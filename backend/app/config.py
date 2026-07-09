@@ -25,8 +25,7 @@ class Settings:
     DB_NAME: str = os.getenv("GOLDAPP_DB_NAME", "goldapp")
 
     JWT_SECRET: str = os.getenv("GOLDAPP_JWT_SECRET", "dev-secret-change-me")
-    JWT_EXPIRE_MINUTES: int = int(
-        os.getenv("GOLDAPP_JWT_EXPIRE_MINUTES", "43200"))  # 30 days
+    JWT_EXPIRE_MINUTES: int = int(os.getenv("GOLDAPP_JWT_EXPIRE_MINUTES", "43200"))  # 30 days
 
     # When true, the OTP code is printed to the server console AND returned
     # in the API response, so you can test without a real SMS provider.
@@ -36,16 +35,66 @@ class Settings:
     # Order size limits, in مثقال ۱۷. Orders placed in تومان are converted
     # to their مثقال equivalent (using the price at submit time) before
     # being checked against these bounds.
-    MIN_ORDER_WEIGHT: float = float(
-        os.getenv("GOLDAPP_MIN_ORDER_WEIGHT", "0.1"))
-    MAX_ORDER_WEIGHT: float = float(
-        os.getenv("GOLDAPP_MAX_ORDER_WEIGHT", "50"))
+    # Order size limits, in گرم ۱۸ (NOT مثقال - orders are tracked in گرم۱۸
+    # even though the price feed itself is quoted per مثقال۱۷; the
+    # conversion happens automatically). Orders placed in تومان are
+    # converted to their گرم۱۸ equivalent before being checked against these.
+    MIN_ORDER_WEIGHT: float = float(os.getenv("GOLDAPP_MIN_ORDER_WEIGHT", "1"))
+    MAX_ORDER_WEIGHT: float = float(os.getenv("GOLDAPP_MAX_ORDER_WEIGHT", "200"))
 
     # Admin login. ADMIN_PASSWORD_HASH is a bcrypt hash - never store the
     # plain password. Generate one with:
     #   python -c "import bcrypt; print(bcrypt.hashpw(b'yourpassword', bcrypt.gensalt()).decode())"
     ADMIN_USERNAME: str = os.getenv("GOLDAPP_ADMIN_USERNAME", "admin")
     ADMIN_PASSWORD_HASH: str = os.getenv("GOLDAPP_ADMIN_PASSWORD_HASH", "")
+
+    # Which price source to use: "simulator" (fake, for local dev),
+    # "telegram" (read a Telegram channel, for testing with a real feed),
+    # or "api" (poll a real HTTP API, for production).
+    PRICE_SOURCE: str = os.getenv("GOLDAPP_PRICE_SOURCE", "simulator")
+
+    # --- Telegram source settings ---
+    TG_API_ID: str = os.getenv("GOLDAPP_TG_API_ID", "")
+    TG_API_HASH: str = os.getenv("GOLDAPP_TG_API_HASH", "")
+    TG_SESSION_NAME: str = os.getenv("GOLDAPP_TG_SESSION_NAME", "goldapp_price_session")
+    TG_CHANNEL: str = os.getenv("GOLDAPP_TG_CHANNEL", "")
+    # The number to extract. Real channel messages look like:
+    #   **77,950,000**⏳باحواله🔵خرید
+    #   گرم: **17,994,828**
+    # The default regex grabs the FIRST bold number (the leading price,
+    # not the گرم one on the second line) - re.search always matches the
+    # leftmost occurrence, which is exactly the one we want here.
+    # Each message is checked for the buy/sell keyword to decide which
+    # price it's reporting; messages with neither (or both) are skipped
+    # (e.g. a "معامله"/trade-executed post isn't a buy or sell quote).
+    TG_PRICE_REGEX: str = os.getenv("GOLDAPP_TG_PRICE_REGEX", r"\*\*([\d,]+)\*\*")
+    # The channel also reports its own real گرم۱۸ price directly in each
+    # message - we use that number as-is instead of computing an
+    # approximation, since it's guaranteed to match the source exactly.
+    TG_GRAM18_REGEX: str = os.getenv("GOLDAPP_TG_GRAM18_REGEX", r"گرم:[^\d]*([\d,]+)")
+    TG_BUY_KEYWORD: str = os.getenv("GOLDAPP_TG_BUY_KEYWORD", "خرید")
+    TG_SELL_KEYWORD: str = os.getenv("GOLDAPP_TG_SELL_KEYWORD", "فروش")
+
+    # Proxy for the Telegram connection (needed if Telegram is blocked on
+    # this network, e.g. via V2rayN or any other local SOCKS5/HTTP proxy).
+    # V2rayN's default local SOCKS5 port is usually 10808 - check your
+    # V2rayN "Parameter setting" / "Local port" field if unsure.
+    TG_PROXY_ENABLED: bool = os.getenv("GOLDAPP_TG_PROXY_ENABLED", "false").lower() == "true"
+    TG_PROXY_TYPE: str = os.getenv("GOLDAPP_TG_PROXY_TYPE", "socks5")  # socks5, socks4, or http
+    TG_PROXY_HOST: str = os.getenv("GOLDAPP_TG_PROXY_HOST", "127.0.0.1")
+    TG_PROXY_PORT: int = int(os.getenv("GOLDAPP_TG_PROXY_PORT", "10808"))
+
+    # --- HTTP API source settings ---
+    PRICE_API_URL: str = os.getenv("GOLDAPP_PRICE_API_URL", "")
+    PRICE_API_KEY: str = os.getenv("GOLDAPP_PRICE_API_KEY", "")
+    PRICE_API_BUY_PATH: str = os.getenv("GOLDAPP_PRICE_API_BUY_PATH", "buy")
+    PRICE_API_SELL_PATH: str = os.getenv("GOLDAPP_PRICE_API_SELL_PATH", "sell")
+    PRICE_API_POLL_SECONDS: int = int(os.getenv("GOLDAPP_PRICE_API_POLL_SECONDS", "5"))
+
+    # Receipt uploads (proof of bank transfer / حواله for cash orders)
+    UPLOAD_DIR: str = os.getenv("GOLDAPP_UPLOAD_DIR", "uploads/receipts")
+    MAX_RECEIPT_SIZE_MB: int = int(os.getenv("GOLDAPP_MAX_RECEIPT_SIZE_MB", "5"))
+    ALLOWED_RECEIPT_EXTENSIONS: set = {".jpg", ".jpeg", ".png", ".pdf", ".webp"}
 
     @property
     def DATABASE_URL(self) -> str:

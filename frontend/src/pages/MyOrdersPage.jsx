@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchMyOrders, fetchMyBalance } from "../api";
+import { fetchMyOrders, fetchMyBalance, fetchReceiptBlobUrl, uploadReceipt } from "../api";
+import { useAuth } from "../context/AuthContext";
+import SideMenu from "../components/SideMenu";
 
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
-const AMOUNT_LABEL = { weight: "مثقال", amount: "تومان" };
+const AMOUNT_LABEL = { weight: "گرم ۱۸", amount: "تومان" };
 const STATUS_LABEL = {
   pending: "در انتظار",
   accepted: "تایید شده",
@@ -35,12 +37,14 @@ function formatDate(iso) {
 }
 
 export default function MyOrdersPage() {
+  const { user, logout } = useAuth();
   const [orders, setOrders] = useState([]);
   const [balance, setBalance] = useState(null);
   const [filter, setFilter] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [uploadingId, setUploadingId] = useState(null);
 
-  useEffect(() => {
+  function reload() {
     Promise.all([fetchMyOrders(), fetchMyBalance()])
       .then(([o, b]) => {
         setOrders(o);
@@ -48,15 +52,41 @@ export default function MyOrdersPage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(reload, []);
 
   const visible = filter ? orders.filter((o) => o.status === filter) : orders;
+
+  async function handleViewReceipt(orderId) {
+    try {
+      const { url } = await fetchReceiptBlobUrl(orderId);
+      window.open(url, "_blank");
+    } catch (e) {
+      console.error(e);
+      alert("نمایش فیش با خطا مواجه شد.");
+    }
+  }
+
+  async function handleUploadReceipt(orderId, file) {
+    setUploadingId(orderId);
+    try {
+      await uploadReceipt(orderId, file);
+      reload();
+    } catch (e) {
+      console.error(e);
+      alert(e.message || "آپلود فیش با خطا مواجه شد.");
+    } finally {
+      setUploadingId(null);
+    }
+  }
 
   return (
     <div className="myorders">
       <header className="myorders__header">
-        <Link to="/" className="myorders__back">‹ بازگشت</Link>
+        <SideMenu userPhone={user?.phone_number} onLogout={logout} />
         <h1 className="myorders__title">سفارش‌های من</h1>
+        <Link to="/" className="myorders__back">‹ بازگشت</Link>
       </header>
 
       <div className="balance-card">
@@ -64,7 +94,7 @@ export default function MyOrdersPage() {
           <span className="balance-card__label">موجودی طلا</span>
           <span className="balance-card__value">
             {balance ? fa(balance.gold_balance, { maximumFractionDigits: 4 }) : "—"}
-            <span className="balance-card__unit"> مثقال</span>
+            <span className="balance-card__unit"> گرم ۱۸</span>
           </span>
         </div>
         <div className="balance-card__divider" />
@@ -136,6 +166,39 @@ export default function MyOrdersPage() {
                   <span className="history-card__row-value">{formatDate(order.created_at)}</span>
                 </div>
               </div>
+
+              {(order.has_receipt || order.status === "pending") && (
+                <div className="receipt-section">
+                  <span className="receipt-section__label">فیش واریز / حواله</span>
+                  {order.has_receipt ? (
+                    <button
+                      type="button"
+                      className="history-card__receipt-btn"
+                      onClick={() => handleViewReceipt(order.id)}
+                    >
+                      مشاهده فیش
+                    </button>
+                  ) : (
+                    <label className="receipt-section__upload">
+                      {uploadingId === order.id ? (
+                        <span>در حال آپلود…</span>
+                      ) : (
+                        <span>+ افزودن فیش واریز</span>
+                      )}
+                      <input
+                        type="file"
+                        accept=".jpg,.jpeg,.png,.pdf,.webp"
+                        disabled={uploadingId === order.id}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleUploadReceipt(order.id, file);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

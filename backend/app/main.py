@@ -1,10 +1,20 @@
 """
-اپ آبشده حسین - سمت سرور
+اپ آبشده قصر طلا - سمت سرور
 اجرا: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 """
 import asyncio
 import json
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Query
+import logging
+import os
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Query, UploadFile, File
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -18,6 +28,9 @@ from app.models_db import User, Order, OrderStatusEnum
 from app.schemas_order import OrderCreateIn, OrderOut, OrderDecisionIn, BalanceOut, OrderLimitsOut
 from app.schemas_admin import UserSummaryOut, UserDetailOut, TransactionOut, BalanceAdjustIn, BlockUserIn, AdminLoginIn, AdminLoginOut
 from app.admin_auth import verify_admin_credentials, create_admin_token, get_current_admin, verify_admin_ws_token
+from app.receipts_service import save_receipt, get_receipt_path_for_viewer
+from app.schemas_notice import NoticeOut, NoticeUpdateIn
+from app.notice_service import get_notice, set_notice
 from app.orders_service import (
     create_order as create_order_db,
     decide_order as decide_order_db,
@@ -29,7 +42,7 @@ from app.orders_service import (
 )
 from app.models_db import BalanceTransaction
 
-app = FastAPI(title="آبشده حسین - Gold Trading Server")
+app = FastAPI(title="آبشده قصر طلا - Gold Trading Server")
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,6 +56,7 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     init_db()
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     asyncio.create_task(price_service.run_simulation())
     asyncio.create_task(price_broadcaster())
 
@@ -98,6 +112,16 @@ async def get_order_limits():
     return OrderLimitsOut(min_weight=settings.MIN_ORDER_WEIGHT, max_weight=settings.MAX_ORDER_WEIGHT)
 
 
+@app.get("/api/notice", response_model=NoticeOut)
+async def get_site_notice(db: Session = Depends(get_db)):
+    return NoticeOut(text=get_notice(db))
+
+
+@app.put("/api/admin/notice", response_model=NoticeOut)
+async def update_site_notice(payload: NoticeUpdateIn, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    return NoticeOut(text=set_notice(db, payload.text))
+
+
 @app.websocket("/ws/price")
 async def ws_price(websocket: WebSocket):
     await manager.connect_price(websocket)
@@ -145,6 +169,44 @@ async def my_orders(
     return orders
 
 
+@app.get("/api/my/orders/{order_id}", response_model=OrderOut)
+async def my_order_detail(
+    order_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    order = (
+        db.query(Order)
+        .filter(Order.id == order_id, Order.user_id == current_user.id)
+        .first()
+    )
+    if not order:
+        raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
+    return order
+
+
+@app.post("/api/orders/{order_id}/receipt", response_model=OrderOut)
+async def upload_receipt(
+    order_id: str,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    content = await file.read()
+    order = save_receipt(db, order_id, current_user.id, file, content)
+    return order
+
+
+@app.get("/api/orders/{order_id}/receipt")
+async def view_own_receipt(
+    order_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    path = get_receipt_path_for_viewer(db, order_id, current_user.id, is_admin=False)
+    return FileResponse(path)
+
+
 @app.get("/api/my/balance", response_model=BalanceOut)
 async def my_balance(
     current_user: User = Depends(get_current_user),
@@ -158,8 +220,7 @@ async def my_balance(
 @app.post("/api/admin/auth/login", response_model=AdminLoginOut)
 async def admin_login(payload: AdminLoginIn):
     if not verify_admin_credentials(payload.username, payload.password):
-        raise HTTPException(
-            status_code=401, detail="نام کاربری یا رمز عبور اشتباه است")
+        raise HTTPException(status_code=401, detail="نام کاربری یا رمز عبور اشتباه است")
     return AdminLoginOut(token=create_admin_token())
 
 
@@ -176,6 +237,12 @@ async def decide_order(order_id: str, decision: OrderDecisionIn, db: Session = D
     order = decide_order_db(db, order_id, decision.status)
     await manager.broadcast_to_admins({"type": "order_updated", "order": order_to_dict(order)})
     return order
+
+
+@app.get("/api/admin/orders/{order_id}/receipt")
+async def view_receipt_as_admin(order_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    path = get_receipt_path_for_viewer(db, order_id, viewer_user_id=None, is_admin=True)
+    return FileResponse(path)
 
 
 @app.websocket("/ws/admin")
@@ -234,8 +301,7 @@ async def get_user_detail(user_id: str, db: Session = Depends(get_db), _admin=De
 
 @app.post("/api/admin/users/{user_id}/adjust-balance", response_model=TransactionOut)
 async def adjust_user_balance(user_id: str, payload: BalanceAdjustIn, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    txn = adjust_balance_db(db, user_id, payload.gold_change,
-                            payload.cash_change, payload.note)
+    txn = adjust_balance_db(db, user_id, payload.gold_change, payload.cash_change, payload.note)
     return txn
 
 

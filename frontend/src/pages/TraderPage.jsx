@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { usePriceFeed } from "../hooks/usePriceFeed";
 import { submitOrder } from "../api";
 import { useAuth } from "../context/AuthContext";
 import PriceButton from "../components/PriceButton";
 import OrderModal from "../components/OrderModal";
+import SideMenu from "../components/SideMenu";
+import NoticeCard from "../components/NoticeCard";
 
 export default function TraderPage() {
   const { price, prevPrice, connected } = usePriceFeed();
@@ -43,18 +44,12 @@ export default function TraderPage() {
   return (
     <div className="app">
       <header className="app__header">
-        <h1 className="app__title">آبشده حسین</h1>
-        <div className="app__header-right">
-          <span className={`app__status ${connected ? "is-live" : ""}`}>
-            <span className="app__status-dot" />
-            {connected ? "قیمت زنده" : "در حال اتصال…"}
-          </span>
-          <Link to="/my-orders" className="app__nav-link">سفارش‌های من</Link>
-          <span className="app__user">
-            {user?.phone_number}
-            <button className="app__logout" onClick={logout}>خروج</button>
-          </span>
-        </div>
+        <SideMenu userPhone={user?.phone_number} onLogout={logout} />
+        <h1 className="app__title">آبشده قصر طلا</h1>
+        <span className={`app__status ${connected ? "is-live" : ""}`}>
+          <span className="app__status-dot" />
+          {connected ? "قیمت زنده" : "در حال اتصال…"}
+        </span>
       </header>
 
       <main className="app__main">
@@ -62,6 +57,7 @@ export default function TraderPage() {
           <PriceButton side="buy" price={price} prevPrice={prevPrice} onClick={openModal} />
           <PriceButton side="sell" price={price} prevPrice={prevPrice} onClick={openModal} />
         </div>
+        <NoticeCard />
       </main>
 
       {activeSide && (

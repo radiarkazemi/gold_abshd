@@ -52,7 +52,7 @@ def create_otp_for_phone(db: Session, phone_number: str) -> str:
     db.add(otp)
     db.commit()
 
-    send_sms(phone_number, f"کد ورود شما به آبشده حسین: {code}")
+    send_sms(phone_number, f"کد ورود شما به آبشده قصر طلا: {code}")
     return code
 
 

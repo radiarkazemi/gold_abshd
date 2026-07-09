@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchOrders, decideOrder, openAdminSocket, getAdminToken, clearAdminToken } from "../api";
+import { fetchOrders, decideOrder, openAdminSocket, getAdminToken, clearAdminToken, fetchReceiptBlobUrlAsAdmin } from "../api";
 import AdminUsersTab from "./AdminUsersTab";
 import AdminLoginPage from "./AdminLoginPage";
+import AdminNoticeTab from "./AdminNoticeTab";
 
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
-const AMOUNT_LABEL = { weight: "مثقال", amount: "تومان" };
+const AMOUNT_LABEL = { weight: "گرم ۱۸", amount: "تومان" };
 const STATUS_LABEL = {
   pending: "در انتظار",
   accepted: "تایید شده",
@@ -82,10 +83,20 @@ function AdminPanel({ onLogout }) {
     }
   }
 
+  async function handleViewReceipt(orderId) {
+    try {
+      const { url } = await fetchReceiptBlobUrlAsAdmin(orderId);
+      window.open(url, "_blank");
+    } catch (e) {
+      console.error(e);
+      alert("نمایش فیش با خطا مواجه شد.");
+    }
+  }
+
   return (
     <div className="admin">
       <header className="admin__header">
-        <h1 className="admin__title">پنل ادمین — آبشده حسین</h1>
+        <h1 className="admin__title">پنل ادمین — آبشده قصر طلا</h1>
         <div className="app__header-right">
           <span className={`app__status ${connected ? "is-live" : ""}`}>
             <span className="app__status-dot" />
@@ -108,10 +119,18 @@ function AdminPanel({ onLogout }) {
         >
           کاربران
         </button>
+        <button
+          className={tab === "notice" ? "admin__tab is-active" : "admin__tab"}
+          onClick={() => setTab("notice")}
+        >
+          اطلاعیه
+        </button>
       </div>
 
       {tab === "users" ? (
         <AdminUsersTab />
+      ) : tab === "notice" ? (
+        <AdminNoticeTab />
       ) : (
         <>
           <div className="admin__filters">
@@ -155,6 +174,17 @@ function AdminPanel({ onLogout }) {
                       </div>
                     )}
                   </div>
+
+                  {order.has_receipt && (
+                    <button
+                      type="button"
+                      className="history-card__receipt-btn"
+                      onClick={() => handleViewReceipt(order.id)}
+                      style={{ marginBottom: 10 }}
+                    >
+                      مشاهده فیش
+                    </button>
+                  )}
 
                   {order.status === "pending" ? (
                     <div className="order-card__actions">

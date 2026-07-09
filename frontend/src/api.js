@@ -94,6 +94,14 @@ export async function fetchOrderLimits() {
   return res.json();
 }
 
+export async function fetchMyOrderDetail(orderId) {
+  const res = await fetch(`${API_BASE}/api/my/orders/${orderId}`, {
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to fetch order");
+  return res.json();
+}
+
 export async function fetchMyOrders() {
   const res = await fetch(`${API_BASE}/api/my/orders`, {
     headers: { ...authHeaders() },
@@ -126,6 +134,39 @@ export async function submitOrder({ side, amountType, value, description }) {
     throw new Error(err.detail || "Failed to submit order");
   }
   return res.json();
+}
+
+export async function uploadReceipt(orderId, file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_BASE}/api/orders/${orderId}/receipt`, {
+    method: "POST",
+    headers: { ...authHeaders() }, // NOTE: no Content-Type - browser sets the multipart boundary itself
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to upload receipt");
+  }
+  return res.json();
+}
+
+export async function fetchReceiptBlobUrl(orderId) {
+  const res = await fetch(`${API_BASE}/api/orders/${orderId}/receipt`, {
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to fetch receipt");
+  const blob = await res.blob();
+  return { url: URL.createObjectURL(blob), contentType: blob.type };
+}
+
+export async function fetchReceiptBlobUrlAsAdmin(orderId) {
+  const res = await fetch(`${API_BASE}/api/admin/orders/${orderId}/receipt`, {
+    headers: { ...adminAuthHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to fetch receipt");
+  const blob = await res.blob();
+  return { url: URL.createObjectURL(blob), contentType: blob.type };
 }
 
 export async function fetchOrder(orderId) {
@@ -192,6 +233,22 @@ export async function setUserBlocked(userId, isBlocked) {
     body: JSON.stringify({ is_blocked: isBlocked }),
   });
   if (!res.ok) throw new Error("Failed to update block status");
+  return res.json();
+}
+
+export async function fetchNotice() {
+  const res = await fetch(`${API_BASE}/api/notice`);
+  if (!res.ok) throw new Error("Failed to fetch notice");
+  return res.json();
+}
+
+export async function updateNotice(text) {
+  const res = await fetch(`${API_BASE}/api/admin/notice`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error("Failed to update notice");
   return res.json();
 }
 

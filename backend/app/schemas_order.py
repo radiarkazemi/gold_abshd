@@ -19,6 +19,7 @@ class OrderOut(BaseModel):
     description: Optional[str] = ""
     status: str
     price_at_submit: float
+    has_receipt: bool = False
     created_at: datetime
     updated_at: datetime
 

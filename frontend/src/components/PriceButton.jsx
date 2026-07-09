@@ -14,6 +14,7 @@ export default function PriceButton({ side, price, prevPrice, onClick }) {
   const [flash, setFlash] = useState(null); // "up" | "down" | null
   const meta = LABELS[side];
   const key = side === "buy" ? "buy_price" : "sell_price";
+  const gram18Key = side === "buy" ? "gram18_buy_price" : "gram18_sell_price";
 
   useEffect(() => {
     if (price == null || prevPrice == null) return;
@@ -35,7 +36,17 @@ export default function PriceButton({ side, price, prevPrice, onClick }) {
         {formatToman(price?.[key])}
         <span className="price-panel__currency">تومان</span>
       </span>
-      <span className="price-panel__unit">{price?.unit || "مثقال ۱۷"}</span>
+      <span className="price-panel__units">
+        <span className="price-panel__unit-badge price-panel__unit-badge--mesghal">
+          <span className="price-panel__unit-badge-label">مثقال ۱۷</span>
+        </span>
+        {price?.[gram18Key] != null && (
+          <span className="price-panel__unit-badge price-panel__unit-badge--gram18">
+            <span className="price-panel__unit-badge-label">گرم ۱۸:</span>
+            {formatToman(price[gram18Key])}
+          </span>
+        )}
+      </span>
       <span className="price-panel__cta">{meta.fa}</span>
     </button>
   );

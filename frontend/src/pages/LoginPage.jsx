@@ -69,7 +69,7 @@ export default function LoginPage() {
   return (
     <div className="login">
       <div className="login__card">
-        <h1 className="login__title">آبشده حسین</h1>
+        <h1 className="login__title">آبشده قصر طلا</h1>
         <p className="login__subtitle">
           {step === "phone"
             ? "برای ورود، شماره موبایل خود را وارد کنید"

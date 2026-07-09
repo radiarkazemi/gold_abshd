@@ -15,8 +15,8 @@
   --sell-bright: #cf6446;
 
   --text: #ede6d6;
-  --text-muted: #9c927e;
-  --text-faint: #5f5847;
+  --text-muted: #b3a98f;
+  --text-faint: #a89d87;
 
   --radius-lg: 16px;
   --radius-md: 12px;
@@ -24,6 +24,32 @@
 
   --font-fa: "Vazirmatn", sans-serif;
   --font-display: "Space Grotesk", "Vazirmatn", sans-serif;
+
+  --bg-gradient-outer: #241d10;
+  --bg-gradient-inner: #12100b;
+}
+
+:root[data-theme="light"] {
+  --bg: #faf7f0;
+  --surface: #ffffff;
+  --surface-raised: #f2ead8;
+  --hairline: #e2d6b8;
+
+  --gold: #a97e0f;
+  --gold-bright: #8a6600;
+  --gold-dim: #d4b24c;
+
+  --buy: #2f6f4f;
+  --buy-bright: #1f5c3f;
+  --sell: #a6432d;
+  --sell-bright: #8a3220;
+
+  --text: #241f13;
+  --text-muted: #6b6250;
+  --text-faint: #8a8069;
+
+  --bg-gradient-outer: #f3ecd8;
+  --bg-gradient-inner: #faf7f0;
 }
 
 * {
@@ -39,15 +65,24 @@ body,
 body {
   margin: 0;
   background: var(--bg);
-  background-image: radial-gradient(circle at 50% -10%, #241d10 0%, #12100b 55%);
+  background-image: radial-gradient(circle at 50% -10%, var(--bg-gradient-outer) 0%, var(--bg-gradient-inner) 55%);
   color: var(--text);
   font-family: var(--font-fa);
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  /* prevent the iOS "pull to refresh" bounce from looking broken against our dark bg */
+  overscroll-behavior-y: contain;
+  transition: background-color 200ms ease, color 200ms ease;
 }
 
 button {
   font-family: inherit;
+  touch-action: manipulation; /* removes the 300ms tap delay on mobile browsers */
+  -webkit-tap-highlight-color: transparent;
 }
 
 input,

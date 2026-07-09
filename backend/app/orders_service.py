@@ -1,16 +1,26 @@
 """
 Order + balance business logic.
 
+Units: orders and gold balances are tracked in گرم ۱۸ (not مثقال ۱۷ -
+the price feed itself is quoted per مثقال ۱۷, but every order's weight,
+every user's gold balance, and price_at_submit on each order are all in
+گرم ۱۸ terms, converted at submit time via gold_conversion.py).
+
 Key rule: a user's balance is never stored directly - it's always the sum
 of their balance_transactions rows. This keeps a full audit trail (every
 gold/cash movement has a reason and a timestamp).
 
 When an order is accepted:
-  - buy  -> gold balance increases (cash is assumed handled outside the app)
-  - sell -> gold balance decreases (cash is assumed handled outside the app)
-  If the order was placed in "amount" (تومان) rather than "weight" (مثقال),
-  it's converted to a weight using the price that was active when the
-  order was submitted.
+  - buy  -> gold balance increases; the toman value of the order is
+            recorded as a NEGATIVE cash change (the customer now owes
+            the shop that amount, since they received gold without an
+            in-app cash payment).
+  - sell -> gold balance decreases; the toman value is recorded as a
+            POSITIVE cash change (the shop now owes the customer that
+            amount for the gold they handed over).
+  If the order was placed in "amount" (تومان) rather than "weight"
+  (گرم ۱۸), it's converted using the گرم۱۸ price active when the order
+  was submitted.
 """
 from datetime import datetime
 
@@ -26,32 +36,41 @@ from app.models_db import (
     TransactionReasonEnum,
 )
 from app.config import settings
+from app.gold_conversion import mesghal17_to_gram18
 
 
 def weight_equivalent(order: Order) -> float:
-    """Converts an order's value to مثقال, regardless of how it was entered."""
+    """Converts an order's value to گرم ۱۸, regardless of how it was entered."""
     if order.amount_type.value == "weight":
         return order.value
-    # amount_type == "amount" (تومان) -> convert using the price at submit time
+    # amount_type == "amount" (تومان) -> convert using the گرم۱۸ price at submit time
     return order.value / order.price_at_submit
 
 
+def order_total_toman(order: Order) -> float:
+    """The total تومان value of an order, regardless of how it was entered."""
+    if order.amount_type.value == "amount":
+        return order.value
+    return order.value * order.price_at_submit
+
+
 def create_order(db: Session, user: User, side: str, amount_type: str, value: float,
-                 description: str, current_price) -> Order:
-    price_at_submit = (
+                  description: str, current_price) -> Order:
+    mesghal17_price = (
         current_price.buy_price if side == "buy" else current_price.sell_price
     )
+    price_at_submit = mesghal17_to_gram18(mesghal17_price)
 
     weight = value if amount_type == "weight" else value / price_at_submit
     if weight < settings.MIN_ORDER_WEIGHT:
         raise HTTPException(
             status_code=400,
-            detail=f"حداقل مقدار سفارش {settings.MIN_ORDER_WEIGHT} مثقال است",
+            detail=f"حداقل مقدار سفارش {settings.MIN_ORDER_WEIGHT} گرم ۱۸ است",
         )
     if weight > settings.MAX_ORDER_WEIGHT:
         raise HTTPException(
             status_code=400,
-            detail=f"حداکثر مقدار سفارش {settings.MAX_ORDER_WEIGHT} مثقال است",
+            detail=f"حداکثر مقدار سفارش {settings.MAX_ORDER_WEIGHT} گرم ۱۸ است",
         )
 
     order = Order(
@@ -86,8 +105,7 @@ def decide_order(db: Session, order_id: str, status: str) -> Order:
     if not order:
         raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
     if order.status != OrderStatusEnum.pending:
-        raise HTTPException(
-            status_code=400, detail="این سفارش قبلا تصمیم‌گیری شده")
+        raise HTTPException(status_code=400, detail="این سفارش قبلا تصمیم‌گیری شده")
     if status not in ("accepted", "rejected"):
         raise HTTPException(status_code=400, detail="وضعیت نامعتبر است")
 
@@ -98,12 +116,20 @@ def decide_order(db: Session, order_id: str, status: str) -> Order:
         gold_amount = weight_equivalent(order)
         gold_change = gold_amount if order.side.value == "buy" else -gold_amount
 
+        total_toman = order_total_toman(order)
+        # buy: customer received gold, now owes the shop -> negative
+        # sell: shop received gold, now owes the customer cash -> positive
+        cash_change = -total_toman if order.side.value == "buy" else total_toman
+
         txn = BalanceTransaction(
             user_id=order.user_id,
             gold_change=gold_change,
-            cash_change=0,
+            cash_change=cash_change,
             reason=TransactionReasonEnum.order_accepted,
-            note=f"سفارش {order.side.value} به مقدار {gold_amount:.4f} مثقال",
+            note=(
+                f"سفارش {order.side.value} به مقدار {gold_amount:.4f} گرم ۱۸ "
+                f"به ارزش {total_toman:,.0f} تومان"
+            ),
             related_order_id=order.id,
         )
         db.add(txn)
@@ -153,8 +179,7 @@ def adjust_balance(db: Session, user_id: str, gold_change: float, cash_change: f
     get_user_or_404(db, user_id)  # 404s if missing
 
     if not gold_change and not cash_change:
-        raise HTTPException(
-            status_code=400, detail="حداقل یکی از مقادیر طلا یا نقدی باید غیرصفر باشد")
+        raise HTTPException(status_code=400, detail="حداقل یکی از مقادیر طلا یا نقدی باید غیرصفر باشد")
 
     txn = BalanceTransaction(
         user_id=user_id,

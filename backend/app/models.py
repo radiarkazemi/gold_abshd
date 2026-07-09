@@ -1,5 +1,5 @@
 """
-مدل‌های داده برای اپ آبشده حسین
+مدل‌های داده برای اپ آبشده قصر طلا
 واحد قیمت: مثقال ۱۷ عیار (مظنه)
 """
 from pydantic import BaseModel, Field
@@ -26,8 +26,10 @@ class AmountType(str, Enum):
 
 
 class GoldPrice(BaseModel):
-    buy_price: float          # قیمت خرید (مظنه)
-    sell_price: float         # قیمت فروش (مظنه)
+    buy_price: float          # قیمت خرید (مظنه) - per مثقال ۱۷
+    sell_price: float         # قیمت فروش (مظنه) - per مثقال ۱۷
+    gram18_buy_price: float | None = None   # همان قیمت‌ها به ازای هر گرم ۱۸
+    gram18_sell_price: float | None = None
     unit: str = "مثقال ۱۷"
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

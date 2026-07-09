@@ -76,6 +76,18 @@ class Order(Base):
     status = Column(Enum(OrderStatusEnum), default=OrderStatusEnum.pending, nullable=False)
     price_at_submit = Column(Float, nullable=False)
 
+    # Path (on disk, relative to the upload directory) to an optional
+    # bank-transfer receipt the user attached as proof of payment for a
+    # cash order. Never exposed directly to the client - only a boolean
+    # "has_receipt" flag is; the actual file is served through an
+    # authenticated endpoint that checks the requester owns the order
+    # (or is an admin) before streaming it.
+    receipt_path = Column(String, nullable=True)
+
+    @property
+    def has_receipt(self) -> bool:
+        return bool(self.receipt_path)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -117,3 +129,19 @@ class OtpCode(Base):
     expires_at = Column(DateTime, nullable=False)
     is_used = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AppSetting(Base):
+    """
+    Generic key-value store for small pieces of runtime-editable config -
+    things the admin should be able to change without a redeploy. Right
+    now only "notice_text" is used (the note shown under the prices on
+    the main screen), but this table can hold future settings the same
+    way without new migrations each time.
+    """
+
+    __tablename__ = "app_settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(Text, nullable=False, default="")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

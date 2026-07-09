@@ -1,11 +1,14 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { ThemeProvider } from "./context/ThemeContext";
 import TraderPage from "./pages/TraderPage";
 import AdminPage from "./pages/AdminPage";
 import LoginPage from "./pages/LoginPage";
 import MyOrdersPage from "./pages/MyOrdersPage";
 import "./components/PriceButton.css";
 import "./components/OrderModal.css";
+import "./components/SideMenu.css";
+import "./components/NoticeCard.css";
 import "./pages/AdminPage.css";
 import "./pages/LoginPage.css";
 import "./pages/MyOrdersPage.css";
@@ -23,14 +26,16 @@ function Protected({ children }) {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Protected><TraderPage /></Protected>} />
-          <Route path="/my-orders" element={<Protected><MyOrdersPage /></Protected>} />
-          <Route path={ADMIN_PATH} element={<AdminPage />} />
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Protected><TraderPage /></Protected>} />
+            <Route path="/my-orders" element={<Protected><MyOrdersPage /></Protected>} />
+            <Route path={ADMIN_PATH} element={<AdminPage />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

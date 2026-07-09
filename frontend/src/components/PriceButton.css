@@ -2,19 +2,12 @@
   position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 3px;
+  gap: 2px;
   width: 100%;
   max-width: 720px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   overflow: hidden;
-  box-shadow: 0 10px 24px -12px rgba(0, 0, 0, 0.45);
-}
-
-@media (max-width: 640px) {
-  .price-stage {
-    grid-template-columns: 1fr;
-    gap: 3px;
-  }
+  box-shadow: 0 6px 16px -10px rgba(0, 0, 0, 0.4);
 }
 
 .price-panel {
@@ -25,9 +18,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 48px 20px 40px;
-  min-height: 240px;
+  gap: 6px;
+  padding: 22px 14px 18px;
   color: var(--text);
   transition: filter 160ms ease, transform 160ms ease;
   isolation: isolate;
@@ -67,54 +59,70 @@
   filter: blur(0.5px);
 }
 
-@media (max-width: 640px) {
-  .price-stage::after {
-    background: linear-gradient(
-      180deg,
-      transparent 0%,
-      transparent calc(50% - 2px),
-      var(--gold) 50%,
-      transparent calc(50% + 2px),
-      transparent 100%
-    );
-  }
-}
-
 .price-panel__eyebrow {
-  font-size: 13px;
+  font-size: 12px;
   letter-spacing: 0.02em;
   color: var(--text-muted);
 }
 
 .price-panel__value {
   font-family: var(--font-display);
-  font-size: clamp(28px, 6vw, 40px);
+  font-size: clamp(19px, 5.2vw, 25px);
   font-weight: 600;
   color: var(--gold-bright);
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
   font-variant-numeric: tabular-nums;
   transition: color 300ms ease;
 }
 
 .price-panel__currency {
   font-family: var(--font-fa);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-muted);
 }
 
-.price-panel__unit {
-  font-size: 12px;
+.price-panel__units {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.price-panel__unit-badge {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  line-height: 1.6;
+}
+
+.price-panel__unit-badge--mesghal {
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text-faint);
 }
 
+.price-panel__unit-badge--gram18 {
+  background: rgba(201, 162, 39, 0.16);
+  color: var(--gold-bright);
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.price-panel__unit-badge-label {
+  font-family: var(--font-fa);
+  opacity: 0.85;
+}
+
 .price-panel__cta {
-  margin-top: 10px;
-  padding: 8px 28px;
+  margin-top: 6px;
+  padding: 7px 26px;
   border-radius: 999px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
 }
 

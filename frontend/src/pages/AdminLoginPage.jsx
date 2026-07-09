@@ -26,7 +26,7 @@ export default function AdminLoginPage({ onLoggedIn }) {
     <div className="login">
       <div className="login__card">
         <h1 className="login__title">ورود ادمین</h1>
-        <p className="login__subtitle">آبشده حسین — پنل مدیریت</p>
+        <p className="login__subtitle">آبشده قصر طلا — پنل مدیریت</p>
 
         <form onSubmit={handleSubmit}>
           <input
