@@ -1,0 +1,65 @@
+.balance-strip {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 720px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  cursor: pointer;
+  text-align: center;
+  color: var(--text);
+  font-family: inherit;
+  margin-bottom: 4px;
+}
+
+.balance-strip:hover {
+  border-color: var(--gold-dim);
+}
+
+.balance-strip__item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.balance-strip__label {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.balance-strip__value {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--gold-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.balance-strip__value.cash-status--debtor {
+  color: var(--buy-bright);
+}
+
+.balance-strip__value.cash-status--creditor {
+  color: var(--sell-bright);
+}
+
+.balance-strip__unit {
+  font-family: var(--font-fa);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.balance-strip__divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--hairline);
+}
+
+.balance-strip__chevron {
+  color: var(--text-faint);
+  font-size: 13px;
+  margin-right: 2px;
+}

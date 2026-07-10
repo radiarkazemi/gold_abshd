@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { fetchMyOrders, fetchMyBalance, fetchReceiptBlobUrl, uploadReceipt } from "../api";
 import { formatCashStatus } from "../utils/balanceFormat";
 import { useAuth } from "../context/AuthContext";
-import SideMenu from "../components/SideMenu";
+import { useTheme } from "../context/ThemeContext";
+import BottomTabBar from "../components/BottomTabBar";
 
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
 const AMOUNT_LABEL = { weight: "گرم ۱۸", amount: "تومان" };
@@ -39,6 +40,7 @@ function formatDate(iso) {
 
 export default function MyOrdersPage() {
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [orders, setOrders] = useState([]);
   const [balance, setBalance] = useState(null);
   const [filter, setFilter] = useState(null);
@@ -57,7 +59,12 @@ export default function MyOrdersPage() {
       .finally(() => setLoading(false));
   }
 
-  useEffect(reload, []);
+  useEffect(() => {
+    reload();
+    const interval = setInterval(reload, 6000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const visible = orders.filter((o) => {
     if (filter && o.status !== filter) return false;
@@ -104,11 +111,13 @@ export default function MyOrdersPage() {
   }
 
   return (
-    <div className="myorders">
+    <div className="myorders myorders--with-tabbar">
       <header className="myorders__header">
-        <SideMenu userPhone={user?.phone_number} onLogout={logout} />
+        <span />
         <h1 className="myorders__title">سفارش‌های من</h1>
-        <Link to="/" className="myorders__back">‹ بازگشت</Link>
+        <button className="theme-toggle-btn" onClick={toggleTheme} aria-label="تغییر پوسته">
+          {theme === "dark" ? "☀" : "☾"}
+        </button>
       </header>
 
       <div className="balance-card">
@@ -256,6 +265,7 @@ export default function MyOrdersPage() {
           ))}
         </div>
       )}
+      <BottomTabBar userPhone={user?.phone_number} onLogout={logout} />
     </div>
   );
 }

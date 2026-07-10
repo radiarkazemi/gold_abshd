@@ -2,15 +2,18 @@ import { useState, useEffect } from "react";
 import { usePriceFeed } from "../hooks/usePriceFeed";
 import { submitOrder, fetchSettlementLabel } from "../api";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
 import PriceButton from "../components/PriceButton";
 import OrderModal from "../components/OrderModal";
-import SideMenu from "../components/SideMenu";
 import NoticeCard from "../components/NoticeCard";
 import RecentOrdersTable from "../components/RecentOrdersTable";
+import BalanceStrip from "../components/BalanceStrip";
+import BottomTabBar from "../components/BottomTabBar";
 
 export default function TraderPage() {
   const { price, prevPrice, connected } = usePriceFeed();
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [activeSide, setActiveSide] = useState(null); // "buy" | "sell" | null
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
@@ -50,15 +53,19 @@ export default function TraderPage() {
   return (
     <div className="app">
       <header className="app__header">
-        <SideMenu userPhone={user?.phone_number} onLogout={logout} />
-        <h1 className="app__title">آبشده قصر طلا</h1>
         <span className={`app__status ${connected ? "is-live" : ""}`}>
           <span className="app__status-dot" />
           {connected ? "قیمت زنده" : "در حال اتصال…"}
         </span>
+        <h1 className="app__title">آبشده قصر طلا</h1>
+        <button className="theme-toggle-btn" onClick={toggleTheme} aria-label="تغییر پوسته">
+          {theme === "dark" ? "☀" : "☾"}
+        </button>
       </header>
 
-      <main className="app__main">
+      <main className="app__main app__main--with-tabbar">
+        <BalanceStrip />
+
         {price?.updated_at && (
           <p className="price-updated-note">
             آخرین آپدیت قیمت:{" "}
@@ -90,6 +97,8 @@ export default function TraderPage() {
           error={error}
         />
       )}
+
+      <BottomTabBar userPhone={user?.phone_number} onLogout={logout} />
     </div>
   );
 }

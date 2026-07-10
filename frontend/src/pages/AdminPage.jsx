@@ -6,6 +6,9 @@ import AdminNoticeTab from "./AdminNoticeTab";
 import AdminAddUserTab from "./AdminAddUserTab";
 import AdminRolesTab from "./AdminRolesTab";
 import AdminCalendarTab from "./AdminCalendarTab";
+import AdminDashboardTab from "./AdminDashboardTab";
+import AdminShell from "../components/AdminShell";
+import { playNotificationSound } from "../utils/notificationSound";
 
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
 const AMOUNT_LABEL = { weight: "گرم ۱۸", amount: "تومان" };
@@ -36,12 +39,19 @@ function formatTime(iso) {
 }
 
 function AdminPanel({ onLogout }) {
-  const [tab, setTab] = useState("orders"); // "orders" | "users"
+  const [tab, setTab] = useState("dashboard");
   const [orders, setOrders] = useState([]);
   const [filter, setFilter] = useState("pending");
   const [connected, setConnected] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [newOrderFlash, setNewOrderFlash] = useState(false);
+  const [wsTick, setWsTick] = useState(0);
   const wsRef = useRef(null);
+
+  function refreshPendingCount() {
+    fetchOrders("pending").then((data) => setPendingCount(data.length)).catch(() => {});
+  }
 
   async function reload(currentFilter = filter) {
     try {
@@ -58,13 +68,22 @@ function AdminPanel({ onLogout }) {
 
   useEffect(() => {
     reload(filter);
+    refreshPendingCount();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
 
   useEffect(() => {
-    const ws = openAdminSocket(() => {
+    const ws = openAdminSocket((message) => {
       // any new_order / order_updated event: just refresh the current view
       reload(filter);
+      refreshPendingCount();
+      setWsTick((t) => t + 1);
+
+      if (message?.type === "new_order") {
+        playNotificationSound();
+        setNewOrderFlash(true);
+        setTimeout(() => setNewOrderFlash(false), 2500);
+      }
     });
     ws.onopen = () => setConnected(true);
     ws.onclose = () => setConnected(false);
@@ -78,6 +97,7 @@ function AdminPanel({ onLogout }) {
     try {
       await decideOrder(orderId, status);
       await reload(filter);
+      refreshPendingCount();
     } catch (e) {
       console.error(e);
       alert("عملیات با خطا مواجه شد.");
@@ -97,58 +117,19 @@ function AdminPanel({ onLogout }) {
   }
 
   return (
-    <div className="admin">
-      <header className="admin__header">
-        <h1 className="admin__title">پنل ادمین — آبشده قصر طلا</h1>
-        <div className="app__header-right">
-          <span className={`app__status ${connected ? "is-live" : ""}`}>
-            <span className="app__status-dot" />
-            {connected ? "زنده" : "در حال اتصال…"}
-          </span>
-          <button className="app__logout" onClick={onLogout}>خروج</button>
-        </div>
-      </header>
-
-      <div className="admin__tabs">
-        <button
-          className={tab === "orders" ? "admin__tab is-active" : "admin__tab"}
-          onClick={() => setTab("orders")}
-        >
-          سفارش‌ها
-        </button>
-        <button
-          className={tab === "users" ? "admin__tab is-active" : "admin__tab"}
-          onClick={() => setTab("users")}
-        >
-          کاربران
-        </button>
-        <button
-          className={tab === "notice" ? "admin__tab is-active" : "admin__tab"}
-          onClick={() => setTab("notice")}
-        >
-          اطلاعیه
-        </button>
-        <button
-          className={tab === "add-user" ? "admin__tab is-active" : "admin__tab"}
-          onClick={() => setTab("add-user")}
-        >
-          کاربر جدید
-        </button>
-        <button
-          className={tab === "roles" ? "admin__tab is-active" : "admin__tab"}
-          onClick={() => setTab("roles")}
-        >
-          دسته‌بندی‌ها
-        </button>
-        <button
-          className={tab === "calendar" ? "admin__tab is-active" : "admin__tab"}
-          onClick={() => setTab("calendar")}
-        >
-          تقویم
-        </button>
-      </div>
-
-      {tab === "users" ? (
+    <AdminShell
+      activeTab={tab}
+      onTabChange={setTab}
+      pendingCount={pendingCount}
+      connected={connected}
+      onLogout={onLogout}
+    >
+      {newOrderFlash && (
+        <div className="new-order-flash">🔔 سفارش جدید دریافت شد</div>
+      )}
+      {tab === "dashboard" ? (
+        <AdminDashboardTab onGoToOrders={() => setTab("orders")} refreshSignal={wsTick} />
+      ) : tab === "users" ? (
         <AdminUsersTab />
       ) : tab === "notice" ? (
         <AdminNoticeTab />
@@ -186,6 +167,12 @@ function AdminPanel({ onLogout }) {
                   </div>
 
                   <div className="order-card__body">
+                    <div className="order-card__row">
+                      <span className="order-card__label">مشتری</span>
+                      <span className="order-card__value" dir="ltr">
+                        {order.customer_name || "بدون نام"} #{order.customer_code} · {order.customer_phone}
+                      </span>
+                    </div>
                     <div className="order-card__row">
                       <span className="order-card__label">مقدار</span>
                       <span className="order-card__value">{formatValue(order)}</span>
@@ -241,7 +228,7 @@ function AdminPanel({ onLogout }) {
           )}
         </>
       )}
-    </div>
+    </AdminShell>
   );
 }
 

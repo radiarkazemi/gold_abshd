@@ -23,6 +23,13 @@ class OrderOut(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # Only populated on admin-facing endpoints - who actually placed this
+    # order. Left null on the user's own /api/my/orders response since
+    # they already know it's their own order.
+    customer_name: Optional[str] = None
+    customer_code: Optional[str] = None
+    customer_phone: Optional[str] = None
+
     class Config:
         from_attributes = True
 

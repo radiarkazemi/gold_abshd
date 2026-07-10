@@ -124,6 +124,14 @@ export async function fetchMyOrders() {
   return res.json();
 }
 
+export async function fetchMyTransactions() {
+  const res = await fetch(`${API_BASE}/api/my/transactions`, {
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to fetch transactions");
+  return res.json();
+}
+
 export async function fetchMyBalance() {
   const res = await fetch(`${API_BASE}/api/my/balance`, {
     headers: { ...authHeaders() },

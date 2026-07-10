@@ -293,3 +293,7 @@
   padding: 8px 10px;
   font-size: 12px;
 }
+
+.myorders--with-tabbar {
+  padding-bottom: calc(78px + env(safe-area-inset-bottom));
+}

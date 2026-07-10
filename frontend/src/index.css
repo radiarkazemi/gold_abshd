@@ -27,6 +27,7 @@
 
   --bg-gradient-outer: #241d10;
   --bg-gradient-inner: #12100b;
+  --surface-deep: #1a160e;
 }
 
 :root[data-theme="light"] {
@@ -50,6 +51,7 @@
 
   --bg-gradient-outer: #f3ecd8;
   --bg-gradient-inner: #faf7f0;
+  --surface-deep: #f0e8d4;
 }
 
 * {

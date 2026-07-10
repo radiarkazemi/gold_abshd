@@ -26,9 +26,14 @@ export default function RecentOrdersTable({ limit = 5 }) {
   const [orders, setOrders] = useState(null);
 
   useEffect(() => {
-    fetchMyOrders()
-      .then((data) => setOrders(data.slice(0, limit)))
-      .catch(() => setOrders([]));
+    function load() {
+      fetchMyOrders()
+        .then((data) => setOrders(data.slice(0, limit)))
+        .catch(() => setOrders([]));
+    }
+    load();
+    const interval = setInterval(load, 6000);
+    return () => clearInterval(interval);
   }, [limit]);
 
   if (orders === null || orders.length === 0) return null;

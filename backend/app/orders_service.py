@@ -69,15 +69,14 @@ def apply_commission(base_price: float, user: User) -> float:
 
 
 def create_order(db: Session, user: User, side: str, amount_type: str, value: float,
-                 description: str, current_price) -> Order:
+                  description: str, current_price) -> Order:
     mesghal17_price = (
         current_price.buy_price if side == "buy" else current_price.sell_price
     )
     real_gram18 = (
         current_price.gram18_buy_price if side == "buy" else current_price.gram18_sell_price
     )
-    base_gram18_price = real_gram18 if real_gram18 is not None else mesghal17_to_gram18(
-        mesghal17_price)
+    base_gram18_price = real_gram18 if real_gram18 is not None else mesghal17_to_gram18(mesghal17_price)
     price_at_submit = apply_commission(base_gram18_price, user)
 
     weight = value if amount_type == "weight" else value / price_at_submit
@@ -119,13 +118,22 @@ def get_user_balance(db: Session, user_id: str) -> dict:
     return {"gold_balance": float(gold_balance), "cash_balance": float(cash_balance)}
 
 
+def get_user_transactions(db: Session, user_id: str, limit: int = 20) -> list[BalanceTransaction]:
+    return (
+        db.query(BalanceTransaction)
+        .filter(BalanceTransaction.user_id == user_id)
+        .order_by(BalanceTransaction.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+
 def decide_order(db: Session, order_id: str, status: str) -> Order:
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
     if order.status != OrderStatusEnum.pending:
-        raise HTTPException(
-            status_code=400, detail="این سفارش قبلا تصمیم‌گیری شده")
+        raise HTTPException(status_code=400, detail="این سفارش قبلا تصمیم‌گیری شده")
     if status not in ("accepted", "rejected"):
         raise HTTPException(status_code=400, detail="وضعیت نامعتبر است")
 
@@ -199,7 +207,7 @@ def list_users_with_balance(db: Session, search: str | None = None) -> list[dict
 
 
 def update_user(db: Session, user_id: str, full_name: str | None, role_id: str | None,
-                national_id: str | None, notes: str | None) -> User:
+                 national_id: str | None, notes: str | None) -> User:
     user = get_user_or_404(db, user_id)
 
     if full_name is not None:
@@ -207,8 +215,7 @@ def update_user(db: Session, user_id: str, full_name: str | None, role_id: str |
     if role_id is not None:
         role = db.query(Role).filter(Role.id == role_id).first()
         if not role:
-            raise HTTPException(
-                status_code=400, detail="دسته‌بندی انتخاب‌شده پیدا نشد")
+            raise HTTPException(status_code=400, detail="دسته‌بندی انتخاب‌شده پیدا نشد")
         user.role_id = role_id
     if national_id is not None:
         user.national_id = national_id
@@ -218,6 +225,22 @@ def update_user(db: Session, user_id: str, full_name: str | None, role_id: str |
     db.commit()
     db.refresh(user)
     return user
+
+
+def order_customer_fields(order: Order) -> dict:
+    """
+    Extra fields (customer name/code/phone) to merge into an order's
+    admin-facing JSON representation. `order.user` is a lazy relationship -
+    accessing it triggers one extra query per order if not already loaded,
+    which is fine at the current order volume.
+    """
+    if not order.user:
+        return {"customer_name": None, "customer_code": None, "customer_phone": None}
+    return {
+        "customer_name": order.user.full_name,
+        "customer_code": order.user.user_code,
+        "customer_phone": order.user.phone_number,
+    }
 
 
 def get_user_or_404(db: Session, user_id: str) -> User:
@@ -231,8 +254,7 @@ def adjust_balance(db: Session, user_id: str, gold_change: float, cash_change: f
     get_user_or_404(db, user_id)  # 404s if missing
 
     if not gold_change and not cash_change:
-        raise HTTPException(
-            status_code=400, detail="حداقل یکی از مقادیر طلا یا نقدی باید غیرصفر باشد")
+        raise HTTPException(status_code=400, detail="حداقل یکی از مقادیر طلا یا نقدی باید غیرصفر باشد")
 
     txn = BalanceTransaction(
         user_id=user_id,
