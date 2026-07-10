@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePriceFeed } from "../hooks/usePriceFeed";
-import { submitOrder } from "../api";
+import { submitOrder, fetchSettlementLabel } from "../api";
 import { useAuth } from "../context/AuthContext";
 import PriceButton from "../components/PriceButton";
 import OrderModal from "../components/OrderModal";
 import SideMenu from "../components/SideMenu";
 import NoticeCard from "../components/NoticeCard";
+import RecentOrdersTable from "../components/RecentOrdersTable";
 
 export default function TraderPage() {
   const { price, prevPrice, connected } = usePriceFeed();
@@ -14,6 +15,11 @@ export default function TraderPage() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const [settlement, setSettlement] = useState(null);
+
+  useEffect(() => {
+    fetchSettlementLabel().then(setSettlement).catch(() => {});
+  }, []);
 
   function openModal(side) {
     setResult(null);
@@ -53,11 +59,24 @@ export default function TraderPage() {
       </header>
 
       <main className="app__main">
+        {price?.updated_at && (
+          <p className="price-updated-note">
+            آخرین آپدیت قیمت:{" "}
+            {new Date(price.updated_at).toLocaleString("fa-IR", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+              weekday: "long",
+            })}
+            {settlement && <span className="settlement-badge"> · {settlement.label}</span>}
+          </p>
+        )}
         <div className="price-stage">
           <PriceButton side="buy" price={price} prevPrice={prevPrice} onClick={openModal} />
           <PriceButton side="sell" price={price} prevPrice={prevPrice} onClick={openModal} />
         </div>
         <NoticeCard />
+        <RecentOrdersTable limit={5} />
       </main>
 
       {activeSide && (

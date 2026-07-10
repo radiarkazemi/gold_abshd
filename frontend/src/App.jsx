@@ -5,10 +5,13 @@ import TraderPage from "./pages/TraderPage";
 import AdminPage from "./pages/AdminPage";
 import LoginPage from "./pages/LoginPage";
 import MyOrdersPage from "./pages/MyOrdersPage";
+import BalancePage from "./pages/BalancePage";
+import PlaceholderPage from "./pages/PlaceholderPage";
 import "./components/PriceButton.css";
 import "./components/OrderModal.css";
 import "./components/SideMenu.css";
 import "./components/NoticeCard.css";
+import "./components/RecentOrdersTable.css";
 import "./pages/AdminPage.css";
 import "./pages/LoginPage.css";
 import "./pages/MyOrdersPage.css";
@@ -32,6 +35,12 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Protected><TraderPage /></Protected>} />
             <Route path="/my-orders" element={<Protected><MyOrdersPage /></Protected>} />
+            <Route path="/balance" element={<Protected><BalancePage /></Protected>} />
+            <Route path="/kyc" element={<Protected><PlaceholderPage title="احراز هویت" /></Protected>} />
+            <Route path="/upload-receipt" element={<Protected><PlaceholderPage title="ارسال فیش واریز" /></Protected>} />
+            <Route path="/register-transfer" element={<Protected><PlaceholderPage title="ثبت حواله" /></Protected>} />
+            <Route path="/terms" element={<Protected><PlaceholderPage title="شرایط و قوانین" /></Protected>} />
+            <Route path="/about" element={<Protected><PlaceholderPage title="درباره ما" /></Protected>} />
             <Route path={ADMIN_PATH} element={<AdminPage />} />
           </Routes>
         </BrowserRouter>

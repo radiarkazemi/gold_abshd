@@ -1,5 +1,6 @@
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 const WS_BASE = API_BASE.replace(/^http/, "ws");
+import { getDeviceId, getDeviceInfo } from "./utils/deviceId";
 const TOKEN_KEY = "goldapp_token";
 
 export function getToken() {
@@ -51,21 +52,34 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-export async function requestOtp(phoneNumber) {
+export async function requestOtp(phoneNumber, registrationKey) {
   const res = await fetch(`${API_BASE}/api/auth/request-otp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phone_number: phoneNumber }),
+    body: JSON.stringify({
+      phone_number: phoneNumber,
+      device_id: getDeviceId(),
+      registration_key: registrationKey || null,
+    }),
   });
-  if (!res.ok) throw new Error("Failed to request OTP");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to request OTP");
+  }
   return res.json();
 }
 
-export async function verifyOtp(phoneNumber, code) {
+export async function verifyOtp(phoneNumber, code, registrationKey) {
   const res = await fetch(`${API_BASE}/api/auth/verify-otp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phone_number: phoneNumber, code }),
+    body: JSON.stringify({
+      phone_number: phoneNumber,
+      code,
+      device_id: getDeviceId(),
+      registration_key: registrationKey || null,
+      device_info: getDeviceInfo(),
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -249,6 +263,114 @@ export async function updateNotice(text) {
     body: JSON.stringify({ text }),
   });
   if (!res.ok) throw new Error("Failed to update notice");
+  return res.json();
+}
+
+export async function fetchRoles() {
+  const res = await fetch(`${API_BASE}/api/admin/roles`, {
+    headers: { ...adminAuthHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to fetch roles");
+  return res.json();
+}
+
+export async function createRole(name, commissionType, commissionValue) {
+  const res = await fetch(`${API_BASE}/api/admin/roles`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({ name, commission_type: commissionType, commission_value: commissionValue }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to create role");
+  }
+  return res.json();
+}
+
+export async function updateRoleCommission(roleId, commissionType, commissionValue) {
+  const res = await fetch(`${API_BASE}/api/admin/roles/${roleId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({ commission_type: commissionType, commission_value: commissionValue }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to update role");
+  }
+  return res.json();
+}
+
+export async function createUserAdmin({ phoneNumber, fullName, roleId, nationalId, notes, keyTtlDays }) {
+  const res = await fetch(`${API_BASE}/api/admin/users`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({
+      phone_number: phoneNumber,
+      full_name: fullName,
+      role_id: roleId,
+      national_id: nationalId || null,
+      notes: notes || null,
+      key_ttl_days: keyTtlDays || 14,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to create user");
+  }
+  return res.json();
+}
+
+export async function updateUserAdmin(userId, { fullName, roleId, nationalId, notes }) {
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({
+      full_name: fullName,
+      role_id: roleId,
+      national_id: nationalId,
+      notes: notes,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to update user");
+  }
+  return res.json();
+}
+
+export async function fetchSettlementLabel() {
+  const res = await fetch(`${API_BASE}/api/settlement-label`);
+  if (!res.ok) throw new Error("Failed to fetch settlement label");
+  return res.json();
+}
+
+export async function fetchHolidays() {
+  const res = await fetch(`${API_BASE}/api/admin/holidays`, {
+    headers: { ...adminAuthHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to fetch holidays");
+  return res.json();
+}
+
+export async function addHoliday(date, description) {
+  const res = await fetch(`${API_BASE}/api/admin/holidays`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({ date, description }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to add holiday");
+  }
+  return res.json();
+}
+
+export async function deleteHoliday(holidayId) {
+  const res = await fetch(`${API_BASE}/api/admin/holidays/${holidayId}`, {
+    method: "DELETE",
+    headers: { ...adminAuthHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to delete holiday");
   return res.json();
 }
 

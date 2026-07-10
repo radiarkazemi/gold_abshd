@@ -80,8 +80,9 @@
 .side-menu__nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   flex: 1;
+  overflow-y: auto;
 }
 
 .side-menu__item {

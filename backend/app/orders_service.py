@@ -31,6 +31,7 @@ from fastapi import HTTPException
 from app.models_db import (
     Order,
     User,
+    Role,
     BalanceTransaction,
     OrderStatusEnum,
     TransactionReasonEnum,
@@ -54,12 +55,30 @@ def order_total_toman(order: Order) -> float:
     return order.value * order.price_at_submit
 
 
+def apply_commission(base_price: float, user: User) -> float:
+    """
+    Adds the user's role-based commission on top of the base گرم۱۸ price.
+    No role assigned -> price is used as-is, no markup.
+    """
+    if not user.role:
+        return base_price
+    if user.role.commission_type.value == "fixed":
+        return base_price + user.role.commission_value
+    # percentage
+    return base_price * (1 + user.role.commission_value / 100)
+
+
 def create_order(db: Session, user: User, side: str, amount_type: str, value: float,
-                  description: str, current_price) -> Order:
+                 description: str, current_price) -> Order:
     mesghal17_price = (
         current_price.buy_price if side == "buy" else current_price.sell_price
     )
-    price_at_submit = mesghal17_to_gram18(mesghal17_price)
+    real_gram18 = (
+        current_price.gram18_buy_price if side == "buy" else current_price.gram18_sell_price
+    )
+    base_gram18_price = real_gram18 if real_gram18 is not None else mesghal17_to_gram18(
+        mesghal17_price)
+    price_at_submit = apply_commission(base_gram18_price, user)
 
     weight = value if amount_type == "weight" else value / price_at_submit
     if weight < settings.MIN_ORDER_WEIGHT:
@@ -105,7 +124,8 @@ def decide_order(db: Session, order_id: str, status: str) -> Order:
     if not order:
         raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
     if order.status != OrderStatusEnum.pending:
-        raise HTTPException(status_code=400, detail="این سفارش قبلا تصمیم‌گیری شده")
+        raise HTTPException(
+            status_code=400, detail="این سفارش قبلا تصمیم‌گیری شده")
     if status not in ("accepted", "rejected"):
         raise HTTPException(status_code=400, detail="وضعیت نامعتبر است")
 
@@ -150,22 +170,54 @@ def list_users_with_balance(db: Session, search: str | None = None) -> list[dict
     ).outerjoin(BalanceTransaction, BalanceTransaction.user_id == User.id)
 
     if search:
-        query = query.filter(User.phone_number.ilike(f"%{search}%"))
+        like = f"%{search}%"
+        query = query.filter(
+            (User.phone_number.ilike(like))
+            | (User.full_name.ilike(like))
+            | (User.user_code.ilike(like))
+        )
 
     query = query.group_by(User.id).order_by(User.created_at.desc())
 
     results = []
     for user, gold, cash in query.all():
+        reg_key = user.registration_key
         results.append({
             "id": user.id,
+            "user_code": user.user_code,
             "phone_number": user.phone_number,
             "full_name": user.full_name,
             "is_blocked": user.is_blocked,
             "created_at": user.created_at,
             "gold_balance": float(gold),
             "cash_balance": float(cash),
+            "role": user.role,
+            "is_online": user.is_online,
+            "registration_status": reg_key.status.value if reg_key else None,
         })
     return results
+
+
+def update_user(db: Session, user_id: str, full_name: str | None, role_id: str | None,
+                national_id: str | None, notes: str | None) -> User:
+    user = get_user_or_404(db, user_id)
+
+    if full_name is not None:
+        user.full_name = full_name
+    if role_id is not None:
+        role = db.query(Role).filter(Role.id == role_id).first()
+        if not role:
+            raise HTTPException(
+                status_code=400, detail="دسته‌بندی انتخاب‌شده پیدا نشد")
+        user.role_id = role_id
+    if national_id is not None:
+        user.national_id = national_id
+    if notes is not None:
+        user.notes = notes
+
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 def get_user_or_404(db: Session, user_id: str) -> User:
@@ -179,7 +231,8 @@ def adjust_balance(db: Session, user_id: str, gold_change: float, cash_change: f
     get_user_or_404(db, user_id)  # 404s if missing
 
     if not gold_change and not cash_change:
-        raise HTTPException(status_code=400, detail="حداقل یکی از مقادیر طلا یا نقدی باید غیرصفر باشد")
+        raise HTTPException(
+            status_code=400, detail="حداقل یکی از مقادیر طلا یا نقدی باید غیرصفر باشد")
 
     txn = BalanceTransaction(
         user_id=user_id,
@@ -197,6 +250,9 @@ def adjust_balance(db: Session, user_id: str, gold_change: float, cash_change: f
 def set_user_blocked(db: Session, user_id: str, is_blocked: bool) -> User:
     user = get_user_or_404(db, user_id)
     user.is_blocked = is_blocked
+    if is_blocked and user.registration_key:
+        from app.models_db import RegistrationKeyStatusEnum
+        user.registration_key.status = RegistrationKeyStatusEnum.banned
     db.commit()
     db.refresh(user)
     return user

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchMyOrders, fetchMyBalance, fetchReceiptBlobUrl, uploadReceipt } from "../api";
+import { formatCashStatus } from "../utils/balanceFormat";
 import { useAuth } from "../context/AuthContext";
 import SideMenu from "../components/SideMenu";
 
@@ -41,6 +42,8 @@ export default function MyOrdersPage() {
   const [orders, setOrders] = useState([]);
   const [balance, setBalance] = useState(null);
   const [filter, setFilter] = useState(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [loading, setLoading] = useState(true);
   const [uploadingId, setUploadingId] = useState(null);
 
@@ -56,7 +59,26 @@ export default function MyOrdersPage() {
 
   useEffect(reload, []);
 
-  const visible = filter ? orders.filter((o) => o.status === filter) : orders;
+  const visible = orders.filter((o) => {
+    if (filter && o.status !== filter) return false;
+    const created = new Date(o.created_at);
+    if (dateFrom && created < new Date(dateFrom)) return false;
+    if (dateTo && created > new Date(dateTo + "T23:59:59")) return false;
+    return true;
+  });
+
+  function applyQuickRange(days) {
+    const to = new Date();
+    const from = new Date();
+    from.setDate(from.getDate() - days);
+    setDateFrom(from.toISOString().slice(0, 10));
+    setDateTo(to.toISOString().slice(0, 10));
+  }
+
+  function clearDateRange() {
+    setDateFrom("");
+    setDateTo("");
+  }
 
   async function handleViewReceipt(orderId) {
     try {
@@ -99,11 +121,21 @@ export default function MyOrdersPage() {
         </div>
         <div className="balance-card__divider" />
         <div className="balance-card__item">
-          <span className="balance-card__label">موجودی نقدی</span>
-          <span className="balance-card__value">
-            {balance ? fa(Math.round(balance.cash_balance)) : "—"}
-            <span className="balance-card__unit"> تومان</span>
-          </span>
+          <span className="balance-card__label">وضعیت نقدی</span>
+          {balance ? (
+            (() => {
+              const status = formatCashStatus(balance.cash_balance);
+              return (
+                <span className={`balance-card__value cash-status ${status.className}`}>
+                  {status.amount}
+                  <span className="balance-card__unit"> تومان</span>
+                  <span className="cash-status__label">{status.label}</span>
+                </span>
+              );
+            })()
+          ) : (
+            <span className="balance-card__value">—</span>
+          )}
         </div>
       </div>
 
@@ -117,6 +149,27 @@ export default function MyOrdersPage() {
             {f.label}
           </button>
         ))}
+      </div>
+
+      <div className="date-filter">
+        <div className="date-filter__quick">
+          <button className="admin__filter" onClick={() => applyQuickRange(0)}>امروز</button>
+          <button className="admin__filter" onClick={() => applyQuickRange(1)}>دیروز تا امروز</button>
+          <button className="admin__filter" onClick={() => applyQuickRange(7)}>۷ روز اخیر</button>
+          {(dateFrom || dateTo) && (
+            <button className="admin__filter date-filter__clear" onClick={clearDateRange}>پاک کردن</button>
+          )}
+        </div>
+        <div className="date-filter__inputs">
+          <label className="date-filter__input-group">
+            <span>از</span>
+            <input type="date" className="field__input" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          </label>
+          <label className="date-filter__input-group">
+            <span>تا</span>
+            <input type="date" className="field__input" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          </label>
+        </div>
       </div>
 
       {loading ? (

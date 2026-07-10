@@ -3,6 +3,9 @@ import { fetchOrders, decideOrder, openAdminSocket, getAdminToken, clearAdminTok
 import AdminUsersTab from "./AdminUsersTab";
 import AdminLoginPage from "./AdminLoginPage";
 import AdminNoticeTab from "./AdminNoticeTab";
+import AdminAddUserTab from "./AdminAddUserTab";
+import AdminRolesTab from "./AdminRolesTab";
+import AdminCalendarTab from "./AdminCalendarTab";
 
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
 const AMOUNT_LABEL = { weight: "گرم ۱۸", amount: "تومان" };
@@ -125,12 +128,36 @@ function AdminPanel({ onLogout }) {
         >
           اطلاعیه
         </button>
+        <button
+          className={tab === "add-user" ? "admin__tab is-active" : "admin__tab"}
+          onClick={() => setTab("add-user")}
+        >
+          کاربر جدید
+        </button>
+        <button
+          className={tab === "roles" ? "admin__tab is-active" : "admin__tab"}
+          onClick={() => setTab("roles")}
+        >
+          دسته‌بندی‌ها
+        </button>
+        <button
+          className={tab === "calendar" ? "admin__tab is-active" : "admin__tab"}
+          onClick={() => setTab("calendar")}
+        >
+          تقویم
+        </button>
       </div>
 
       {tab === "users" ? (
         <AdminUsersTab />
       ) : tab === "notice" ? (
         <AdminNoticeTab />
+      ) : tab === "add-user" ? (
+        <AdminAddUserTab />
+      ) : tab === "roles" ? (
+        <AdminRolesTab />
+      ) : tab === "calendar" ? (
+        <AdminCalendarTab />
       ) : (
         <>
           <div className="admin__filters">

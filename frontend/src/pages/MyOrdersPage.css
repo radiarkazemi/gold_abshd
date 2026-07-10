@@ -235,3 +235,61 @@
   margin-top: 0;
   padding: 7px 14px;
 }
+
+.cash-status {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.cash-status--debtor {
+  color: var(--buy-bright);
+}
+
+.cash-status--creditor {
+  color: var(--sell-bright);
+}
+
+.cash-status--settled {
+  color: var(--text-faint);
+}
+
+.cash-status__label {
+  font-size: 11px;
+  font-family: var(--font-fa);
+}
+
+.date-filter {
+  margin-bottom: 16px;
+}
+
+.date-filter__quick {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-bottom: 8px;
+}
+
+.date-filter__clear {
+  color: var(--sell-bright);
+  border-color: var(--sell);
+}
+
+.date-filter__inputs {
+  display: flex;
+  gap: 8px;
+}
+
+.date-filter__input-group {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.date-filter__input-group input {
+  padding: 8px 10px;
+  font-size: 12px;
+}

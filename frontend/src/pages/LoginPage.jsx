@@ -6,10 +6,16 @@ function normalizePhone(value) {
   return value.replace(/[^\d]/g, "");
 }
 
+function normalizeKey(value) {
+  return value.toUpperCase().replace(/[^A-Z0-9-]/g, "");
+}
+
 export default function LoginPage() {
   const { login } = useAuth();
   const [step, setStep] = useState("phone"); // "phone" | "otp"
   const [phone, setPhone] = useState("");
+  const [regKey, setRegKey] = useState("");
+  const [needsKey, setNeedsKey] = useState(false);
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -24,12 +30,17 @@ export default function LoginPage() {
     }
     setLoading(true);
     try {
-      const res = await requestOtp(phone);
+      const res = await requestOtp(phone, regKey || undefined);
       setDebugCode(res.debug_code || null);
       setStep("otp");
     } catch (err) {
-      console.error(err);
-      setError("ارسال کد با خطا مواجه شد. دوباره تلاش کنید.");
+      const msg = err.message || "ارسال کد با خطا مواجه شد. دوباره تلاش کنید.";
+      if (msg.includes("کد ثبت‌نام لازم است")) {
+        setNeedsKey(true);
+        setError("این اولین ورود شماست - لطفا کد ثبت‌نامی که از مدیریت دریافت کرده‌اید را وارد کنید");
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -44,10 +55,10 @@ export default function LoginPage() {
     }
     setLoading(true);
     try {
-      const res = await verifyOtp(phone, code);
+      const res = await verifyOtp(phone, code, regKey || undefined);
       login(res.token, res.user);
     } catch (err) {
-      setError(err.message === "Failed to verify OTP" ? "کد نامعتبر است" : err.message || "کد نامعتبر است");
+      setError(err.message || "کد نامعتبر است");
     } finally {
       setLoading(false);
     }
@@ -57,10 +68,10 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const res = await requestOtp(phone);
+      const res = await requestOtp(phone, regKey || undefined);
       setDebugCode(res.debug_code || null);
     } catch (err) {
-      setError("ارسال مجدد کد با خطا مواجه شد.");
+      setError(err.message || "ارسال مجدد کد با خطا مواجه شد.");
     } finally {
       setLoading(false);
     }
@@ -87,6 +98,15 @@ export default function LoginPage() {
               value={phone}
               onChange={(e) => setPhone(normalizePhone(e.target.value))}
             />
+            {needsKey && (
+              <input
+                type="text"
+                placeholder="کد ثبت‌نام (مثال: XXXX-XXXX-XXXX)"
+                className="login__input login__input--key"
+                value={regKey}
+                onChange={(e) => setRegKey(normalizeKey(e.target.value))}
+              />
+            )}
             {error && <p className="login__error">{error}</p>}
             <button type="submit" className="login__btn" disabled={loading}>
               {loading ? "در حال ارسال…" : "دریافت کد تایید"}

@@ -289,3 +289,9 @@
   background: rgba(207, 100, 70, 0.18);
   color: var(--sell-bright);
 }
+
+.field__icon {
+  margin-left: 4px;
+  font-size: 12px;
+  opacity: 0.8;
+}

@@ -8,8 +8,14 @@ export default function SideMenu({ userPhone, onLogout }) {
   const { theme, toggleTheme } = useTheme();
 
   const items = [
-    { label: "قیمت‌ها", to: "/" },
+    { label: "خانه", to: "/" },
     { label: "سفارش‌های من", to: "/my-orders" },
+    { label: "مانده حساب", to: "/balance" },
+    { label: "احراز هویت", to: "/kyc" },
+    { label: "ارسال فیش واریز", to: "/upload-receipt" },
+    { label: "ثبت حواله", to: "/register-transfer" },
+    { label: "شرایط و قوانین", to: "/terms" },
+    { label: "درباره ما", to: "/about" },
   ];
 
   return (

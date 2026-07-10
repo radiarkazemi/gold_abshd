@@ -182,14 +182,16 @@
   border-radius: var(--radius-sm);
   padding: 4px;
   margin-bottom: 18px;
+  overflow-x: auto;
 }
 
 .admin__tab {
-  flex: 1;
+  flex: 0 0 auto;
+  white-space: nowrap;
   border: none;
   background: transparent;
   color: var(--text-muted);
-  padding: 9px 0;
+  padding: 9px 16px;
   border-radius: 7px;
   font-size: 14px;
   font-weight: 700;
@@ -365,4 +367,321 @@
 
 .txn-row__neg {
   color: var(--sell-bright);
+}
+
+.notice-editor__hint {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin: 0 0 12px;
+}
+
+.notice-editor__textarea {
+  min-height: 160px;
+  resize: vertical;
+  line-height: 1.9;
+}
+
+.notice-editor__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.notice-editor__saved {
+  font-size: 13px;
+  color: var(--buy-bright);
+}
+
+/* --- Add user form --- */
+.add-user-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.add-user-result {
+  text-align: center;
+  padding: 10px 0;
+}
+
+.add-user-result__title {
+  color: var(--buy-bright);
+  margin: 0 0 6px;
+}
+
+.add-user-result__phone {
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  direction: ltr;
+  margin: 0 0 18px;
+}
+
+.add-user-result__key-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-raised);
+  border: 1px dashed var(--gold-dim);
+  border-radius: var(--radius-md);
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+.add-user-result__key-label {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.add-user-result__key {
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: 2px;
+  color: var(--gold-bright);
+  direction: ltr;
+}
+
+.add-user-result__copy-btn {
+  border: 1px solid var(--gold-dim);
+  background: transparent;
+  color: var(--gold-bright);
+  font-size: 12px;
+  padding: 5px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.add-user-result__warning {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.9;
+  margin-bottom: 18px;
+}
+
+/* --- Roles tab --- */
+.role-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.role-row {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+.role-row__name {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.role-row__controls {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr auto;
+  gap: 6px;
+}
+
+.role-row__type,
+.role-row__value {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.role-row__save-btn {
+  border: none;
+  background: var(--buy);
+  color: #eafff2;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+/* --- Responsive user card grid --- */
+.user-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 640px) {
+  .user-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1000px) {
+  .user-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.user-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  cursor: pointer;
+  text-align: right;
+  color: var(--text);
+  font-family: inherit;
+}
+
+.user-card:hover {
+  border-color: var(--gold-dim);
+}
+
+.user-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.user-card__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.user-card__code {
+  font-family: var(--font-display);
+  font-size: 11px;
+  color: var(--text-faint);
+  direction: ltr;
+}
+
+.user-card__role {
+  font-size: 11px;
+  color: var(--gold-bright);
+  background: rgba(201, 162, 39, 0.12);
+  padding: 2px 8px;
+  border-radius: 999px;
+  width: fit-content;
+}
+
+.user-card__phone {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-family: var(--font-display);
+}
+
+.user-card__online-dot,
+.user-detail__online-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--buy-bright);
+  box-shadow: 0 0 0 0 rgba(76, 154, 114, 0.6);
+  animation: pulse 1.8s infinite;
+}
+
+.user-detail__online-dot {
+  margin-right: 6px;
+}
+
+/* --- User detail extras --- */
+.user-detail__code {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-family: var(--font-display);
+  font-weight: 400;
+}
+
+.user-detail__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.user-detail__edit-btn {
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.user-detail__edit-btn:hover {
+  border-color: var(--gold-dim);
+  color: var(--gold-bright);
+}
+
+.user-detail__role-tag {
+  font-size: 12px;
+  color: var(--gold-bright);
+  background: rgba(201, 162, 39, 0.1);
+  border: 1px solid var(--gold-dim);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin: 10px 0;
+}
+
+/* --- Registration key box --- */
+.reg-key-box {
+  background: var(--surface-raised);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  margin: 16px 0;
+}
+
+.reg-key-box__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.reg-key-box__key {
+  font-family: var(--font-display);
+  font-size: 15px;
+  letter-spacing: 1px;
+  color: var(--gold-bright);
+  direction: ltr;
+}
+
+.reg-key-box__status {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+
+.reg-key-box__status--pending {
+  background: rgba(201, 162, 39, 0.15);
+  color: var(--gold-bright);
+}
+
+.reg-key-box__status--active {
+  background: rgba(76, 154, 114, 0.18);
+  color: var(--buy-bright);
+}
+
+.reg-key-box__status--banned {
+  background: rgba(207, 100, 70, 0.18);
+  color: var(--sell-bright);
+}
+
+.reg-key-box__meta {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 4px;
 }

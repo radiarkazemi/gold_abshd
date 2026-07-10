@@ -152,6 +152,7 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
 
             <label className="field">
               <span className="field__label">
+                <span className="field__icon">{amountType === "weight" ? "⚖️" : "💰"}</span>
                 {amountType === "weight" ? "وزن (گرم ۱۸)" : "مبلغ (تومان)"}
               </span>
               <input
@@ -182,7 +183,7 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
             )}
 
             <label className="field">
-              <span className="field__label">توضیحات</span>
+              <span className="field__label"><span className="field__icon">📝</span>توضیحات</span>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}

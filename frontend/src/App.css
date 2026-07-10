@@ -121,3 +121,57 @@
   justify-content: center;
   padding: 24px 16px 60px;
 }
+
+.placeholder-page {
+  flex: 1;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.placeholder-page__icon {
+  font-size: 40px;
+  margin-bottom: 14px;
+  opacity: 0.6;
+}
+
+.placeholder-page__title {
+  font-size: 18px;
+  color: var(--text);
+  margin: 0 0 8px;
+}
+
+.placeholder-page__text {
+  font-size: 13px;
+  color: var(--text-faint);
+  margin: 0 0 22px;
+}
+
+.placeholder-page__back {
+  font-size: 13px;
+  color: var(--gold-bright);
+  border: 1px solid var(--gold-dim);
+  padding: 8px 20px;
+  border-radius: 999px;
+  text-decoration: none;
+}
+
+.price-updated-note {
+  width: 100%;
+  max-width: 720px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin: 0 0 10px;
+}
+
+.settlement-badge {
+  color: var(--gold-bright);
+  font-weight: 700;
+}

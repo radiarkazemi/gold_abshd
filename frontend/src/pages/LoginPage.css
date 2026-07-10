@@ -104,3 +104,10 @@
 .login__link:hover {
   color: var(--gold-bright);
 }
+
+.login__input--key {
+  direction: ltr;
+  letter-spacing: 2px;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+}
