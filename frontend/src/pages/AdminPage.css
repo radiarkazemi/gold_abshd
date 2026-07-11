@@ -774,3 +774,106 @@
   margin-bottom: 16px;
   animation: fadeIn 200ms ease;
 }
+
+/* --- Order totals summary bar --- */
+.order-totals {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.order-totals__item {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.order-totals__item--buy {
+  border-inline-start: 3px solid var(--buy);
+}
+
+.order-totals__item--sell {
+  border-inline-start: 3px solid var(--sell);
+}
+
+.order-totals__label {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.order-totals__value {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.order-totals__sub {
+  font-family: var(--font-display);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* --- Orders table (desktop-first, scrolls on mobile) --- */
+.order-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+}
+
+.order-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.order-table thead {
+  background: var(--surface-raised);
+}
+
+.order-table th {
+  padding: 12px 14px;
+  text-align: right;
+  color: var(--text-faint);
+  font-weight: 600;
+  font-size: 11.5px;
+}
+
+.order-table td {
+  padding: 12px 14px;
+  border-top: 1px solid var(--hairline);
+  color: var(--text);
+}
+
+.order-table__customer {
+  color: var(--text-muted);
+}
+
+.order-table__balance {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-display);
+  font-size: 11.5px;
+}
+
+.order-table__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.order-table__receipt-btn {
+  border: 1px solid var(--gold-dim);
+  background: transparent;
+  color: var(--gold-bright);
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}

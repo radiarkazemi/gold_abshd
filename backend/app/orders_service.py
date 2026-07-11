@@ -98,11 +98,59 @@ def create_order(db: Session, user: User, side: str, amount_type: str, value: fl
         value=value,
         description=description or "",
         price_at_submit=price_at_submit,
+        mesghal17_price_at_submit=mesghal17_price,
     )
     db.add(order)
     db.commit()
     db.refresh(order)
     return order
+
+
+def create_phone_order(
+    db: Session,
+    user_id: str,
+    side: str,
+    amount_type: str,
+    value: float,
+    mesghal17_price: float,
+    description: str,
+) -> Order:
+    """
+    Admin manually enters an order taken over the phone. The admin
+    supplies the مثقال۱۷ price themselves (already negotiated with the
+    customer during the call), so no role commission is layered on top -
+    the entered price IS the final price. The order is created already
+    ACCEPTED (it's already a confirmed trade, not something pending
+    review), and the matching balance transaction is created immediately,
+    same as a normal admin-accepted order.
+    """
+    user = get_user_or_404(db, user_id)
+
+    gram18_price = mesghal17_to_gram18(mesghal17_price)
+
+    weight = value if amount_type == "weight" else value / gram18_price
+    if weight < settings.MIN_ORDER_WEIGHT or weight > settings.MAX_ORDER_WEIGHT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"مقدار باید بین {settings.MIN_ORDER_WEIGHT} و {settings.MAX_ORDER_WEIGHT} گرم ۱۸ باشد",
+        )
+
+    order = Order(
+        user_id=user.id,
+        side=side,
+        amount_type=amount_type,
+        value=value,
+        description=description or "ثبت‌شده توسط ادمین (حواله تلفنی)",
+        price_at_submit=gram18_price,
+        mesghal17_price_at_submit=mesghal17_price,
+        status=OrderStatusEnum.pending,
+    )
+    db.add(order)
+    db.commit()
+    db.refresh(order)
+
+    # immediately accept it - a phone order is already a confirmed trade
+    return decide_order(db, order.id, "accepted")
 
 
 def get_user_balance(db: Session, user_id: str) -> dict:
@@ -227,19 +275,24 @@ def update_user(db: Session, user_id: str, full_name: str | None, role_id: str |
     return user
 
 
-def order_customer_fields(order: Order) -> dict:
+def order_customer_fields(db: Session, order: Order) -> dict:
     """
-    Extra fields (customer name/code/phone) to merge into an order's
-    admin-facing JSON representation. `order.user` is a lazy relationship -
-    accessing it triggers one extra query per order if not already loaded,
-    which is fine at the current order volume.
+    Extra fields (customer name/code/phone + their CURRENT balance) to
+    merge into an order's admin-facing JSON representation. The balance
+    is a live snapshot at read time, not stored on the order itself.
     """
     if not order.user:
-        return {"customer_name": None, "customer_code": None, "customer_phone": None}
+        return {
+            "customer_name": None, "customer_code": None, "customer_phone": None,
+            "customer_gold_balance": None, "customer_cash_balance": None,
+        }
+    balance = get_user_balance(db, order.user_id)
     return {
         "customer_name": order.user.full_name,
         "customer_code": order.user.user_code,
         "customer_phone": order.user.phone_number,
+        "customer_gold_balance": balance["gold_balance"],
+        "customer_cash_balance": balance["cash_balance"],
     }
 
 

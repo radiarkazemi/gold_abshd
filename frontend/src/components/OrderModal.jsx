@@ -13,7 +13,7 @@ const STATUS_META = {
 };
 
 function toFarsiNumber(n) {
-  return Number(n).toLocaleString("fa-IR", { maximumFractionDigits: 2 });
+  return Number(n).toLocaleString("en-US", { maximumFractionDigits: 2 });
 }
 
 export default function OrderModal({ side, price, onClose, onSubmit, submitting, result, error }) {

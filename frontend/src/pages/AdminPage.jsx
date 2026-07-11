@@ -7,8 +7,15 @@ import AdminAddUserTab from "./AdminAddUserTab";
 import AdminRolesTab from "./AdminRolesTab";
 import AdminCalendarTab from "./AdminCalendarTab";
 import AdminDashboardTab from "./AdminDashboardTab";
+import AdminPhoneOrderTab from "./AdminPhoneOrderTab";
 import AdminShell from "../components/AdminShell";
 import { playNotificationSound } from "../utils/notificationSound";
+import { orderGoldWeight, orderTotalMoney, summarizeOrders } from "../utils/orderCalc";
+import { formatCashStatus } from "../utils/balanceFormat";
+
+function fa(n, opts) {
+  return Number(n).toLocaleString("fa-IR", opts);
+}
 
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
 const AMOUNT_LABEL = { weight: "گرم ۱۸", amount: "تومان" };
@@ -47,6 +54,7 @@ function AdminPanel({ onLogout }) {
   const [pendingCount, setPendingCount] = useState(0);
   const [newOrderFlash, setNewOrderFlash] = useState(false);
   const [wsTick, setWsTick] = useState(0);
+  const orderTotals = summarizeOrders(orders);
   const wsRef = useRef(null);
 
   function refreshPendingCount() {
@@ -139,6 +147,8 @@ function AdminPanel({ onLogout }) {
         <AdminRolesTab />
       ) : tab === "calendar" ? (
         <AdminCalendarTab />
+      ) : tab === "phone-order" ? (
+        <AdminPhoneOrderTab />
       ) : (
         <>
           <div className="admin__filters">
@@ -153,77 +163,103 @@ function AdminPanel({ onLogout }) {
             ))}
           </div>
 
+          {orders.length > 0 && (
+            <div className="order-totals">
+              <div className="order-totals__item order-totals__item--buy">
+                <span className="order-totals__label">مجموع خرید ({orderTotals.buy.count})</span>
+                <span className="order-totals__value">{fa(orderTotals.buy.weight, { maximumFractionDigits: 3 })} گرم۱۸</span>
+                <span className="order-totals__sub">{fa(Math.round(orderTotals.buy.money))} تومان</span>
+              </div>
+              <div className="order-totals__item order-totals__item--sell">
+                <span className="order-totals__label">مجموع فروش ({orderTotals.sell.count})</span>
+                <span className="order-totals__value">{fa(orderTotals.sell.weight, { maximumFractionDigits: 3 })} گرم۱۸</span>
+                <span className="order-totals__sub">{fa(Math.round(orderTotals.sell.money))} تومان</span>
+              </div>
+            </div>
+          )}
+
           {orders.length === 0 ? (
             <p className="admin__empty">سفارشی برای نمایش نیست.</p>
           ) : (
-            <div className="admin__list">
-              {orders.map((order) => (
-                <div key={order.id} className={`order-card order-card--${order.side}`}>
-                  <div className="order-card__top">
-                    <span className={`order-card__badge order-card__badge--${order.side}`}>
-                      {SIDE_LABEL[order.side]}
-                    </span>
-                    <span className="order-card__time">{formatTime(order.created_at)}</span>
-                  </div>
-
-                  <div className="order-card__body">
-                    <div className="order-card__row">
-                      <span className="order-card__label">مشتری</span>
-                      <span className="order-card__value" dir="ltr">
-                        {order.customer_name || "بدون نام"} #{order.customer_code} · {order.customer_phone}
-                      </span>
-                    </div>
-                    <div className="order-card__row">
-                      <span className="order-card__label">مقدار</span>
-                      <span className="order-card__value">{formatValue(order)}</span>
-                    </div>
-                    <div className="order-card__row">
-                      <span className="order-card__label">قیمت لحظه ثبت</span>
-                      <span className="order-card__value">{formatPrice(order.price_at_submit)} تومان</span>
-                    </div>
-                    {order.description && (
-                      <div className="order-card__row">
-                        <span className="order-card__label">توضیحات</span>
-                        <span className="order-card__value">{order.description}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {order.has_receipt && (
-                    <button
-                      type="button"
-                      className="history-card__receipt-btn"
-                      onClick={() => handleViewReceipt(order.id)}
-                      style={{ marginBottom: 10 }}
-                    >
-                      مشاهده فیش
-                    </button>
-                  )}
-
-                  {order.status === "pending" ? (
-                    <div className="order-card__actions">
-                      <button
-                        className="order-btn order-btn--reject"
-                        disabled={busyId === order.id}
-                        onClick={() => handleDecision(order.id, "rejected")}
-                      >
-                        رد
-                      </button>
-                      <button
-                        className="order-btn order-btn--accept"
-                        disabled={busyId === order.id}
-                        onClick={() => handleDecision(order.id, "accepted")}
-                      >
-                        تایید
-                      </button>
-                    </div>
-                  ) : (
-                    <div className={`order-card__status order-card__status--${order.status}`}>
-                      {STATUS_LABEL[order.status]}
-                    </div>
-                  )}
-                </div>
-              ))}
+            <div className="order-table-wrap">
+              <table className="order-table">
+                <thead>
+                  <tr>
+                    <th>نوع</th>
+                    <th>وزن طلا</th>
+                    <th>مبلغ کل</th>
+                    <th>قیمت (مثقال ۱۷)</th>
+                    <th>مشتری</th>
+                    <th>موجودی مشتری</th>
+                    <th>زمان</th>
+                    <th>وضعیت</th>
+                    <th>عملیات</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orders.map((order) => (
+                    <tr key={order.id}>
+                      <td>
+                        <span className={`order-card__badge order-card__badge--${order.side}`}>
+                          {SIDE_LABEL[order.side]}
+                        </span>
+                      </td>
+                      <td>{fa(orderGoldWeight(order), { maximumFractionDigits: 4 })} گرم۱۸</td>
+                      <td>{fa(Math.round(orderTotalMoney(order)))} ت</td>
+                      <td>{order.mesghal17_price_at_submit ? fa(Math.round(order.mesghal17_price_at_submit)) : "—"}</td>
+                      <td dir="ltr" className="order-table__customer">
+                        {order.customer_name || "بدون نام"} #{order.customer_code}
+                      </td>
+                      <td className="order-table__balance">
+                        <span>{fa(order.customer_gold_balance, { maximumFractionDigits: 2 })} گرم۱۸</span>
+                        <span className={formatCashStatus(order.customer_cash_balance).className}>
+                          {formatCashStatus(order.customer_cash_balance).amount} ت
+                        </span>
+                      </td>
+                      <td>{formatTime(order.created_at)}</td>
+                      <td>
+                        {order.status === "pending" ? (
+                          <span className="order-card__status order-card__status--pending">در انتظار</span>
+                        ) : (
+                          <span className={`order-card__status order-card__status--${order.status}`}>
+                            {STATUS_LABEL[order.status]}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="order-table__actions">
+                          {order.status === "pending" && (
+                            <>
+                              <button
+                                className="order-btn order-btn--accept"
+                                disabled={busyId === order.id}
+                                onClick={() => handleDecision(order.id, "accepted")}
+                              >
+                                تایید
+                              </button>
+                              <button
+                                className="order-btn order-btn--reject"
+                                disabled={busyId === order.id}
+                                onClick={() => handleDecision(order.id, "rejected")}
+                              >
+                                رد
+                              </button>
+                            </>
+                          )}
+                          {order.has_receipt && (
+                            <button
+                              className="order-table__receipt-btn"
+                              onClick={() => handleViewReceipt(order.id)}
+                            >
+                              قبض
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </>

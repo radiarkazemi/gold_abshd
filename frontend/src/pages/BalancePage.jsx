@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { fetchMyBalance, fetchMyTransactions } from "../api";
-import { formatCashStatus } from "../utils/balanceFormat";
+import { formatCashStatus, formatGoldStatus } from "../utils/balanceFormat";
 import BottomTabBar from "../components/BottomTabBar";
 
 function fa(n, opts) {
-  return Number(n).toLocaleString("fa-IR", opts);
+  return Number(n).toLocaleString("en-US", opts);
 }
 
 function formatDate(iso) {
@@ -56,10 +56,20 @@ export default function BalancePage() {
         <div className="balance-card">
           <div className="balance-card__item">
             <span className="balance-card__label">موجودی طلا</span>
-            <span className="balance-card__value">
-              {balance ? fa(balance.gold_balance, { maximumFractionDigits: 4 }) : "—"}
-              <span className="balance-card__unit"> گرم ۱۸</span>
-            </span>
+            {balance ? (
+              (() => {
+                const gStatus = formatGoldStatus(balance.gold_balance);
+                return (
+                  <span className={`balance-card__value cash-status ${gStatus.className}`}>
+                    {gStatus.amount}
+                    <span className="balance-card__unit"> گرم ۱۸</span>
+                    {gStatus.label && <span className="cash-status__label">{gStatus.label}</span>}
+                  </span>
+                );
+              })()
+            ) : (
+              <span className="balance-card__value">—</span>
+            )}
           </div>
           <div className="balance-card__divider" />
           <div className="balance-card__item">
@@ -101,7 +111,7 @@ export default function BalancePage() {
                   {t.gold_change !== 0 && (
                     <span className={t.gold_change > 0 ? "txn-row__pos" : "txn-row__neg"}>
                       {t.gold_change > 0 ? "+" : ""}
-                      {fa(t.gold_change, { maximumFractionDigits: 4 })} گرم ۱۸
+                      {fa(t.gold_change, { maximumFractionDigits: 3 })} گرم ۱۸
                     </span>
                   )}
                   {t.cash_change !== 0 && (

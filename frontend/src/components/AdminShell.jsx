@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useTheme } from "../context/ThemeContext";
 
 const NAV_ITEMS = [
   { key: "dashboard", label: "داشبورد", icon: "◆" },
   { key: "orders", label: "سفارش‌ها", icon: "▤", badgeKey: "pending" },
+  { key: "phone-order", label: "حواله تلفنی", icon: "☎" },
   { key: "users", label: "کاربران", icon: "◈" },
   { key: "add-user", label: "کاربر جدید", icon: "+" },
   { key: "roles", label: "دسته‌بندی‌ها", icon: "≡" },
@@ -13,6 +15,7 @@ const NAV_ITEMS = [
 const TITLES = {
   dashboard: "داشبورد",
   orders: "سفارش‌ها",
+  "phone-order": "حواله تلفنی",
   users: "کاربران",
   "add-user": "کاربر جدید",
   roles: "دسته‌بندی‌ها",
@@ -24,6 +27,7 @@ const MOBILE_PRIMARY = ["dashboard", "orders", "users"];
 
 export default function AdminShell({ activeTab, onTabChange, pendingCount, connected, onLogout, children }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const { theme, toggleTheme } = useTheme();
 
   function selectTab(key) {
     onTabChange(key);
@@ -65,6 +69,9 @@ export default function AdminShell({ activeTab, onTabChange, pendingCount, conne
             <span className={`admin-shell__live-dot ${connected ? "is-live" : ""}`} />
             {connected ? "اتصال زنده فعال" : "در حال اتصال…"}
           </div>
+          <button className="admin-shell__theme-toggle" onClick={toggleTheme}>
+            {theme === "dark" ? "☀ حالت روشن" : "☾ حالت تیره"}
+          </button>
           <button className="admin-shell__logout" onClick={onLogout}>خروج از پنل</button>
         </div>
       </aside>
@@ -72,7 +79,12 @@ export default function AdminShell({ activeTab, onTabChange, pendingCount, conne
       <div className="admin-shell__main">
         <header className="admin-shell__header">
           <h1 className="admin-shell__title">{TITLES[activeTab]}</h1>
-          <span className="admin-shell__avatar">ا.ا</span>
+          <div className="admin-shell__header-actions">
+            <button className="theme-toggle-btn admin-shell__theme-toggle-mobile" onClick={toggleTheme} aria-label="تغییر پوسته">
+              {theme === "dark" ? "☀" : "☾"}
+            </button>
+            <span className="admin-shell__avatar">ا.ا</span>
+          </div>
         </header>
 
         <div className="admin-shell__content">{children}</div>

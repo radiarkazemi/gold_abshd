@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchMyOrders, fetchMyBalance, fetchReceiptBlobUrl, uploadReceipt } from "../api";
-import { formatCashStatus } from "../utils/balanceFormat";
+import { formatCashStatus, formatGoldStatus } from "../utils/balanceFormat";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import BottomTabBar from "../components/BottomTabBar";
+import JalaliDateInput from "../components/JalaliDateInput";
 
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
 const AMOUNT_LABEL = { weight: "گرم ۱۸", amount: "تومان" };
@@ -22,11 +23,12 @@ const FILTERS = [
 ];
 
 function fa(n, opts) {
-  return Number(n).toLocaleString("fa-IR", opts);
+  return Number(n).toLocaleString("en-US", opts);
 }
 
 function formatValue(order) {
-  return `${fa(order.value, { maximumFractionDigits: 4 })} ${AMOUNT_LABEL[order.amount_type]}`;
+  const opts = order.amount_type === "weight" ? { maximumFractionDigits: 3 } : { maximumFractionDigits: 0 };
+  return `${fa(order.value, opts)} ${AMOUNT_LABEL[order.amount_type]}`;
 }
 
 function formatDate(iso) {
@@ -123,10 +125,20 @@ export default function MyOrdersPage() {
       <div className="balance-card">
         <div className="balance-card__item">
           <span className="balance-card__label">موجودی طلا</span>
-          <span className="balance-card__value">
-            {balance ? fa(balance.gold_balance, { maximumFractionDigits: 4 }) : "—"}
-            <span className="balance-card__unit"> گرم ۱۸</span>
-          </span>
+          {balance ? (
+            (() => {
+              const gStatus = formatGoldStatus(balance.gold_balance);
+              return (
+                <span className={`balance-card__value cash-status ${gStatus.className}`}>
+                  {gStatus.amount}
+                  <span className="balance-card__unit"> گرم ۱۸</span>
+                  {gStatus.label && <span className="cash-status__label">{gStatus.label}</span>}
+                </span>
+              );
+            })()
+          ) : (
+            <span className="balance-card__value">—</span>
+          )}
         </div>
         <div className="balance-card__divider" />
         <div className="balance-card__item">
@@ -170,14 +182,8 @@ export default function MyOrdersPage() {
           )}
         </div>
         <div className="date-filter__inputs">
-          <label className="date-filter__input-group">
-            <span>از</span>
-            <input type="date" className="field__input" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          </label>
-          <label className="date-filter__input-group">
-            <span>تا</span>
-            <input type="date" className="field__input" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-          </label>
+          <JalaliDateInput label="از" value={dateFrom} onChange={setDateFrom} />
+          <JalaliDateInput label="تا" value={dateTo} onChange={setDateTo} />
         </div>
       </div>
 

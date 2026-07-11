@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchMyBalance } from "../api";
-import { formatCashStatus } from "../utils/balanceFormat";
+import { formatCashStatus, formatGoldStatus } from "../utils/balanceFormat";
 
 function fa(n, opts) {
-  return Number(n).toLocaleString("fa-IR", opts);
+  return Number(n).toLocaleString("en-US", opts);
 }
 
 export default function BalanceStrip() {
@@ -21,14 +21,18 @@ export default function BalanceStrip() {
   }, []);
 
   const cashStatus = balance ? formatCashStatus(balance.cash_balance) : null;
+  const goldStatus = balance ? formatGoldStatus(balance.gold_balance) : null;
 
   return (
     <button className="balance-strip" onClick={() => navigate("/balance")}>
       <div className="balance-strip__item">
         <span className="balance-strip__label">موجودی طلا</span>
-        <span className="balance-strip__value">
-          {balance ? fa(balance.gold_balance, { maximumFractionDigits: 2 }) : "—"}
-          <span className="balance-strip__unit"> گرم ۱۸</span>
+        <span className={`balance-strip__value ${goldStatus ? goldStatus.className : ""}`}>
+          {goldStatus ? goldStatus.amount : "—"}
+          <span className="balance-strip__unit">
+            {" "}
+            گرم ۱۸{goldStatus?.label ? ` · ${goldStatus.label}` : ""}
+          </span>
         </span>
       </div>
       <div className="balance-strip__divider" />

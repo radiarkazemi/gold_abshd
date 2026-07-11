@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 
 const LABELS = {
-  buy: { fa: "خرید", eyebrow: "قیمت خرید" },
-  sell: { fa: "فروش", eyebrow: "قیمت فروش" },
+  buy: { fa: "بخرید", eyebrow: "قیمت خرید" },
+  sell: { fa: "بفروشید", eyebrow: "قیمت فروش" },
 };
 
 function formatToman(value) {
   if (value == null) return "—";
-  return Math.round(value).toLocaleString("fa-IR");
+  return Math.round(value).toLocaleString("en-US");
 }
 
 export default function PriceButton({ side, price, prevPrice, onClick }) {

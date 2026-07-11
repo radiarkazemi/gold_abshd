@@ -9,10 +9,10 @@
   --gold-bright: #e9c768;
   --gold-dim: #8a7228;
 
-  --buy: #2f6f4f;
-  --buy-bright: #4c9a72;
-  --sell: #a6432d;
-  --sell-bright: #cf6446;
+  --buy: #3d7d5c;
+  --buy-bright: #5eae82;
+  --sell: #b8543b;
+  --sell-bright: #d97556;
 
   --text: #ede6d6;
   --text-muted: #b3a98f;
@@ -28,6 +28,12 @@
   --bg-gradient-outer: #241d10;
   --bg-gradient-inner: #12100b;
   --surface-deep: #1a160e;
+  --panel-buy-bg-1: #223b2e;
+  --panel-buy-bg-2: #1c2e24;
+  --panel-sell-bg-1: #3a2419;
+  --panel-sell-bg-2: #2c1c15;
+  --admin-sidebar-bg: #161209;
+  --panel-badge-neutral-bg: rgba(255, 255, 255, 0.07);
 }
 
 :root[data-theme="light"] {
@@ -52,6 +58,12 @@
   --bg-gradient-outer: #f3ecd8;
   --bg-gradient-inner: #faf7f0;
   --surface-deep: #f0e8d4;
+  --panel-buy-bg-1: #dcead9;
+  --panel-buy-bg-2: #eaf3e6;
+  --panel-sell-bg-1: #f5ddd0;
+  --panel-sell-bg-2: #faeae2;
+  --admin-sidebar-bg: #f2ead8;
+  --panel-badge-neutral-bg: rgba(0, 0, 0, 0.055);
 }
 
 * {

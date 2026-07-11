@@ -10,7 +10,7 @@ const STATUS_CLASS = {
 };
 
 function fa(n, opts) {
-  return Number(n).toLocaleString("fa-IR", opts);
+  return Number(n).toLocaleString("en-US", opts);
 }
 
 function formatTime(iso) {
@@ -55,7 +55,7 @@ export default function RecentOrdersTable({ limit = 5 }) {
             </span>
             <span>
               {o.amount_type === "weight"
-                ? `${fa(o.value, { maximumFractionDigits: 2 })} گرم۱۸`
+                ? `${fa(o.value, { maximumFractionDigits: 3 })} گرم۱۸`
                 : `${fa(Math.round(o.value))} ت`}
             </span>
             <span>

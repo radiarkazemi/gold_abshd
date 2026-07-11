@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchOrders, decideOrder, fetchAdminUsers } from "../api";
+import { orderGoldWeight, orderTotalMoney } from "../utils/orderCalc";
 
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
 
@@ -116,12 +117,18 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
                     </span>
                   </div>
                   <div className="order-card__row">
-                    <span className="order-card__label">مقدار</span>
-                    <span className="order-card__value">{formatValue(order)}</span>
+                    <span className="order-card__label">وزن طلا</span>
+                    <span className="order-card__value">{fa(orderGoldWeight(order), { maximumFractionDigits: 4 })} گرم۱۸</span>
                   </div>
                   <div className="order-card__row">
-                    <span className="order-card__label">قیمت لحظه ثبت</span>
-                    <span className="order-card__value">{fa(Math.round(order.price_at_submit))} تومان</span>
+                    <span className="order-card__label">مبلغ کل</span>
+                    <span className="order-card__value">{fa(Math.round(orderTotalMoney(order)))} تومان</span>
+                  </div>
+                  <div className="order-card__row">
+                    <span className="order-card__label">قیمت (مثقال ۱۷)</span>
+                    <span className="order-card__value">
+                      {order.mesghal17_price_at_submit ? fa(Math.round(order.mesghal17_price_at_submit)) : "—"} تومان
+                    </span>
                   </div>
                 </div>
                 <div className="order-card__actions">

@@ -26,8 +26,8 @@ export default function AdminAddUserTab() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
-    if (!phoneNumber || !fullName || !roleId) {
-      setError("شماره موبایل، نام و دسته‌بندی الزامی هستند");
+    if (!phoneNumber || !fullName || !roleId || !nationalId) {
+      setError("شماره موبایل، نام، دسته‌بندی و کد ملی الزامی هستند");
       return;
     }
     setSubmitting(true);
@@ -135,13 +135,14 @@ export default function AdminAddUserTab() {
       </label>
 
       <label className="field">
-        <span className="field__label">کد ملی (اختیاری)</span>
+        <span className="field__label">کد ملی</span>
         <input
           type="text"
           className="field__input"
           value={nationalId}
           onChange={(e) => setNationalId(e.target.value)}
           dir="ltr"
+          required
         />
       </label>
 

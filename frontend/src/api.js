@@ -382,6 +382,26 @@ export async function deleteHoliday(holidayId) {
   return res.json();
 }
 
+export async function createPhoneOrder({ userId, side, amountType, value, mesghal17Price, description }) {
+  const res = await fetch(`${API_BASE}/api/admin/orders/phone`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({
+      user_id: userId,
+      side,
+      amount_type: amountType,
+      value,
+      mesghal17_price: mesghal17Price,
+      description,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to create phone order");
+  }
+  return res.json();
+}
+
 export function openAdminSocket(onMessage) {
   const token = getAdminToken();
   const ws = new WebSocket(`${WS_BASE}/ws/admin?token=${encodeURIComponent(token || "")}`);

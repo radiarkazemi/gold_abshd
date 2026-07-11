@@ -58,8 +58,7 @@ def validate_key_for_activation(db: Session, user: User, key_str: str) -> Regist
     if reg_key.expires_at < datetime.utcnow():
         raise HTTPException(status_code=400, detail="کد ثبت‌نام منقضی شده است")
     if reg_key.status == RegistrationKeyStatusEnum.active:
-        raise HTTPException(
-            status_code=400, detail="این کد قبلا استفاده شده است")
+        raise HTTPException(status_code=400, detail="این کد قبلا استفاده شده است")
     return reg_key
 
 
@@ -111,15 +110,16 @@ def create_user_with_key(
     """
     phone_number = phone_number.strip().replace(" ", "")
 
+    if not national_id or not national_id.strip():
+        raise HTTPException(status_code=400, detail="کد ملی الزامی است")
+
     existing = db.query(User).filter(User.phone_number == phone_number).first()
     if existing:
-        raise HTTPException(
-            status_code=400, detail="کاربری با این شماره قبلا ثبت شده است")
+        raise HTTPException(status_code=400, detail="کاربری با این شماره قبلا ثبت شده است")
 
     role = db.query(Role).filter(Role.id == role_id).first()
     if not role:
-        raise HTTPException(
-            status_code=400, detail="دسته‌بندی انتخاب‌شده پیدا نشد")
+        raise HTTPException(status_code=400, detail="دسته‌بندی انتخاب‌شده پیدا نشد")
 
     user = User(
         user_code=_generate_user_code(db),

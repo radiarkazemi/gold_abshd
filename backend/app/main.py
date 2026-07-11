@@ -37,7 +37,7 @@ from app.schemas_order import OrderCreateIn, OrderOut, OrderDecisionIn, BalanceO
 from app.schemas_admin import (
     UserSummaryOut, UserDetailOut, TransactionOut, BalanceAdjustIn, BlockUserIn,
     AdminLoginIn, AdminLoginOut, RoleOut, RoleCreateIn, RoleUpdateIn,
-    AdminCreateUserIn, AdminCreateUserOut, AdminUpdateUserIn, RegistrationKeyOut,
+    AdminCreateUserIn, AdminCreateUserOut, AdminUpdateUserIn, RegistrationKeyOut, PhoneOrderCreateIn,
 )
 from app.admin_auth import verify_admin_credentials, create_admin_token, get_current_admin, verify_admin_ws_token
 from app.receipts_service import save_receipt, get_receipt_path_for_viewer
@@ -59,6 +59,7 @@ from app.orders_service import (
     set_user_blocked,
     update_user as update_user_db,
     order_customer_fields,
+    create_phone_order as create_phone_order_db,
 )
 from app.models_db import BalanceTransaction
 
@@ -93,15 +94,15 @@ async def price_broadcaster():
         price_service.unsubscribe(queue)
 
 
-def order_to_dict(order: Order) -> dict:
+def order_to_dict(db: Session, order: Order) -> dict:
     data = json.loads(OrderOut.model_validate(order).model_dump_json())
-    data.update(order_customer_fields(order))
+    data.update(order_customer_fields(db, order))
     return data
 
 
-def order_to_admin_out(order: Order) -> OrderOut:
+def order_to_admin_out(db: Session, order: Order) -> OrderOut:
     data = OrderOut.model_validate(order).model_dump()
-    data.update(order_customer_fields(order))
+    data.update(order_customer_fields(db, order))
     return OrderOut(**data)
 
 
@@ -221,7 +222,7 @@ async def submit_order(
         order_in.value, order_in.description, current_price,
     )
 
-    await manager.broadcast_to_admins({"type": "new_order", "order": order_to_dict(order)})
+    await manager.broadcast_to_admins({"type": "new_order", "order": order_to_dict(db, order)})
 
     return order
 
@@ -309,14 +310,29 @@ async def list_orders(status: str | None = None, db: Session = Depends(get_db), 
     if status:
         query = query.filter(Order.status == OrderStatusEnum(status))
     orders = query.order_by(Order.created_at.desc()).all()
-    return [order_to_admin_out(o) for o in orders]
+    return [order_to_admin_out(db, o) for o in orders]
 
 
 @app.post("/api/admin/orders/{order_id}/decide", response_model=OrderOut)
 async def decide_order(order_id: str, decision: OrderDecisionIn, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
     order = decide_order_db(db, order_id, decision.status)
-    await manager.broadcast_to_admins({"type": "order_updated", "order": order_to_dict(order)})
-    return order_to_admin_out(order)
+    await manager.broadcast_to_admins({"type": "order_updated", "order": order_to_dict(db, order)})
+    return order_to_admin_out(db, order)
+
+
+@app.post("/api/admin/orders/phone", response_model=OrderOut)
+async def create_phone_order_endpoint(payload: PhoneOrderCreateIn, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    order = create_phone_order_db(
+        db,
+        user_id=payload.user_id,
+        side=payload.side,
+        amount_type=payload.amount_type,
+        value=payload.value,
+        mesghal17_price=payload.mesghal17_price,
+        description=payload.description,
+    )
+    await manager.broadcast_to_admins({"type": "order_updated", "order": order_to_dict(db, order)})
+    return order_to_admin_out(db, order)
 
 
 @app.get("/api/admin/orders/{order_id}/receipt")

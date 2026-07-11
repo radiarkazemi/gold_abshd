@@ -19,16 +19,20 @@ class OrderOut(BaseModel):
     description: Optional[str] = ""
     status: str
     price_at_submit: float
+    mesghal17_price_at_submit: Optional[float] = None
     has_receipt: bool = False
     created_at: datetime
     updated_at: datetime
 
     # Only populated on admin-facing endpoints - who actually placed this
-    # order. Left null on the user's own /api/my/orders response since
-    # they already know it's their own order.
+    # order, and their CURRENT balance (a live snapshot, not tied to this
+    # specific order). Left null on the user's own /api/my/orders response
+    # since they already know it's their own order.
     customer_name: Optional[str] = None
     customer_code: Optional[str] = None
     customer_phone: Optional[str] = None
+    customer_gold_balance: Optional[float] = None
+    customer_cash_balance: Optional[float] = None
 
     class Config:
         from_attributes = True

@@ -41,7 +41,7 @@ class AdminCreateUserIn(BaseModel):
     phone_number: str
     full_name: str
     role_id: str
-    national_id: Optional[str] = None
+    national_id: str
     notes: Optional[str] = None
     key_ttl_days: int = 14
 
@@ -61,6 +61,15 @@ class AdminUpdateUserIn(BaseModel):
     notes: Optional[str] = None
 
 
+class PhoneOrderCreateIn(BaseModel):
+    user_id: str
+    side: str                  # "buy" | "sell"
+    amount_type: str           # "weight" | "amount"
+    value: float
+    mesghal17_price: float     # admin-entered, already-negotiated price
+    description: Optional[str] = ""
+
+
 class UserSummaryOut(BaseModel):
     id: str
     user_code: str
@@ -72,8 +81,7 @@ class UserSummaryOut(BaseModel):
     cash_balance: float
     role: Optional[RoleOut] = None
     is_online: bool = False
-    # pending | active | banned | None (no key issued)
-    registration_status: Optional[str] = None
+    registration_status: Optional[str] = None  # pending | active | banned | None (no key issued)
 
 
 class TransactionOut(BaseModel):
