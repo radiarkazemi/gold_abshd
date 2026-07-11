@@ -193,3 +193,41 @@
 .theme-toggle-btn:hover {
   border-color: var(--gold-dim);
 }
+
+.trading-status-bar {
+  width: 100%;
+  height: 3px;
+  transition: box-shadow 300ms ease, background 300ms ease;
+}
+
+.trading-status-bar.is-online {
+  background: var(--buy);
+  box-shadow: 0 0 14px 2px rgba(76, 154, 114, 0.55);
+}
+
+.trading-status-bar.is-offline {
+  background: var(--sell);
+  box-shadow: 0 0 14px 2px rgba(207, 100, 70, 0.55);
+}
+
+.app__status.is-offline .app__status-dot {
+  background: var(--sell-bright);
+}
+
+.trading-offline-note {
+  width: 100%;
+  max-width: 720px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--sell-bright);
+  background: rgba(207, 100, 70, 0.1);
+  border: 1px solid var(--sell);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin: 0 0 10px;
+}
+
+.price-stage--disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}

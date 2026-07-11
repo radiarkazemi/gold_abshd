@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchOrderLimits, fetchMyOrderDetail } from "../api";
+import FormattedNumberInput from "./FormattedNumberInput";
 
 const SIDE_META = {
   buy: { title: "درخواست خرید", cta: "ثبت درخواست خرید", accent: "buy" },
@@ -12,8 +13,17 @@ const STATUS_META = {
   rejected: { label: "رد شد", className: "modal-result__status--rejected" },
 };
 
+const COUNTDOWN_SECONDS = 60;
+const MAX_RETRIES = 5;
+
 function toFarsiNumber(n) {
   return Number(n).toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+function formatMMSS(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 export default function OrderModal({ side, price, onClose, onSubmit, submitting, result, error }) {
@@ -23,7 +33,11 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
   const [limits, setLimits] = useState(null);
   const [localError, setLocalError] = useState("");
   const [liveOrder, setLiveOrder] = useState(null);
+  const [confirming, setConfirming] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(COUNTDOWN_SECONDS);
+  const [retryCount, setRetryCount] = useState(0);
   const pollRef = useRef(null);
+  const tickRef = useRef(null);
   const meta = SIDE_META[side];
 
   useEffect(() => {
@@ -35,6 +49,8 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
   useEffect(() => {
     if (!result) return;
     setLiveOrder(result);
+    setSecondsLeft(COUNTDOWN_SECONDS);
+    setRetryCount(0);
 
     function poll() {
       fetchMyOrderDetail(result.id)
@@ -51,8 +67,32 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
     return () => clearInterval(pollRef.current);
   }, [result]);
 
+  // Countdown timer, only while still pending.
+  useEffect(() => {
+    if (!result || liveOrder?.status !== "pending") {
+      clearInterval(tickRef.current);
+      return;
+    }
+    tickRef.current = setInterval(() => {
+      setSecondsLeft((s) => Math.max(0, s - 1));
+    }, 1000);
+    return () => clearInterval(tickRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, liveOrder?.status]);
+
+  function handleRetry() {
+    setRetryCount((c) => c + 1);
+    setSecondsLeft(COUNTDOWN_SECONDS);
+    // immediate re-check, don't wait for the next 3s poll tick
+    fetchMyOrderDetail(result.id).then(setLiveOrder).catch(() => {});
+  }
+
   function unitPrice() {
     return side === "buy" ? price?.gram18_buy_price : price?.gram18_sell_price;
+  }
+
+  function mesghal17Price() {
+    return side === "buy" ? price?.buy_price : price?.sell_price;
   }
 
   function weightEquivalent(numeric) {
@@ -69,40 +109,54 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
     if (!up) return null;
 
     if (amountType === "weight") {
-      // entered a weight -> show the total price
       return { label: "مبلغ کل", value: `${toFarsiNumber(Math.round(numeric * up))} تومان` };
     }
-    // entered an amount -> show the total weight
     return { label: "وزن کل", value: `${toFarsiNumber(numeric / up)} گرم ۱۸` };
   }
 
-  function handleSubmit(e) {
-    e.preventDefault();
+  function validate() {
     setLocalError("");
     const numeric = parseFloat(value);
     if (!numeric || numeric <= 0) {
       setLocalError("مقدار وارد شده معتبر نیست");
-      return;
+      return null;
     }
     if (limits) {
       const weight = weightEquivalent(numeric);
       if (weight != null) {
         if (weight < limits.min_weight) {
           setLocalError(`حداقل مقدار سفارش ${toFarsiNumber(limits.min_weight)} گرم ۱۸ است`);
-          return;
+          return null;
         }
         if (weight > limits.max_weight) {
           setLocalError(`حداکثر مقدار سفارش ${toFarsiNumber(limits.max_weight)} گرم ۱۸ است`);
-          return;
+          return null;
         }
       }
     }
-    onSubmit({ side, amountType, value: numeric, description });
+    return numeric;
+  }
+
+  function handleFormSubmit(e) {
+    e.preventDefault();
+    const numeric = validate();
+    if (numeric == null) return;
+    setConfirming(true);
+  }
+
+  function handleConfirm() {
+    onSubmit({ side, amountType, value: parseFloat(value), description });
   }
 
   const shownError = localError || error;
   const total = computedTotal();
   const statusMeta = liveOrder ? STATUS_META[liveOrder.status] : STATUS_META.pending;
+
+  const priceChanged =
+    liveOrder?.status === "pending" &&
+    liveOrder?.mesghal17_price_at_submit != null &&
+    mesghal17Price() != null &&
+    Math.round(mesghal17Price()) !== Math.round(liveOrder.mesghal17_price_at_submit);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -123,6 +177,30 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
             <p className={`modal-result__status ${statusMeta.className}`}>
               {statusMeta.label}
             </p>
+
+            {liveOrder?.status === "pending" && (
+              <div className="modal-result__timer">
+                {secondsLeft > 0 ? (
+                  <span className="modal-result__countdown">{formatMMSS(secondsLeft)}</span>
+                ) : retryCount < MAX_RETRIES ? (
+                  <button type="button" className="modal-btn modal-btn--ghost" onClick={handleRetry}>
+                    تلاش دوباره ({retryCount}/{MAX_RETRIES})
+                  </button>
+                ) : (
+                  <p className="modal-result__hint">
+                    بررسی این درخواست بیش از حد معمول طول کشیده. لطفا با پشتیبانی تماس بگیرید.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {priceChanged && (
+              <p className="modal-result__price-change">
+                قیمت از {toFarsiNumber(Math.round(liveOrder.mesghal17_price_at_submit))} به{" "}
+                {toFarsiNumber(Math.round(mesghal17Price()))} تومان تغییر کرد
+              </p>
+            )}
+
             <p className="modal-result__hint">
               در صورت پرداخت با حواله بانکی، می‌توانید فیش واریز را از صفحه
               «سفارش‌های من» ضمیمه کنید.
@@ -131,8 +209,42 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
               بستن
             </button>
           </div>
+        ) : confirming ? (
+          <div className="modal-confirm">
+            <p className="modal-confirm__text">لطفا اطلاعات سفارش را بررسی و تایید کنید:</p>
+            <div className="modal-confirm__row">
+              <span>قیمت (مثقال ۱۷)</span>
+              <span>{mesghal17Price() ? toFarsiNumber(Math.round(mesghal17Price())) : "—"} تومان</span>
+            </div>
+            <div className="modal-confirm__row">
+              <span>{amountType === "weight" ? "وزن" : "مبلغ"}</span>
+              <span>
+                {toFarsiNumber(value)} {amountType === "weight" ? "گرم ۱۸" : "تومان"}
+              </span>
+            </div>
+            {total && (
+              <div className="modal-confirm__row modal-confirm__row--total">
+                <span>{total.label}</span>
+                <span>{total.value}</span>
+              </div>
+            )}
+            {shownError && <p className="field__error">{shownError}</p>}
+            <div className="modal-actions">
+              <button type="button" className="modal-btn modal-btn--ghost" onClick={() => setConfirming(false)} disabled={submitting}>
+                ویرایش
+              </button>
+              <button
+                type="button"
+                className={`modal-btn modal-btn--${meta.accent}`}
+                onClick={handleConfirm}
+                disabled={submitting}
+              >
+                {submitting ? "در حال ارسال…" : "تایید و ارسال"}
+              </button>
+            </div>
+          </div>
         ) : (
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleFormSubmit}>
             <div className="segmented">
               <button
                 type="button"
@@ -155,18 +267,29 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
                 <span className="field__icon">{amountType === "weight" ? "⚖️" : "💰"}</span>
                 {amountType === "weight" ? "وزن (گرم ۱۸)" : "مبلغ (تومان)"}
               </span>
-              <input
-                type="number"
-                inputMode="decimal"
-                step="any"
-                min="0"
-                autoFocus
-                required
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                placeholder={amountType === "weight" ? "مثلاً ۲.۵" : "مثلاً ۵۰۰۰۰۰۰"}
-                className="field__input"
-              />
+              {amountType === "amount" ? (
+                <FormattedNumberInput
+                  value={value}
+                  onChange={setValue}
+                  className="field__input"
+                  placeholder="مثلاً ۵,۰۰۰,۰۰۰"
+                  autoFocus
+                  required
+                />
+              ) : (
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="any"
+                  min="0"
+                  autoFocus
+                  required
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  placeholder="مثلاً ۲.۵"
+                  className="field__input"
+                />
+              )}
               {limits && amountType === "weight" && (
                 <span className="field__hint">
                   حداقل: {toFarsiNumber(limits.min_weight)} گرم ۱۸ &nbsp;·&nbsp; حداکثر:{" "}
@@ -202,9 +325,8 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
               <button
                 type="submit"
                 className={`modal-btn modal-btn--${meta.accent}`}
-                disabled={submitting}
               >
-                {submitting ? "در حال ارسال…" : meta.cta}
+                {meta.cta}
               </button>
             </div>
           </form>

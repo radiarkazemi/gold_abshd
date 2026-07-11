@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchAdminUsers, fetchPrice, createPhoneOrder } from "../api";
+import FormattedNumberInput from "../components/FormattedNumberInput";
 
 function fa(n, opts) {
   return Number(n).toLocaleString("fa-IR", opts);
@@ -178,24 +179,22 @@ export default function AdminPhoneOrderTab() {
 
       <label className="field">
         <span className="field__label">{amountType === "weight" ? "وزن (گرم ۱۸)" : "مبلغ (تومان)"}</span>
-        <input
-          type="number"
-          step="any"
-          className="field__input"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-        />
+        {amountType === "amount" ? (
+          <FormattedNumberInput value={value} onChange={setValue} className="field__input" />
+        ) : (
+          <input
+            type="number"
+            step="any"
+            className="field__input"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+          />
+        )}
       </label>
 
       <label className="field">
         <span className="field__label">قیمت مثقال ۱۷ (قابل ویرایش)</span>
-        <input
-          type="number"
-          step="any"
-          className="field__input"
-          value={mesghal17Price}
-          onChange={(e) => setMesghal17Price(e.target.value)}
-        />
+        <FormattedNumberInput value={mesghal17Price} onChange={setMesghal17Price} className="field__input" />
         <span className="field__hint">با قیمت زنده پر شده، در صورت توافق دیگر با مشتری قابل تغییر است.</span>
       </label>
 

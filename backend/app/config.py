@@ -48,6 +48,20 @@ class Settings:
     # plain password. Generate one with:
     #   python -c "import bcrypt; print(bcrypt.hashpw(b'yourpassword', bcrypt.gensalt()).decode())"
     ADMIN_USERNAME: str = os.getenv("GOLDAPP_ADMIN_USERNAME", "admin")
+
+    # Comma-separated list of allowed frontend origins for CORS. Defaults
+    # to common local dev ports so nothing breaks locally - MUST be set
+    # to your real production domain(s) (e.g. "https://yourdomain.com")
+    # before deploying, or the API will reject requests from your live
+    # frontend.
+    _origins_raw: str = os.getenv(
+        "GOLDAPP_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000",
+    )
+
+    @property
+    def ALLOWED_ORIGINS(self) -> list[str]:
+        return [o.strip() for o in self._origins_raw.split(",") if o.strip()]
     ADMIN_PASSWORD_HASH: str = os.getenv("GOLDAPP_ADMIN_PASSWORD_HASH", "")
 
     # Which weekdays are non-trading days, as Python weekday() numbers

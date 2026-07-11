@@ -2,52 +2,7 @@
 اپ آبشده قصر طلا - سمت سرور
 اجرا: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 """
-import asyncio
-import json
-import logging
-import os
-from datetime import datetime
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-    datefmt="%H:%M:%S",
-)
-
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Query, UploadFile, File
-from fastapi.responses import FileResponse
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-
-from app.price_service import price_service
-from app.ws_manager import manager
-from app.db import init_db, get_db
-from app.config import settings
-from app.schemas_auth import RequestOtpIn, RequestOtpOut, VerifyOtpIn, VerifyOtpOut, UserOut
-from app.auth import (
-    create_otp_for_phone,
-    verify_otp_and_get_user,
-    create_access_token,
-    get_current_user,
-    get_user_for_login,
-    check_device_or_require_key,
-)
-from app.models_db import User, Order, OrderStatusEnum, Role
-from app.schemas_order import OrderCreateIn, OrderOut, OrderDecisionIn, BalanceOut, OrderLimitsOut
-from app.schemas_admin import (
-    UserSummaryOut, UserDetailOut, TransactionOut, BalanceAdjustIn, BlockUserIn,
-    AdminLoginIn, AdminLoginOut, RoleOut, RoleCreateIn, RoleUpdateIn,
-    AdminCreateUserIn, AdminCreateUserOut, AdminUpdateUserIn, RegistrationKeyOut, PhoneOrderCreateIn,
-)
-from app.admin_auth import verify_admin_credentials, create_admin_token, get_current_admin, verify_admin_ws_token
-from app.receipts_service import save_receipt, get_receipt_path_for_viewer
-from app.schemas_notice import NoticeOut, NoticeUpdateIn
-from app.notice_service import get_notice, set_notice
-from app.schemas_calendar import SettlementLabelOut, HolidayIn, HolidayOut
-from app.calendar_service import get_settlement_label
-from app.models_db import Holiday
-from app.registration_service import create_user_with_key
-from app.roles_service import list_roles, create_role, update_role_commission
+from app.models_db import BalanceTransaction
 from app.orders_service import (
     create_order as create_order_db,
     decide_order as decide_order_db,
@@ -61,17 +16,89 @@ from app.orders_service import (
     order_customer_fields,
     create_phone_order as create_phone_order_db,
 )
-from app.models_db import BalanceTransaction
+from app.roles_service import list_roles, create_role, update_role_commission
+from app.registration_service import create_user_with_key
+from app.models_db import Holiday
+from app.trading_status_service import is_trading_online, set_trading_online
+from app.calendar_service import get_settlement_label
+from app.schemas_calendar import SettlementLabelOut, HolidayIn, HolidayOut, TradingStatusOut, TradingStatusUpdateIn
+from app.notice_service import get_notice, set_notice
+from app.schemas_notice import NoticeOut, NoticeUpdateIn
+from app.receipts_service import save_receipt, get_receipt_path_for_viewer
+from app.admin_auth import verify_admin_credentials, create_admin_token, get_current_admin, verify_admin_ws_token
+from app.schemas_admin import (
+    UserSummaryOut, UserDetailOut, TransactionOut, BalanceAdjustIn, BlockUserIn,
+    AdminLoginIn, AdminLoginOut, RoleOut, RoleCreateIn, RoleUpdateIn,
+    AdminCreateUserIn, AdminCreateUserOut, AdminUpdateUserIn, RegistrationKeyOut, PhoneOrderCreateIn,
+)
+from app.schemas_order import OrderCreateIn, OrderOut, OrderDecisionIn, BalanceOut, OrderLimitsOut
+from app.models_db import User, Order, OrderStatusEnum, Role
+from app.auth import (
+    create_otp_for_phone,
+    verify_otp_and_get_user,
+    create_access_token,
+    get_current_user,
+    get_user_for_login,
+    check_device_or_require_key,
+)
+from app.schemas_auth import RequestOtpIn, RequestOtpOut, VerifyOtpIn, VerifyOtpOut, UserOut
+from app.config import settings
+from app.db import init_db, get_db
+from app.ws_manager import manager
+from app.price_service import price_service
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from sqlalchemy.orm import Session
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Query, UploadFile, File, Request
+import asyncio
+import json
+import logging
+import os
+from datetime import datetime
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+
 
 app = FastAPI(title="آبشده قصر طلا - Gold Trading Server")
 
+# Rate limiting on sensitive auth endpoints only (OTP request/verify, admin
+# login) - everything else is unaffected. Keyed by IP address. This is
+# purely additive: normal single-attempt usage never comes close to these
+# limits, it only kicks in under rapid repeated attempts (e.g. brute force).
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # موقع دیپلوی نهایی باید محدودش کنیم
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """
+    A few headers that carry zero functionality risk for a JSON API -
+    no CSP here on purpose, since getting a CSP right requires knowing
+    exactly what your production static frontend loads (fonts, CDNs,
+    etc.) and a wrong one silently breaks the UI rather than erroring
+    loudly. Worth adding once the frontend hosting is finalized.
+    """
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 
 @app.on_event("startup")
@@ -109,9 +136,11 @@ def order_to_admin_out(db: Session, order: Order) -> OrderOut:
 # ---------------- احراز هویت (OTP) ----------------
 
 @app.post("/api/auth/request-otp", response_model=RequestOtpOut)
-async def request_otp(payload: RequestOtpIn, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+async def request_otp(request: Request, payload: RequestOtpIn, db: Session = Depends(get_db)):
     user = get_user_for_login(db, payload.phone_number)
-    check_device_or_require_key(user, payload.device_id, payload.registration_key, db)
+    check_device_or_require_key(
+        user, payload.device_id, payload.registration_key, db)
 
     code = create_otp_for_phone(db, payload.phone_number)
     return RequestOtpOut(
@@ -121,7 +150,8 @@ async def request_otp(payload: RequestOtpIn, db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/verify-otp", response_model=VerifyOtpOut)
-async def verify_otp(payload: VerifyOtpIn, db: Session = Depends(get_db)):
+@limiter.limit("10/5minute")
+async def verify_otp(request: Request, payload: VerifyOtpIn, db: Session = Depends(get_db)):
     user = verify_otp_and_get_user(
         db,
         payload.phone_number,
@@ -161,6 +191,17 @@ async def get_settlement(db: Session = Depends(get_db)):
     return get_settlement_label(db)
 
 
+@app.get("/api/trading-status", response_model=TradingStatusOut)
+async def get_trading_status(db: Session = Depends(get_db)):
+    return TradingStatusOut(is_online=is_trading_online(db))
+
+
+@app.post("/api/admin/trading-status", response_model=TradingStatusOut)
+async def update_trading_status(payload: TradingStatusUpdateIn, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    online = set_trading_online(db, payload.is_online)
+    return TradingStatusOut(is_online=online)
+
+
 @app.get("/api/admin/holidays", response_model=list[HolidayOut])
 async def list_holidays(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
     return db.query(Holiday).order_by(Holiday.date.asc()).all()
@@ -171,7 +212,8 @@ async def add_holiday(payload: HolidayIn, db: Session = Depends(get_db), _admin=
     day = datetime.strptime(payload.date, "%Y-%m-%d")
     existing = db.query(Holiday).filter(Holiday.date == day).first()
     if existing:
-        raise HTTPException(status_code=400, detail="این تاریخ قبلا به عنوان تعطیل ثبت شده")
+        raise HTTPException(
+            status_code=400, detail="این تاریخ قبلا به عنوان تعطیل ثبت شده")
     holiday = Holiday(date=day, description=payload.description)
     db.add(holiday)
     db.commit()
@@ -216,6 +258,12 @@ async def submit_order(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if not is_trading_online(db):
+        raise HTTPException(
+            status_code=403,
+            detail="در حال حاضر امکان ثبت سفارش وجود ندارد. لطفا بعدا مراجعه کنید.",
+        )
+
     current_price = price_service.get_price()
     order = create_order_db(
         db, current_user, order_in.side, order_in.amount_type,
@@ -275,7 +323,8 @@ async def view_own_receipt(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    path = get_receipt_path_for_viewer(db, order_id, current_user.id, is_admin=False)
+    path = get_receipt_path_for_viewer(
+        db, order_id, current_user.id, is_admin=False)
     return FileResponse(path)
 
 
@@ -298,9 +347,11 @@ async def my_transactions(
 # ---------------- پنل ادمین (سرور) ----------------
 
 @app.post("/api/admin/auth/login", response_model=AdminLoginOut)
-async def admin_login(payload: AdminLoginIn):
+@limiter.limit("5/15minute")
+async def admin_login(request: Request, payload: AdminLoginIn):
     if not verify_admin_credentials(payload.username, payload.password):
-        raise HTTPException(status_code=401, detail="نام کاربری یا رمز عبور اشتباه است")
+        raise HTTPException(
+            status_code=401, detail="نام کاربری یا رمز عبور اشتباه است")
     return AdminLoginOut(token=create_admin_token())
 
 
@@ -337,7 +388,8 @@ async def create_phone_order_endpoint(payload: PhoneOrderCreateIn, db: Session =
 
 @app.get("/api/admin/orders/{order_id}/receipt")
 async def view_receipt_as_admin(order_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    path = get_receipt_path_for_viewer(db, order_id, viewer_user_id=None, is_admin=True)
+    path = get_receipt_path_for_viewer(
+        db, order_id, viewer_user_id=None, is_admin=True)
     return FileResponse(path)
 
 
@@ -441,7 +493,8 @@ async def get_user_detail(user_id: str, db: Session = Depends(get_db), _admin=De
 
 @app.post("/api/admin/users/{user_id}/adjust-balance", response_model=TransactionOut)
 async def adjust_user_balance(user_id: str, payload: BalanceAdjustIn, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    txn = adjust_balance_db(db, user_id, payload.gold_change, payload.cash_change, payload.note)
+    txn = adjust_balance_db(db, user_id, payload.gold_change,
+                            payload.cash_change, payload.note)
     return txn
 
 
@@ -467,7 +520,8 @@ async def block_user(user_id: str, payload: BlockUserIn, db: Session = Depends(g
 
 @app.patch("/api/admin/users/{user_id}", response_model=UserSummaryOut)
 async def edit_user(user_id: str, payload: AdminUpdateUserIn, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    user = update_user_db(db, user_id, payload.full_name, payload.role_id, payload.national_id, payload.notes)
+    user = update_user_db(db, user_id, payload.full_name,
+                          payload.role_id, payload.national_id, payload.notes)
     balance = get_user_balance(db, user_id)
     reg_key = user.registration_key
     return UserSummaryOut(

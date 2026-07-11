@@ -11,3 +11,4 @@ bcrypt==5.0.0
 pysocks==1.7.1
 python-multipart==0.0.9
 jdatetime==5.0.0
+slowapi==0.1.9

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { usePriceFeed } from "../hooks/usePriceFeed";
-import { submitOrder, fetchSettlementLabel } from "../api";
+import { submitOrder, fetchSettlementLabel, fetchTradingStatus } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import PriceButton from "../components/PriceButton";
@@ -19,12 +19,23 @@ export default function TraderPage() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [settlement, setSettlement] = useState(null);
+  const [tradingOnline, setTradingOnline] = useState(true);
 
   useEffect(() => {
     fetchSettlementLabel().then(setSettlement).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    function checkStatus() {
+      fetchTradingStatus().then((s) => setTradingOnline(s.is_online)).catch(() => {});
+    }
+    checkStatus();
+    const interval = setInterval(checkStatus, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   function openModal(side) {
+    if (!tradingOnline) return;
     setResult(null);
     setError("");
     setActiveSide(side);
@@ -53,15 +64,17 @@ export default function TraderPage() {
   return (
     <div className="app">
       <header className="app__header">
-        <span className={`app__status ${connected ? "is-live" : ""}`}>
+        <span className={`app__status ${tradingOnline ? "is-live" : "is-offline"}`}>
           <span className="app__status-dot" />
-          {connected ? "قیمت زنده" : "در حال اتصال…"}
+          {tradingOnline ? "مدیر آنلاین" : "مدیر آفلاین"}
         </span>
         <h1 className="app__title">آبشده قصر طلا</h1>
         <button className="theme-toggle-btn" onClick={toggleTheme} aria-label="تغییر پوسته">
           {theme === "dark" ? "☀" : "☾"}
         </button>
       </header>
+
+      <div className={`trading-status-bar ${tradingOnline ? "is-online" : "is-offline"}`} />
 
       <main className="app__main app__main--with-tabbar">
         <BalanceStrip />
@@ -78,9 +91,14 @@ export default function TraderPage() {
             {settlement && <span className="settlement-badge"> · {settlement.label}</span>}
           </p>
         )}
-        <div className="price-stage">
-          <PriceButton side="buy" price={price} prevPrice={prevPrice} onClick={openModal} />
-          <PriceButton side="sell" price={price} prevPrice={prevPrice} onClick={openModal} />
+        {!tradingOnline && (
+          <p className="trading-offline-note">
+            در حال حاضر امکان ثبت سفارش خرید و فروش وجود ندارد.
+          </p>
+        )}
+        <div className={`price-stage ${!tradingOnline ? "price-stage--disabled" : ""}`}>
+          <PriceButton side="buy" price={price} prevPrice={prevPrice} onClick={openModal} disabled={!tradingOnline} />
+          <PriceButton side="sell" price={price} prevPrice={prevPrice} onClick={openModal} disabled={!tradingOnline} />
         </div>
         <NoticeCard />
         <RecentOrdersTable limit={5} />

@@ -877,3 +877,55 @@
   border-radius: 999px;
   cursor: pointer;
 }
+
+.trading-status-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin-bottom: 18px;
+  transition: box-shadow 200ms ease, border-color 200ms ease;
+}
+
+.trading-status-box.is-online {
+  border-color: var(--buy);
+  box-shadow: 0 0 0 1px var(--buy), 0 4px 18px -6px rgba(76, 154, 114, 0.35);
+}
+
+.trading-status-box.is-offline {
+  border-color: var(--sell);
+  box-shadow: 0 0 0 1px var(--sell), 0 4px 18px -6px rgba(207, 100, 70, 0.35);
+}
+
+.trading-status-box__label {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  margin-bottom: 3px;
+}
+
+.trading-status-box__value {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.trading-status-box__radios {
+  display: flex;
+  gap: 16px;
+}
+
+.trading-status-box__radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+}

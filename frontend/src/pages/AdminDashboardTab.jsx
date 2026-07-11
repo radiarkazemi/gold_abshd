@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchOrders, decideOrder, fetchAdminUsers } from "../api";
+import { fetchOrders, decideOrder, fetchAdminUsers, fetchTradingStatus, updateTradingStatus } from "../api";
 import { orderGoldWeight, orderTotalMoney } from "../utils/orderCalc";
 
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
@@ -19,6 +19,20 @@ function formatTime(iso) {
 
 export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
   const [pending, setPending] = useState([]);
+  const [tradingOnline, setTradingOnline] = useState(true);
+  const [statusBusy, setStatusBusy] = useState(false);
+
+  async function handleStatusToggle(online) {
+    setStatusBusy(true);
+    try {
+      const res = await updateTradingStatus(online);
+      setTradingOnline(res.is_online);
+    } catch (e) {
+      alert("خطا در تغییر وضعیت");
+    } finally {
+      setStatusBusy(false);
+    }
+  }
   const [accepted, setAccepted] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,6 +51,7 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
+    fetchTradingStatus().then((s) => setTradingOnline(s.is_online)).catch(() => {});
   }
 
   useEffect(() => {
@@ -80,6 +95,37 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
 
   return (
     <div className="dashboard">
+      <div className={`trading-status-box ${tradingOnline ? "is-online" : "is-offline"}`}>
+        <div>
+          <span className="trading-status-box__label">وضعیت معاملات</span>
+          <span className="trading-status-box__value">
+            {tradingOnline ? "مدیر آنلاین — سفارش‌ها فعال است" : "مدیر آفلاین — ثبت سفارش غیرفعال است"}
+          </span>
+        </div>
+        <div className="trading-status-box__radios">
+          <label className="trading-status-box__radio">
+            <input
+              type="radio"
+              name="trading-status"
+              checked={tradingOnline}
+              disabled={statusBusy}
+              onChange={() => handleStatusToggle(true)}
+            />
+            مدیر آنلاین
+          </label>
+          <label className="trading-status-box__radio">
+            <input
+              type="radio"
+              name="trading-status"
+              checked={!tradingOnline}
+              disabled={statusBusy}
+              onChange={() => handleStatusToggle(false)}
+            />
+            مدیر آفلاین
+          </label>
+        </div>
+      </div>
+
       <div className="dashboard__kpi-grid">
         {kpis.map((k) => (
           <div className="dashboard__kpi-card" key={k.label}>

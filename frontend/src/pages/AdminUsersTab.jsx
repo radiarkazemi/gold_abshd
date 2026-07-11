@@ -8,6 +8,7 @@ import {
   fetchRoles,
 } from "../api";
 import { formatCashStatus } from "../utils/balanceFormat";
+import FormattedNumberInput from "../components/FormattedNumberInput";
 
 function fa(n, opts) {
   return Number(n).toLocaleString("fa-IR", opts);
@@ -268,13 +269,11 @@ function UserDetail({ userId, onClose, onChanged }) {
                 </label>
                 <label className="field">
                   <span className="field__label">تغییر نقدی (تومان)</span>
-                  <input
-                    type="number"
-                    step="any"
+                  <FormattedNumberInput
+                    value={cashChange}
+                    onChange={setCashChange}
                     className="field__input"
                     placeholder="مثبت یا منفی"
-                    value={cashChange}
-                    onChange={(e) => setCashChange(e.target.value)}
                   />
                 </label>
               </div>

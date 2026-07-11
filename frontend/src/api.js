@@ -346,6 +346,22 @@ export async function updateUserAdmin(userId, { fullName, roleId, nationalId, no
   return res.json();
 }
 
+export async function fetchTradingStatus() {
+  const res = await fetch(`${API_BASE}/api/trading-status`);
+  if (!res.ok) throw new Error("Failed to fetch trading status");
+  return res.json();
+}
+
+export async function updateTradingStatus(isOnline) {
+  const res = await fetch(`${API_BASE}/api/admin/trading-status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({ is_online: isOnline }),
+  });
+  if (!res.ok) throw new Error("Failed to update trading status");
+  return res.json();
+}
+
 export async function fetchSettlementLabel() {
   const res = await fetch(`${API_BASE}/api/settlement-label`);
   if (!res.ok) throw new Error("Failed to fetch settlement label");

@@ -10,7 +10,7 @@ function formatToman(value) {
   return Math.round(value).toLocaleString("en-US");
 }
 
-export default function PriceButton({ side, price, prevPrice, onClick }) {
+export default function PriceButton({ side, price, prevPrice, onClick, disabled }) {
   const [flash, setFlash] = useState(null); // "up" | "down" | null
   const meta = LABELS[side];
   const key = side === "buy" ? "buy_price" : "sell_price";
@@ -28,8 +28,9 @@ export default function PriceButton({ side, price, prevPrice, onClick }) {
 
   return (
     <button
-      className={`price-panel price-panel--${side} ${flash ? `price-panel--flash-${flash}` : ""}`}
-      onClick={() => onClick(side)}
+      className={`price-panel price-panel--${side} ${flash ? `price-panel--flash-${flash}` : ""} ${disabled ? "price-panel--disabled" : ""}`}
+      onClick={() => !disabled && onClick(side)}
+      disabled={disabled}
     >
       <span className="price-panel__eyebrow">{meta.eyebrow}</span>
       <span className="price-panel__value">

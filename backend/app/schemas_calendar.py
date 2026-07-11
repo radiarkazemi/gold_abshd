@@ -21,3 +21,11 @@ class HolidayOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class TradingStatusOut(BaseModel):
+    is_online: bool
+
+
+class TradingStatusUpdateIn(BaseModel):
+    is_online: bool
