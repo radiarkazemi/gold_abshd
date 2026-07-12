@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import get_db
 from app.models_db import User, OtpCode
-from app.registration_service import validate_key_for_activation, activate_key
+from app.services.registration import validate_key_for_activation, activate_key
 
 OTP_LENGTH = 6
 OTP_TTL_MINUTES = 5
@@ -64,8 +64,7 @@ def get_user_for_login(db: Session, phone_number: str) -> User:
             detail="حسابی با این شماره یافت نشد. لطفا با مدیریت هماهنگ کنید.",
         )
     if user.is_blocked:
-        raise HTTPException(
-            status_code=403, detail="حساب کاربری شما مسدود شده است")
+        raise HTTPException(status_code=403, detail="حساب کاربری شما مسدود شده است")
     return user
 
 
@@ -77,8 +76,7 @@ def check_device_or_require_key(user: User, device_id: str, registration_key: st
     If the user is already activated, device_id must match exactly.
     """
     if not device_id:
-        raise HTTPException(
-            status_code=400, detail="شناسه دستگاه ارسال نشده است")
+        raise HTTPException(status_code=400, detail="شناسه دستگاه ارسال نشده است")
 
     if user.device_id is None:
         if not registration_key:
@@ -133,8 +131,7 @@ def verify_otp_and_get_user(
     if not otp:
         raise HTTPException(status_code=400, detail="کد وارد شده صحیح نیست")
     if otp.expires_at < datetime.utcnow():
-        raise HTTPException(
-            status_code=400, detail="کد وارد شده منقضی شده است")
+        raise HTTPException(status_code=400, detail="کد وارد شده منقضی شده است")
 
     otp.is_used = True
     db.commit()
@@ -171,8 +168,7 @@ def decode_access_token(token: str) -> dict:
     try:
         return jwt.decode(token, settings.JWT_SECRET, algorithms=["HS256"])
     except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=401, detail="نشست شما منقضی شده، دوباره وارد شوید")
+        raise HTTPException(status_code=401, detail="نشست شما منقضی شده، دوباره وارد شوید")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="توکن نامعتبر است")
 
@@ -191,7 +187,6 @@ def get_current_user(
     if not user:
         raise HTTPException(status_code=401, detail="کاربر پیدا نشد")
     if user.is_blocked:
-        raise HTTPException(
-            status_code=403, detail="حساب کاربری شما مسدود شده است")
+        raise HTTPException(status_code=403, detail="حساب کاربری شما مسدود شده است")
 
     return user

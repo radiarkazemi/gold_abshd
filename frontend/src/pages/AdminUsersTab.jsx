@@ -209,7 +209,7 @@ function UserDetail({ userId, onClose, onChanged }) {
               <div className="balance-card__item">
                 <span className="balance-card__label">موجودی طلا</span>
                 <span className="balance-card__value">
-                  {fa(detail.gold_balance, { maximumFractionDigits: 4 })}
+                  {fa(detail.gold_balance, { maximumFractionDigits: 3 })}
                   <span className="balance-card__unit"> گرم ۱۸</span>
                 </span>
               </div>
@@ -308,7 +308,7 @@ function UserDetail({ userId, onClose, onChanged }) {
                       {t.gold_change !== 0 && (
                         <span className={t.gold_change > 0 ? "txn-row__pos" : "txn-row__neg"}>
                           {t.gold_change > 0 ? "+" : ""}
-                          {fa(t.gold_change, { maximumFractionDigits: 4 })} گرم ۱۸
+                          {fa(t.gold_change, { maximumFractionDigits: 3 })} گرم ۱۸
                         </span>
                       )}
                       {t.cash_change !== 0 && (
@@ -382,7 +382,7 @@ export default function AdminUsersTab() {
               <span className="user-card__phone" dir="ltr">{u.phone_number}</span>
               {u.is_blocked && <span className="user-row__blocked-tag">مسدود</span>}
               <div className="user-row__balances">
-                <span>{fa(u.gold_balance, { maximumFractionDigits: 2 })} گرم ۱۸</span>
+                <span>{fa(u.gold_balance, { maximumFractionDigits: 3 })} گرم ۱۸</span>
                 <span className={`cash-status ${formatCashStatus(u.cash_balance).className}`}>
                   {formatCashStatus(u.cash_balance).amount} تومان
                 </span>

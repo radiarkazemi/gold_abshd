@@ -22,6 +22,7 @@ When an order is accepted:
   (گرم ۱۸), it's converted using the گرم۱۸ price active when the order
   was submitted.
 """
+import json
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -38,6 +39,7 @@ from app.models_db import (
 )
 from app.config import settings
 from app.gold_conversion import mesghal17_to_gram18
+from app.schemas.order import OrderOut
 
 
 def weight_equivalent(order: Order) -> float:
@@ -144,6 +146,7 @@ def create_phone_order(
         price_at_submit=gram18_price,
         mesghal17_price_at_submit=mesghal17_price,
         status=OrderStatusEnum.pending,
+        is_manual=True,
     )
     db.add(order)
     db.commit()
@@ -174,6 +177,26 @@ def get_user_transactions(db: Session, user_id: str, limit: int = 20) -> list[Ba
         .limit(limit)
         .all()
     )
+
+
+def cancel_order(db: Session, order_id: str, user_id: str) -> Order:
+    """
+    A customer cancelling their own order, while it's still pending (no
+    admin decision yet). No balance transaction to undo since a pending
+    order never affected the balance in the first place.
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
+    if order.user_id != user_id:
+        raise HTTPException(status_code=403, detail="این سفارش متعلق به شما نیست")
+    if order.status != OrderStatusEnum.pending:
+        raise HTTPException(status_code=400, detail="فقط سفارش‌های در انتظار را می‌توان لغو کرد")
+
+    order.status = OrderStatusEnum.cancelled
+    db.commit()
+    db.refresh(order)
+    return order
 
 
 def decide_order(db: Session, order_id: str, status: str) -> Order:
@@ -294,6 +317,22 @@ def order_customer_fields(db: Session, order: Order) -> dict:
         "customer_gold_balance": balance["gold_balance"],
         "customer_cash_balance": balance["cash_balance"],
     }
+
+
+def order_to_dict(db: Session, order: Order) -> dict:
+    """Full JSON-ready representation of an order, admin-enriched. Used
+    for WebSocket broadcasts (new_order / order_updated events)."""
+    data = json.loads(OrderOut.model_validate(order).model_dump_json())
+    data.update(order_customer_fields(db, order))
+    return data
+
+
+def order_to_admin_out(db: Session, order: Order) -> OrderOut:
+    """Same as order_to_dict but returns the Pydantic model directly,
+    for use as a FastAPI response_model return value."""
+    data = OrderOut.model_validate(order).model_dump()
+    data.update(order_customer_fields(db, order))
+    return OrderOut(**data)
 
 
 def get_user_or_404(db: Session, user_id: str) -> User:

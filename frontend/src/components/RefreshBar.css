@@ -1,0 +1,37 @@
+.refresh-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 720px;
+  margin: 4px 0 12px;
+}
+
+.refresh-bar__time {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.refresh-bar__btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  color: var(--gold-bright);
+  font-size: 13px;
+  cursor: pointer;
+  transition: transform 400ms ease;
+}
+
+.refresh-bar__btn:hover {
+  border-color: var(--gold-dim);
+}
+
+.refresh-bar__btn.is-spinning {
+  transform: rotate(360deg);
+}

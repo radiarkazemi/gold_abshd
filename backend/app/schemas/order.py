@@ -20,6 +20,7 @@ class OrderOut(BaseModel):
     status: str
     price_at_submit: float
     mesghal17_price_at_submit: Optional[float] = None
+    is_manual: bool = False
     has_receipt: bool = False
     created_at: datetime
     updated_at: datetime

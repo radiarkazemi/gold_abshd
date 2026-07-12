@@ -14,16 +14,14 @@ TRADING_STATUS_KEY = "trading_online"
 
 
 def is_trading_online(db: Session) -> bool:
-    row = db.query(AppSetting).filter(
-        AppSetting.key == TRADING_STATUS_KEY).first()
+    row = db.query(AppSetting).filter(AppSetting.key == TRADING_STATUS_KEY).first()
     if not row:
         return True  # default: online
     return row.value == "true"
 
 
 def set_trading_online(db: Session, online: bool) -> bool:
-    row = db.query(AppSetting).filter(
-        AppSetting.key == TRADING_STATUS_KEY).first()
+    row = db.query(AppSetting).filter(AppSetting.key == TRADING_STATUS_KEY).first()
     value = "true" if online else "false"
     if row:
         row.value = value

@@ -929,3 +929,21 @@
   color: var(--text-muted);
   cursor: pointer;
 }
+
+.manual-order-tag {
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(150, 130, 240, 0.18);
+  color: #b3a0f5;
+  vertical-align: middle;
+}
+
+.order-card__status--cancelled,
+.history-card__status--cancelled {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-faint);
+}

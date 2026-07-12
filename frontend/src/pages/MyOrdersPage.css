@@ -331,3 +331,42 @@
   font-size: 11px;
   min-width: 0;
 }
+
+.history-card__status--cancelled {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-faint);
+}
+
+.history-card__cancel-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 9px 0;
+  border: 1px solid var(--sell);
+  background: transparent;
+  color: var(--sell-bright);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.history-card__cancel-btn:hover {
+  background: rgba(207, 100, 70, 0.08);
+}
+
+.history-card__pdf-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px 0;
+  border: 1px solid var(--gold-dim);
+  background: transparent;
+  color: var(--gold-bright);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.history-card__pdf-btn:hover {
+  background: rgba(201, 162, 39, 0.08);
+}

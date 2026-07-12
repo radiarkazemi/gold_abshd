@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
 
-from app.schemas_order import OrderOut
+from app.schemas.order import OrderOut
 
 
 class RoleOut(BaseModel):

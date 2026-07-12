@@ -153,6 +153,7 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
                   <span className={`order-card__badge order-card__badge--${order.side}`}>
                     {SIDE_LABEL[order.side]}
                   </span>
+                  {order.is_manual && <span className="manual-order-tag">دستی</span>}
                   <span className="order-card__time">{formatTime(order.created_at)}</span>
                 </div>
                 <div className="order-card__body">
@@ -164,7 +165,7 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
                   </div>
                   <div className="order-card__row">
                     <span className="order-card__label">وزن طلا</span>
-                    <span className="order-card__value">{fa(orderGoldWeight(order), { maximumFractionDigits: 4 })} گرم۱۸</span>
+                    <span className="order-card__value">{fa(orderGoldWeight(order), { maximumFractionDigits: 3 })} گرم۱۸</span>
                   </div>
                   <div className="order-card__row">
                     <span className="order-card__label">مبلغ کل</span>

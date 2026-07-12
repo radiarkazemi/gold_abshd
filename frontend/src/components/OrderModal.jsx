@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchOrderLimits, fetchMyOrderDetail } from "../api";
+import { fetchOrderLimits, fetchMyOrderDetail, cancelMyOrder } from "../api";
 import FormattedNumberInput from "./FormattedNumberInput";
 
 const SIDE_META = {
@@ -11,6 +11,7 @@ const STATUS_META = {
   pending: { label: "در انتظار تایید", className: "modal-result__status--pending" },
   accepted: { label: "تایید شد ✓", className: "modal-result__status--accepted" },
   rejected: { label: "رد شد", className: "modal-result__status--rejected" },
+  cancelled: { label: "لغو شد", className: "modal-result__status--rejected" },
 };
 
 const COUNTDOWN_SECONDS = 60;
@@ -18,6 +19,10 @@ const MAX_RETRIES = 5;
 
 function toFarsiNumber(n) {
   return Number(n).toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+function formatWeight(n) {
+  return Number(n).toLocaleString("en-US", { maximumFractionDigits: 3 });
 }
 
 function formatMMSS(totalSeconds) {
@@ -87,6 +92,16 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
     fetchMyOrderDetail(result.id).then(setLiveOrder).catch(() => {});
   }
 
+  async function handleCancel() {
+    if (!confirm("این درخواست لغو شود؟")) return;
+    try {
+      const updated = await cancelMyOrder(result.id);
+      setLiveOrder(updated);
+    } catch (e) {
+      alert(e.message || "لغو درخواست با خطا مواجه شد");
+    }
+  }
+
   function unitPrice() {
     return side === "buy" ? price?.gram18_buy_price : price?.gram18_sell_price;
   }
@@ -111,7 +126,7 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
     if (amountType === "weight") {
       return { label: "مبلغ کل", value: `${toFarsiNumber(Math.round(numeric * up))} تومان` };
     }
-    return { label: "وزن کل", value: `${toFarsiNumber(numeric / up)} گرم ۱۸` };
+    return { label: "وزن کل", value: `${formatWeight(numeric / up)} گرم ۱۸` };
   }
 
   function validate() {
@@ -191,13 +206,16 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
                     بررسی این درخواست بیش از حد معمول طول کشیده. لطفا با پشتیبانی تماس بگیرید.
                   </p>
                 )}
+                <button type="button" className="modal-result__cancel-btn" onClick={handleCancel}>
+                  لغو درخواست
+                </button>
               </div>
             )}
 
             {priceChanged && (
               <p className="modal-result__price-change">
-                قیمت از {toFarsiNumber(Math.round(liveOrder.mesghal17_price_at_submit))} به{" "}
-                {toFarsiNumber(Math.round(mesghal17Price()))} تومان تغییر کرد
+                مظنه از {toFarsiNumber(Math.round(liveOrder.mesghal17_price_at_submit))} به{" "}
+                {toFarsiNumber(Math.round(mesghal17Price()))} تومان تغییر کرده
               </p>
             )}
 
@@ -219,7 +237,7 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
             <div className="modal-confirm__row">
               <span>{amountType === "weight" ? "وزن" : "مبلغ"}</span>
               <span>
-                {toFarsiNumber(value)} {amountType === "weight" ? "گرم ۱۸" : "تومان"}
+                {amountType === "weight" ? formatWeight(value) : toFarsiNumber(value)} {amountType === "weight" ? "گرم ۱۸" : "تومان"}
               </span>
             </div>
             {total && (

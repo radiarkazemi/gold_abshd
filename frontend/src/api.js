@@ -108,6 +108,18 @@ export async function fetchOrderLimits() {
   return res.json();
 }
 
+export async function cancelMyOrder(orderId) {
+  const res = await fetch(`${API_BASE}/api/my/orders/${orderId}/cancel`, {
+    method: "POST",
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to cancel order");
+  }
+  return res.json();
+}
+
 export async function fetchMyOrderDetail(orderId) {
   const res = await fetch(`${API_BASE}/api/my/orders/${orderId}`, {
     headers: { ...authHeaders() },

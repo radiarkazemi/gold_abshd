@@ -51,8 +51,7 @@ def save_receipt(db: Session, order_id: str, user_id: str, file: UploadFile, con
     if not order:
         raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
     if order.user_id != user_id:
-        raise HTTPException(
-            status_code=403, detail="این سفارش متعلق به شما نیست")
+        raise HTTPException(status_code=403, detail="این سفارش متعلق به شما نیست")
     if order.status != OrderStatusEnum.pending:
         raise HTTPException(
             status_code=400,
@@ -105,11 +104,9 @@ def get_receipt_path_for_viewer(db: Session, order_id: str, viewer_user_id: str 
     if not order:
         raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
     if not order.receipt_path or not os.path.exists(order.receipt_path):
-        raise HTTPException(
-            status_code=404, detail="فیشی برای این سفارش ثبت نشده")
+        raise HTTPException(status_code=404, detail="فیشی برای این سفارش ثبت نشده")
 
     if is_admin or order.user_id == viewer_user_id:
         return order.receipt_path
 
-    raise HTTPException(
-        status_code=403, detail="اجازه دسترسی به این فیش را ندارید")
+    raise HTTPException(status_code=403, detail="اجازه دسترسی به این فیش را ندارید")

@@ -38,6 +38,7 @@ class OrderStatusEnum(str, enum.Enum):
     pending = "pending"
     accepted = "accepted"
     rejected = "rejected"
+    cancelled = "cancelled"  # customer cancelled it themselves, while still pending
 
 
 class AmountTypeEnum(str, enum.Enum):
@@ -155,6 +156,7 @@ class Order(Base):
     status = Column(Enum(OrderStatusEnum), default=OrderStatusEnum.pending, nullable=False)
     price_at_submit = Column(Float, nullable=False)  # گرم۱۸ price (commission-adjusted), used for balance math
     mesghal17_price_at_submit = Column(Float, nullable=True)  # raw مثقال۱۷ quote at submit time, for display only
+    is_manual = Column(Boolean, default=False, nullable=False)  # True for حواله تلفنی (admin-entered) orders
 
     # Path (on disk, relative to the upload directory) to an optional
     # bank-transfer receipt the user attached as proof of payment for a

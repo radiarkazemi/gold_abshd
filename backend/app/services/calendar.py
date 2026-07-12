@@ -20,8 +20,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models_db import Holiday
 
-JALALI_WEEKDAY_BY_INDEX = ["شنبه", "یکشنبه",
-                           "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه"]
+JALALI_WEEKDAY_BY_INDEX = ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه"]
 # jdatetime's date.weekday(): Saturday=0 ... Friday=6 (verified empirically)
 
 
@@ -48,8 +47,7 @@ def is_trading_day(db: Session, dt: datetime) -> bool:
 
 def next_trading_day(db: Session, from_dt: datetime) -> datetime:
     """First trading day strictly AFTER from_dt's date."""
-    candidate = datetime(from_dt.year, from_dt.month,
-                         from_dt.day) + timedelta(days=1)
+    candidate = datetime(from_dt.year, from_dt.month, from_dt.day) + timedelta(days=1)
     for _ in range(30):  # safety cap - shouldn't ever need more than a week or two
         if is_trading_day(db, candidate):
             return candidate
@@ -63,15 +61,16 @@ def get_settlement_label(db: Session, now: datetime | None = None) -> dict:
     right now will settle on, in both Jalali-weekday-name and ISO date
     form.
 
-    Rule: a trade normally settles on the next trading day after today.
-    If placed at/after SETTLEMENT_CUTOFF_HOUR, it settles one trading
-    day LATER than that (pushed forward one more trading day).
+    Rule: settlement is simply the next trading day after today (skipping
+    weekends and admin-defined holidays) - no time-of-day adjustment.
+    An earlier version of this also pushed one extra day forward after a
+    cutoff hour, based on a wrong assumption that only Friday was a
+    non-trading day; once the real weekend (Thursday+Friday) is used,
+    that extra push isn't needed and was actually producing a day too
+    many.
     """
     now = now or datetime.utcnow()
-
     settlement_date = next_trading_day(db, now)
-    if now.hour >= settings.SETTLEMENT_CUTOFF_HOUR:
-        settlement_date = next_trading_day(db, settlement_date)
 
     weekday_name = jalali_weekday_name(settlement_date)
     return {

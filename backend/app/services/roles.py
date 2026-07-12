@@ -12,8 +12,7 @@ def create_role(db: Session, name: str, commission_type: str, commission_value: 
     if commission_type not in ("fixed", "percentage"):
         raise HTTPException(status_code=400, detail="نوع کمیسیون نامعتبر است")
     if db.query(Role).filter(Role.name == name).first():
-        raise HTTPException(
-            status_code=400, detail="نقشی با این نام قبلا ثبت شده است")
+        raise HTTPException(status_code=400, detail="نقشی با این نام قبلا ثبت شده است")
 
     role = Role(
         name=name,

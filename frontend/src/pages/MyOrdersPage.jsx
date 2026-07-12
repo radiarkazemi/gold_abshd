@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchMyOrders, fetchMyBalance, fetchReceiptBlobUrl, uploadReceipt } from "../api";
+import { fetchMyOrders, fetchMyBalance, fetchReceiptBlobUrl, uploadReceipt, cancelMyOrder } from "../api";
+import { downloadOrderReceipt } from "../utils/printReceipt";
 import { formatCashStatus, formatGoldStatus } from "../utils/balanceFormat";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
@@ -13,6 +14,7 @@ const STATUS_LABEL = {
   pending: "در انتظار",
   accepted: "تایید شده",
   rejected: "رد شده",
+  cancelled: "لغو شده",
 };
 
 const FILTERS = [
@@ -112,6 +114,16 @@ export default function MyOrdersPage() {
     }
   }
 
+  async function handleCancelOrder(orderId) {
+    if (!confirm("این درخواست لغو شود؟")) return;
+    try {
+      await cancelMyOrder(orderId);
+      reload();
+    } catch (e) {
+      alert(e.message || "لغو درخواست با خطا مواجه شد.");
+    }
+  }
+
   return (
     <div className="myorders myorders--with-tabbar">
       <header className="myorders__header">
@@ -199,6 +211,7 @@ export default function MyOrdersPage() {
                 <span className={`order-card__badge order-card__badge--${order.side}`}>
                   {SIDE_LABEL[order.side]}
                 </span>
+                {order.is_manual && <span className="manual-order-tag">دستی</span>}
                 <span className={`history-card__status history-card__status--${order.status}`}>
                   {STATUS_LABEL[order.status]}
                 </span>
@@ -267,6 +280,24 @@ export default function MyOrdersPage() {
                   )}
                 </div>
               )}
+
+              {order.status === "pending" && (
+                <button
+                  type="button"
+                  className="history-card__cancel-btn"
+                  onClick={() => handleCancelOrder(order.id)}
+                >
+                  لغو درخواست
+                </button>
+              )}
+
+              <button
+                type="button"
+                className="history-card__pdf-btn"
+                onClick={() => downloadOrderReceipt(order)}
+              >
+                دانلود رسید (PDF)
+              </button>
             </div>
           ))}
         </div>

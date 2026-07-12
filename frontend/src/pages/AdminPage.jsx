@@ -9,6 +9,8 @@ import AdminCalendarTab from "./AdminCalendarTab";
 import AdminDashboardTab from "./AdminDashboardTab";
 import AdminPhoneOrderTab from "./AdminPhoneOrderTab";
 import AdminShell from "../components/AdminShell";
+import JalaliDateInput from "../components/JalaliDateInput";
+import { downloadOrderReceipt } from "../utils/printReceipt";
 import { playNotificationSound } from "../utils/notificationSound";
 import { orderGoldWeight, orderTotalMoney, summarizeOrders } from "../utils/orderCalc";
 import { formatCashStatus } from "../utils/balanceFormat";
@@ -23,6 +25,7 @@ const STATUS_LABEL = {
   pending: "در انتظار",
   accepted: "تایید شده",
   rejected: "رد شده",
+  cancelled: "لغو شده",
 };
 
 const FILTERS = [
@@ -45,6 +48,10 @@ function formatTime(iso) {
   return new Date(iso).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
 }
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function AdminPanel({ onLogout }) {
   const [tab, setTab] = useState("dashboard");
   const [orders, setOrders] = useState([]);
@@ -54,7 +61,15 @@ function AdminPanel({ onLogout }) {
   const [pendingCount, setPendingCount] = useState(0);
   const [newOrderFlash, setNewOrderFlash] = useState(false);
   const [wsTick, setWsTick] = useState(0);
-  const orderTotals = summarizeOrders(orders);
+  const [dateFrom, setDateFrom] = useState(todayIso());
+  const [dateTo, setDateTo] = useState(todayIso());
+  const dateFilteredOrders = orders.filter((o) => {
+    const d = o.created_at.slice(0, 10);
+    if (dateFrom && d < dateFrom) return false;
+    if (dateTo && d > dateTo) return false;
+    return true;
+  });
+  const orderTotals = summarizeOrders(dateFilteredOrders);
   const wsRef = useRef(null);
 
   function refreshPendingCount() {
@@ -163,22 +178,37 @@ function AdminPanel({ onLogout }) {
             ))}
           </div>
 
-          {orders.length > 0 && (
+          <div className="date-filter">
+            <div className="date-filter__quick">
+              <button className="admin__filter" onClick={() => { setDateFrom(todayIso()); setDateTo(todayIso()); }}>
+                امروز
+              </button>
+              <button className="admin__filter" onClick={() => { setDateFrom(""); setDateTo(""); }}>
+                همه تاریخ‌ها
+              </button>
+            </div>
+            <div className="date-filter__inputs">
+              <JalaliDateInput label="از" value={dateFrom} onChange={setDateFrom} />
+              <JalaliDateInput label="تا" value={dateTo} onChange={setDateTo} />
+            </div>
+          </div>
+
+          {dateFilteredOrders.length > 0 && (
             <div className="order-totals">
               <div className="order-totals__item order-totals__item--buy">
-                <span className="order-totals__label">مجموع خرید ({orderTotals.buy.count})</span>
+                <span className="order-totals__label">مجموع خرید مشتری ({orderTotals.buy.count})</span>
                 <span className="order-totals__value">{fa(orderTotals.buy.weight, { maximumFractionDigits: 3 })} گرم۱۸</span>
                 <span className="order-totals__sub">{fa(Math.round(orderTotals.buy.money))} تومان</span>
               </div>
               <div className="order-totals__item order-totals__item--sell">
-                <span className="order-totals__label">مجموع فروش ({orderTotals.sell.count})</span>
+                <span className="order-totals__label">مجموع فروش مشتری ({orderTotals.sell.count})</span>
                 <span className="order-totals__value">{fa(orderTotals.sell.weight, { maximumFractionDigits: 3 })} گرم۱۸</span>
                 <span className="order-totals__sub">{fa(Math.round(orderTotals.sell.money))} تومان</span>
               </div>
             </div>
           )}
 
-          {orders.length === 0 ? (
+          {dateFilteredOrders.length === 0 ? (
             <p className="admin__empty">سفارشی برای نمایش نیست.</p>
           ) : (
             <div className="order-table-wrap">
@@ -197,21 +227,22 @@ function AdminPanel({ onLogout }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {orders.map((order) => (
+                  {dateFilteredOrders.map((order) => (
                     <tr key={order.id}>
                       <td>
                         <span className={`order-card__badge order-card__badge--${order.side}`}>
                           {SIDE_LABEL[order.side]}
                         </span>
+                        {order.is_manual && <span className="manual-order-tag">دستی</span>}
                       </td>
-                      <td>{fa(orderGoldWeight(order), { maximumFractionDigits: 4 })} گرم۱۸</td>
+                      <td>{fa(orderGoldWeight(order), { maximumFractionDigits: 3 })} گرم۱۸</td>
                       <td>{fa(Math.round(orderTotalMoney(order)))} ت</td>
                       <td>{order.mesghal17_price_at_submit ? fa(Math.round(order.mesghal17_price_at_submit)) : "—"}</td>
                       <td dir="ltr" className="order-table__customer">
                         {order.customer_name || "بدون نام"} #{order.customer_code}
                       </td>
                       <td className="order-table__balance">
-                        <span>{fa(order.customer_gold_balance, { maximumFractionDigits: 2 })} گرم۱۸</span>
+                        <span>{fa(order.customer_gold_balance, { maximumFractionDigits: 3 })} گرم۱۸</span>
                         <span className={formatCashStatus(order.customer_cash_balance).className}>
                           {formatCashStatus(order.customer_cash_balance).amount} ت
                         </span>
@@ -254,6 +285,12 @@ function AdminPanel({ onLogout }) {
                               قبض
                             </button>
                           )}
+                          <button
+                            className="order-table__receipt-btn"
+                            onClick={() => downloadOrderReceipt(order)}
+                          >
+                            PDF
+                          </button>
                         </div>
                       </td>
                     </tr>

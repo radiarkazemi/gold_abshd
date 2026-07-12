@@ -9,6 +9,7 @@ import NoticeCard from "../components/NoticeCard";
 import RecentOrdersTable from "../components/RecentOrdersTable";
 import BalanceStrip from "../components/BalanceStrip";
 import BottomTabBar from "../components/BottomTabBar";
+import RefreshBar from "../components/RefreshBar";
 
 export default function TraderPage() {
   const { price, prevPrice, connected } = usePriceFeed();
@@ -20,6 +21,15 @@ export default function TraderPage() {
   const [error, setError] = useState("");
   const [settlement, setSettlement] = useState(null);
   const [tradingOnline, setTradingOnline] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  async function handleManualRefresh() {
+    setRefreshKey((k) => k + 1);
+    await Promise.all([
+      fetchSettlementLabel().then(setSettlement).catch(() => {}),
+      fetchTradingStatus().then((s) => setTradingOnline(s.is_online)).catch(() => {}),
+    ]);
+  }
 
   useEffect(() => {
     fetchSettlementLabel().then(setSettlement).catch(() => {});
@@ -77,7 +87,7 @@ export default function TraderPage() {
       <div className={`trading-status-bar ${tradingOnline ? "is-online" : "is-offline"}`} />
 
       <main className="app__main app__main--with-tabbar">
-        <BalanceStrip />
+        <BalanceStrip key={refreshKey} />
 
         {price?.updated_at && (
           <p className="price-updated-note">
@@ -96,12 +106,13 @@ export default function TraderPage() {
             در حال حاضر امکان ثبت سفارش خرید و فروش وجود ندارد.
           </p>
         )}
+        <RefreshBar onRefresh={handleManualRefresh} />
         <div className={`price-stage ${!tradingOnline ? "price-stage--disabled" : ""}`}>
           <PriceButton side="buy" price={price} prevPrice={prevPrice} onClick={openModal} disabled={!tradingOnline} />
           <PriceButton side="sell" price={price} prevPrice={prevPrice} onClick={openModal} disabled={!tradingOnline} />
         </div>
         <NoticeCard />
-        <RecentOrdersTable limit={5} />
+        <RecentOrdersTable key={refreshKey} limit={5} />
       </main>
 
       {activeSide && (

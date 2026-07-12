@@ -20,10 +20,15 @@ export default function AdminPhoneOrderTab() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
+  const [livePrice, setLivePrice] = useState(null);
 
   useEffect(() => {
     fetchPrice()
-      .then((p) => setMesghal17Price(String(Math.round(side === "buy" ? p.buy_price : p.sell_price))))
+      .then((p) => {
+        const current = side === "buy" ? p.buy_price : p.sell_price;
+        setMesghal17Price(String(Math.round(current)));
+        setLivePrice(current);
+      })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [side]);
@@ -67,6 +72,19 @@ export default function AdminPhoneOrderTab() {
       setError("قیمت مثقال ۱۷ معتبر نیست");
       return;
     }
+
+    if (livePrice) {
+      const diffPercent = (Math.abs(numericPrice - livePrice) / livePrice) * 100;
+      if (diffPercent > 2) {
+        const proceed = confirm(
+          `این قیمت (${Math.round(numericPrice).toLocaleString("en-US")} تومان) ` +
+          `${diffPercent.toFixed(1)}٪ با قیمت زنده (${Math.round(livePrice).toLocaleString("en-US")} تومان) ` +
+          `فاصله داره. مطمئنید؟`
+        );
+        if (!proceed) return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const order = await createPhoneOrder({

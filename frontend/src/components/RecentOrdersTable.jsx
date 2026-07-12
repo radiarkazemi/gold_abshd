@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchMyOrders } from "../api";
 
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
-const STATUS_LABEL = { pending: "در انتظار", accepted: "تایید شده", rejected: "رد شده" };
+const STATUS_LABEL = { pending: "در انتظار", accepted: "تایید شده", rejected: "رد شده", cancelled: "لغو شده" };
 const STATUS_CLASS = {
   pending: "recent-orders__status--pending",
   accepted: "recent-orders__status--accepted",
