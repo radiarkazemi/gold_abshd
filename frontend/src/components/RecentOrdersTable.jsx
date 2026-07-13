@@ -7,6 +7,7 @@ const STATUS_CLASS = {
   pending: "recent-orders__status--pending",
   accepted: "recent-orders__status--accepted",
   rejected: "recent-orders__status--rejected",
+  cancelled: "recent-orders__status--rejected",
 };
 
 function fa(n, opts) {
@@ -22,7 +23,7 @@ function formatTime(iso) {
   });
 }
 
-export default function RecentOrdersTable({ limit = 5 }) {
+export default function RecentOrdersTable({ limit = 5, refreshSignal }) {
   const [orders, setOrders] = useState(null);
 
   useEffect(() => {
@@ -35,6 +36,14 @@ export default function RecentOrdersTable({ limit = 5 }) {
     const interval = setInterval(load, 6000);
     return () => clearInterval(interval);
   }, [limit]);
+
+  useEffect(() => {
+    if (refreshSignal === undefined) return;
+    fetchMyOrders()
+      .then((data) => setOrders(data.slice(0, limit)))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSignal]);
 
   if (orders === null || orders.length === 0) return null;
 

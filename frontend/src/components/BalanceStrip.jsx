@@ -7,7 +7,7 @@ function fa(n, opts) {
   return Number(n).toLocaleString("en-US", opts);
 }
 
-export default function BalanceStrip() {
+export default function BalanceStrip({ refreshSignal }) {
   const [balance, setBalance] = useState(null);
   const navigate = useNavigate();
 
@@ -19,6 +19,11 @@ export default function BalanceStrip() {
     const interval = setInterval(load, 6000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (refreshSignal === undefined) return;
+    fetchMyBalance().then(setBalance).catch(() => {});
+  }, [refreshSignal]);
 
   const cashStatus = balance ? formatCashStatus(balance.cash_balance) : null;
   const goldStatus = balance ? formatGoldStatus(balance.gold_balance) : null;

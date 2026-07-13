@@ -87,7 +87,7 @@ export default function TraderPage() {
       <div className={`trading-status-bar ${tradingOnline ? "is-online" : "is-offline"}`} />
 
       <main className="app__main app__main--with-tabbar">
-        <BalanceStrip key={refreshKey} />
+        <BalanceStrip refreshSignal={refreshKey} />
 
         {price?.updated_at && (
           <p className="price-updated-note">
@@ -112,7 +112,7 @@ export default function TraderPage() {
           <PriceButton side="sell" price={price} prevPrice={prevPrice} onClick={openModal} disabled={!tradingOnline} />
         </div>
         <NoticeCard />
-        <RecentOrdersTable key={refreshKey} limit={5} />
+        <RecentOrdersTable refreshSignal={refreshKey} limit={5} />
       </main>
 
       {activeSide && (
