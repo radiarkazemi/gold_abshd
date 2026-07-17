@@ -7,7 +7,7 @@ import {
   updateUserAdmin,
   fetchRoles,
 } from "../api";
-import { formatCashStatus } from "../utils/balanceFormat";
+import { formatCashStatus, formatGoldStatus } from "../utils/balanceFormat";
 import FormattedNumberInput from "../components/FormattedNumberInput";
 
 function fa(n, opts) {
@@ -208,10 +208,16 @@ function UserDetail({ userId, onClose, onChanged }) {
             <div className="balance-card">
               <div className="balance-card__item">
                 <span className="balance-card__label">موجودی طلا</span>
-                <span className="balance-card__value">
-                  {fa(detail.gold_balance, { maximumFractionDigits: 3 })}
-                  <span className="balance-card__unit"> گرم ۱۸</span>
-                </span>
+                {(() => {
+                  const goldStatus = formatGoldStatus(detail.gold_balance);
+                  return (
+                    <span className={`balance-card__value cash-status ${goldStatus.className}`}>
+                      {goldStatus.amount}
+                      <span className="balance-card__unit"> گرم ۱۸</span>
+                      {goldStatus.label && <span className="cash-status__label">{goldStatus.label}</span>}
+                    </span>
+                  );
+                })()}
               </div>
               <div className="balance-card__divider" />
               <div className="balance-card__item">
@@ -382,7 +388,9 @@ export default function AdminUsersTab() {
               <span className="user-card__phone" dir="ltr">{u.phone_number}</span>
               {u.is_blocked && <span className="user-row__blocked-tag">مسدود</span>}
               <div className="user-row__balances">
-                <span>{fa(u.gold_balance, { maximumFractionDigits: 3 })} گرم ۱۸</span>
+                <span className={`cash-status ${formatGoldStatus(u.gold_balance).className}`}>
+                  {fa(u.gold_balance, { maximumFractionDigits: 3 })} گرم ۱۸
+                </span>
                 <span className={`cash-status ${formatCashStatus(u.cash_balance).className}`}>
                   {formatCashStatus(u.cash_balance).amount} تومان
                 </span>

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.admin_auth import get_current_admin
+from app.admin_auth import get_current_admin, require_permission
 from app.models_db import Order, BalanceTransaction
 from app.schemas.admin import (
     UserSummaryOut, UserDetailOut, TransactionOut, BalanceAdjustIn, BlockUserIn,
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/admin/users", tags=["admin-users"])
 
 
 @router.post("", response_model=AdminCreateUserOut)
-async def create_user(payload: AdminCreateUserIn, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+async def create_user(payload: AdminCreateUserIn, db: Session = Depends(get_db), _admin=Depends(require_permission("add-user"))):
     user, reg_key = create_user_with_key(
         db,
         phone_number=payload.phone_number,
@@ -42,12 +42,12 @@ async def create_user(payload: AdminCreateUserIn, db: Session = Depends(get_db),
 
 
 @router.get("", response_model=list[UserSummaryOut])
-async def list_users(search: str | None = None, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+async def list_users(search: str | None = None, db: Session = Depends(get_db), _admin=Depends(require_permission("users"))):
     return list_users_with_balance(db, search)
 
 
 @router.get("/{user_id}", response_model=UserDetailOut)
-async def get_user_detail(user_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+async def get_user_detail(user_id: str, db: Session = Depends(get_db), _admin=Depends(require_permission("users"))):
     user = get_user_or_404(db, user_id)
     balance = get_user_balance(db, user_id)
 
@@ -85,13 +85,14 @@ async def get_user_detail(user_id: str, db: Session = Depends(get_db), _admin=De
 
 
 @router.post("/{user_id}/adjust-balance", response_model=TransactionOut)
-async def adjust_user_balance(user_id: str, payload: BalanceAdjustIn, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    txn = adjust_balance_db(db, user_id, payload.gold_change, payload.cash_change, payload.note)
+async def adjust_user_balance(user_id: str, payload: BalanceAdjustIn, db: Session = Depends(get_db), _admin=Depends(require_permission("users"))):
+    txn = adjust_balance_db(db, user_id, payload.gold_change,
+                            payload.cash_change, payload.note)
     return txn
 
 
 @router.post("/{user_id}/block", response_model=UserSummaryOut)
-async def block_user(user_id: str, payload: BlockUserIn, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+async def block_user(user_id: str, payload: BlockUserIn, db: Session = Depends(get_db), _admin=Depends(require_permission("users"))):
     user = set_user_blocked(db, user_id, payload.is_blocked)
     balance = get_user_balance(db, user_id)
     reg_key = user.registration_key
@@ -111,8 +112,9 @@ async def block_user(user_id: str, payload: BlockUserIn, db: Session = Depends(g
 
 
 @router.patch("/{user_id}", response_model=UserSummaryOut)
-async def edit_user(user_id: str, payload: AdminUpdateUserIn, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    user = update_user_db(db, user_id, payload.full_name, payload.role_id, payload.national_id, payload.notes)
+async def edit_user(user_id: str, payload: AdminUpdateUserIn, db: Session = Depends(get_db), _admin=Depends(require_permission("users"))):
+    user = update_user_db(db, user_id, payload.full_name,
+                          payload.role_id, payload.national_id, payload.notes)
     balance = get_user_balance(db, user_id)
     reg_key = user.registration_key
     return UserSummaryOut(

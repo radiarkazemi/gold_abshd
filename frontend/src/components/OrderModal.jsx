@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchOrderLimits, fetchMyOrderDetail, cancelMyOrder } from "../api";
+import { fetchOrderLimits, fetchMyOrderDetail } from "../api";
 import FormattedNumberInput from "./FormattedNumberInput";
 
 const SIDE_META = {
@@ -92,16 +92,6 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
     fetchMyOrderDetail(result.id).then(setLiveOrder).catch(() => {});
   }
 
-  async function handleCancel() {
-    if (!confirm("این درخواست لغو شود؟")) return;
-    try {
-      const updated = await cancelMyOrder(result.id);
-      setLiveOrder(updated);
-    } catch (e) {
-      alert(e.message || "لغو درخواست با خطا مواجه شد");
-    }
-  }
-
   function unitPrice() {
     return side === "buy" ? price?.gram18_buy_price : price?.gram18_sell_price;
   }
@@ -137,14 +127,22 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
       return null;
     }
     if (limits) {
-      const weight = weightEquivalent(numeric);
-      if (weight != null) {
-        if (weight < limits.min_weight) {
+      if (amountType === "weight") {
+        if (numeric < limits.min_weight) {
           setLocalError(`حداقل مقدار سفارش ${toFarsiNumber(limits.min_weight)} گرم ۱۸ است`);
           return null;
         }
-        if (weight > limits.max_weight) {
+        if (numeric > limits.max_weight) {
           setLocalError(`حداکثر مقدار سفارش ${toFarsiNumber(limits.max_weight)} گرم ۱۸ است`);
+          return null;
+        }
+      } else {
+        if (limits.min_amount && numeric < limits.min_amount) {
+          setLocalError(`حداقل مبلغ سفارش ${toFarsiNumber(limits.min_amount)} تومان است`);
+          return null;
+        }
+        if (limits.max_amount && numeric > limits.max_amount) {
+          setLocalError(`حداکثر مبلغ سفارش ${toFarsiNumber(limits.max_amount)} تومان است`);
           return null;
         }
       }
@@ -206,9 +204,6 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
                     بررسی این درخواست بیش از حد معمول طول کشیده. لطفا با پشتیبانی تماس بگیرید.
                   </p>
                 )}
-                <button type="button" className="modal-result__cancel-btn" onClick={handleCancel}>
-                  لغو درخواست
-                </button>
               </div>
             )}
 
@@ -312,6 +307,13 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
                 <span className="field__hint">
                   حداقل: {toFarsiNumber(limits.min_weight)} گرم ۱۸ &nbsp;·&nbsp; حداکثر:{" "}
                   {toFarsiNumber(limits.max_weight)} گرم ۱۸
+                </span>
+              )}
+              {limits && amountType === "amount" && (limits.min_amount > 0 || limits.max_amount > 0) && (
+                <span className="field__hint">
+                  {limits.min_amount > 0 && <>حداقل: {toFarsiNumber(limits.min_amount)} تومان</>}
+                  {limits.min_amount > 0 && limits.max_amount > 0 && <>&nbsp;·&nbsp;</>}
+                  {limits.max_amount > 0 && <>حداکثر: {toFarsiNumber(limits.max_amount)} تومان</>}
                 </span>
               )}
             </label>

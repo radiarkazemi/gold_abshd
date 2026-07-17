@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchOrders, decideOrder, openAdminSocket, getAdminToken, clearAdminToken, fetchReceiptBlobUrlAsAdmin } from "../api";
+import { fetchOrders, decideOrder, openAdminSocket, getAdminToken, clearAdminToken, fetchReceiptBlobUrlAsAdmin, getAdminIdentity } from "../api";
 import AdminUsersTab from "./AdminUsersTab";
 import AdminLoginPage from "./AdminLoginPage";
 import AdminNoticeTab from "./AdminNoticeTab";
@@ -8,6 +8,10 @@ import AdminRolesTab from "./AdminRolesTab";
 import AdminCalendarTab from "./AdminCalendarTab";
 import AdminDashboardTab from "./AdminDashboardTab";
 import AdminPhoneOrderTab from "./AdminPhoneOrderTab";
+import AdminPricesTab from "./AdminPricesTab";
+import AdminAccountsTab from "./AdminAccountsTab";
+import AdminKycTab from "./AdminKycTab";
+import AdminTransfersTab from "./AdminTransfersTab";
 import AdminShell from "../components/AdminShell";
 import JalaliDateInput from "../components/JalaliDateInput";
 import { downloadOrderReceipt } from "../utils/printReceipt";
@@ -19,7 +23,7 @@ function fa(n, opts) {
   return Number(n).toLocaleString("fa-IR", opts);
 }
 
-const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
+const SIDE_LABEL = { buy: "خرید مشتری از ما", sell: "فروش مشتری به ما" };
 const AMOUNT_LABEL = { weight: "گرم ۱۸", amount: "تومان" };
 const STATUS_LABEL = {
   pending: "در انتظار",
@@ -53,7 +57,12 @@ function todayIso() {
 }
 
 function AdminPanel({ onLogout }) {
-  const [tab, setTab] = useState("dashboard");
+  const identity = getAdminIdentity();
+  const [tab, setTab] = useState(
+    identity.is_super || (identity.permissions || []).includes("dashboard")
+      ? "dashboard"
+      : (identity.permissions || [])[0] || "dashboard"
+  );
   const [orders, setOrders] = useState([]);
   const [filter, setFilter] = useState("pending");
   const [connected, setConnected] = useState(false);
@@ -146,6 +155,7 @@ function AdminPanel({ onLogout }) {
       pendingCount={pendingCount}
       connected={connected}
       onLogout={onLogout}
+      identity={identity}
     >
       {newOrderFlash && (
         <div className="new-order-flash">🔔 سفارش جدید دریافت شد</div>
@@ -164,6 +174,14 @@ function AdminPanel({ onLogout }) {
         <AdminCalendarTab />
       ) : tab === "phone-order" ? (
         <AdminPhoneOrderTab />
+      ) : tab === "prices" ? (
+        <AdminPricesTab />
+      ) : tab === "kyc" ? (
+        <AdminKycTab />
+      ) : tab === "transfers" ? (
+        <AdminTransfersTab />
+      ) : tab === "admins" ? (
+        <AdminAccountsTab />
       ) : (
         <>
           <div className="admin__filters">

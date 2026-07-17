@@ -8,9 +8,16 @@ const NAV_ITEMS = [
   { key: "users", label: "کاربران", icon: "◈" },
   { key: "add-user", label: "کاربر جدید", icon: "+" },
   { key: "roles", label: "دسته‌بندی‌ها", icon: "≡" },
+  { key: "prices", label: "قیمت‌ها", icon: "⛁" },
+  { key: "kyc", label: "احراز هویت", icon: "🪪" },
+  { key: "transfers", label: "ثبت حواله", icon: "↺" },
   { key: "calendar", label: "تقویم", icon: "▦" },
   { key: "notice", label: "اطلاعیه", icon: "!" },
 ];
+
+// Only shown to the super-admin - manages sub-admin accounts and the
+// activity log, so it isn't part of the regular permission-scope list.
+const SUPER_ONLY_NAV_ITEM = { key: "admins", label: "مدیران", icon: "🛡" };
 
 const TITLES = {
   dashboard: "داشبورد",
@@ -19,15 +26,25 @@ const TITLES = {
   users: "کاربران",
   "add-user": "کاربر جدید",
   roles: "دسته‌بندی‌ها",
+  prices: "قیمت‌ها",
+  kyc: "احراز هویت",
+  transfers: "ثبت حواله",
   calendar: "تقویم",
   notice: "اطلاعیه",
+  admins: "مدیران",
 };
 
 const MOBILE_PRIMARY = ["dashboard", "orders", "users"];
 
-export default function AdminShell({ activeTab, onTabChange, pendingCount, connected, onLogout, children }) {
+export default function AdminShell({ activeTab, onTabChange, pendingCount, connected, onLogout, children, identity }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { theme, toggleTheme } = useTheme();
+
+  const isSuper = identity?.is_super !== false; // default true for backwards compatibility
+  const allowedKeys = identity?.permissions || [];
+
+  const visibleItems = NAV_ITEMS.filter((item) => isSuper || allowedKeys.includes(item.key));
+  const navItems = isSuper ? [...visibleItems, SUPER_ONLY_NAV_ITEM] : visibleItems;
 
   function selectTab(key) {
     onTabChange(key);
@@ -50,7 +67,7 @@ export default function AdminShell({ activeTab, onTabChange, pendingCount, conne
     );
   }
 
-  const mobileTabs = NAV_ITEMS.filter((i) => MOBILE_PRIMARY.includes(i.key));
+  const mobileTabs = navItems.filter((i) => MOBILE_PRIMARY.includes(i.key));
 
   return (
     <div className="admin-shell">
@@ -61,7 +78,7 @@ export default function AdminShell({ activeTab, onTabChange, pendingCount, conne
         </div>
 
         <nav className="admin-nav">
-          {NAV_ITEMS.map((item) => renderNavButton(item))}
+          {navItems.map((item) => renderNavButton(item))}
         </nav>
 
         <div className="admin-shell__footer">
@@ -106,7 +123,7 @@ export default function AdminShell({ activeTab, onTabChange, pendingCount, conne
               <span className="admin-shell__brand-sub">پنل مدیریت</span>
             </div>
             <nav className="admin-nav" style={{ flex: 1, overflowY: "auto" }}>
-              {NAV_ITEMS.map((item) => renderNavButton(item, "-drawer"))}
+              {navItems.map((item) => renderNavButton(item, "-drawer"))}
             </nav>
             <button className="admin-shell__logout" onClick={onLogout}>خروج از پنل</button>
           </div>

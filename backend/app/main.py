@@ -9,27 +9,6 @@ response shapes in app/schemas/ - main.py itself should stay small
 forever; if it starts growing again, something belongs in a router
 instead.
 """
-import asyncio
-import logging
-import os
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-    datefmt="%H:%M:%S",
-)
-
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-
-from app.rate_limit import limiter
-from app.price_service import price_service
-from app.ws_manager import manager
-from app.db import init_db
-from app.config import settings
-
 from app.routers import (
     auth,
     price,
@@ -42,7 +21,30 @@ from app.routers import (
     admin_orders,
     admin_users,
     admin_roles,
+    admin_prices,
+    admin_accounts,
+    kyc,
+    transfer,
 )
+from app.config import settings
+from app.db import init_db
+from app.ws_manager import manager
+from app.price_service import price_service
+from app.rate_limit import limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Request
+import asyncio
+import logging
+import os
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+
 
 app = FastAPI(title="آبشده قصر طلا - Gold Trading Server")
 
@@ -114,3 +116,7 @@ app.include_router(admin_orders.router)
 app.include_router(admin_orders.ws_router)
 app.include_router(admin_users.router)
 app.include_router(admin_roles.router)
+app.include_router(admin_prices.router)
+app.include_router(admin_accounts.router)
+app.include_router(kyc.router)
+app.include_router(transfer.router)

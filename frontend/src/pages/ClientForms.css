@@ -1,0 +1,203 @@
+/* --- Shared by UploadReceiptPage / KycPage / RegisterTransferPage --- */
+
+.upload-receipt,
+.kyc-page,
+.register-transfer {
+  width: 100%;
+  max-width: 560px;
+  margin: 16px auto 0;
+  padding: 0 4px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.upload-receipt__label {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.upload-receipt__order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.upload-receipt__order {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.upload-receipt__order.is-selected {
+  border-color: var(--gold-dim);
+  background: rgba(201, 162, 39, 0.08);
+}
+
+.upload-receipt__order-side {
+  font-family: var(--font-fa);
+  font-size: 11.5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.upload-receipt__order-side--buy {
+  background: rgba(76, 154, 114, 0.16);
+  color: var(--buy-bright);
+}
+
+.upload-receipt__order-side--sell {
+  background: rgba(207, 100, 70, 0.16);
+  color: var(--sell-bright);
+}
+
+.upload-receipt__file-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.upload-receipt__file-label input[type="file"] {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.upload-receipt__filename {
+  font-size: 12px;
+  color: var(--gold-bright);
+  margin: 0;
+}
+
+.upload-receipt__success {
+  background: rgba(76, 154, 114, 0.12);
+  border: 1px solid var(--buy);
+  color: var(--buy-bright);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 13px;
+  margin: 0;
+}
+
+/* --- KYC --- */
+.kyc-status {
+  display: inline-block;
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  border: 1px solid var(--hairline);
+  color: var(--text-faint);
+  width: fit-content;
+}
+
+.kyc-status--pending {
+  color: var(--gold-bright);
+  border-color: var(--gold-dim);
+}
+
+.kyc-status--approved {
+  color: var(--buy-bright);
+  border-color: var(--buy);
+}
+
+.kyc-status--rejected {
+  color: var(--sell-bright);
+  border-color: var(--sell);
+}
+
+.kyc-page__reject-reason {
+  font-size: 12.5px;
+  color: var(--sell-bright);
+  margin: 0;
+}
+
+.kyc-page__done {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* --- Register transfer --- */
+.register-transfer__toggle {
+  align-self: flex-start;
+}
+
+.register-transfer__form {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.register-transfer__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.register-transfer__card {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.register-transfer__card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.register-transfer__amount {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--gold-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.register-transfer__meta {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.register-transfer__status {
+  font-size: 10.5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+
+.register-transfer__status--pending {
+  color: var(--gold-bright);
+  border-color: var(--gold-dim);
+}
+
+.register-transfer__status--accepted {
+  color: var(--buy-bright);
+  border-color: var(--buy);
+}
+
+.register-transfer__status--rejected {
+  color: var(--sell-bright);
+  border-color: var(--sell);
+}

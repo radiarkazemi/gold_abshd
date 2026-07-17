@@ -16,6 +16,7 @@ export function clearToken() {
 }
 
 const ADMIN_TOKEN_KEY = "goldapp_admin_token";
+const ADMIN_IDENTITY_KEY = "goldapp_admin_identity";
 
 export function getAdminToken() {
   return localStorage.getItem(ADMIN_TOKEN_KEY);
@@ -27,6 +28,20 @@ export function setAdminToken(token) {
 
 export function clearAdminToken() {
   localStorage.removeItem(ADMIN_TOKEN_KEY);
+  localStorage.removeItem(ADMIN_IDENTITY_KEY);
+}
+
+export function setAdminIdentity(identity) {
+  localStorage.setItem(ADMIN_IDENTITY_KEY, JSON.stringify(identity));
+}
+
+export function getAdminIdentity() {
+  try {
+    const raw = localStorage.getItem(ADMIN_IDENTITY_KEY);
+    return raw ? JSON.parse(raw) : { is_super: true, permissions: [], display_name: "" };
+  } catch {
+    return { is_super: true, permissions: [], display_name: "" };
+  }
 }
 
 function adminAuthHeaders() {
@@ -44,7 +59,118 @@ export async function adminLogin(username, password) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "ورود ناموفق بود");
   }
+  const data = await res.json();
+  setAdminIdentity({ is_super: data.is_super, permissions: data.permissions, display_name: data.display_name });
+  return data;
+}
+
+export async function adminVerify(adminUserId, code, registrationKey) {
+  const res = await fetch(`${API_BASE}/api/admin/auth/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ admin_user_id: adminUserId, code, registration_key: registrationKey || null }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "تایید ناموفق بود");
+  }
+  const data = await res.json();
+  setAdminIdentity({ is_super: data.is_super, permissions: data.permissions, display_name: data.display_name });
+  return data;
+}
+
+export async function fetchKycStatus() {
+  const res = await fetch(`${API_BASE}/api/kyc/status`, { headers: { ...authHeaders() } });
+  if (!res.ok) throw new Error("Failed to fetch KYC status");
   return res.json();
+}
+
+export async function submitKyc(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_BASE}/api/kyc/submit`, {
+    method: "POST",
+    headers: { ...authHeaders() },
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "ارسال مدرک با خطا مواجه شد");
+  }
+  return res.json();
+}
+
+export async function fetchMyTransfers() {
+  const res = await fetch(`${API_BASE}/api/my/transfers`, { headers: { ...authHeaders() } });
+  if (!res.ok) throw new Error("Failed to fetch transfers");
+  return res.json();
+}
+
+export async function submitTransfer({ amount, bank_reference, transfer_date, description, file }) {
+  const formData = new FormData();
+  formData.append("amount", amount);
+  formData.append("bank_reference", bank_reference || "");
+  formData.append("transfer_date", transfer_date || "");
+  formData.append("description", description || "");
+  if (file) formData.append("file", file);
+  const res = await fetch(`${API_BASE}/api/transfers`, {
+    method: "POST",
+    headers: { ...authHeaders() },
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "ثبت حواله با خطا مواجه شد");
+  }
+  return res.json();
+}
+
+export async function fetchAdminKycPending() {
+  const res = await fetch(`${API_BASE}/api/admin/kyc/pending`, { headers: { ...adminAuthHeaders() } });
+  if (!res.ok) throw new Error("Failed to fetch pending KYC");
+  return res.json();
+}
+
+export async function reviewKyc(userId, approve, rejectReason) {
+  const res = await fetch(`${API_BASE}/api/admin/kyc/${userId}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({ approve, reject_reason: rejectReason || null }),
+  });
+  if (!res.ok) throw new Error("Failed to review KYC");
+  return res.json();
+}
+
+export async function fetchKycDocumentBlobUrlAsAdmin(userId) {
+  const res = await fetch(`${API_BASE}/api/admin/kyc/${userId}/document`, { headers: { ...adminAuthHeaders() } });
+  if (!res.ok) throw new Error("Failed to fetch document");
+  const blob = await res.blob();
+  return { url: URL.createObjectURL(blob), contentType: blob.type };
+}
+
+export async function fetchAdminTransfers(status) {
+  const url = new URL(`${API_BASE}/api/admin/transfers`);
+  if (status) url.searchParams.set("status", status);
+  const res = await fetch(url, { headers: { ...adminAuthHeaders() } });
+  if (!res.ok) throw new Error("Failed to fetch transfers");
+  return res.json();
+}
+
+export async function decideTransfer(transferId, accept, adminNote) {
+  const res = await fetch(`${API_BASE}/api/admin/transfers/${transferId}/decide`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({ accept, admin_note: adminNote || "" }),
+  });
+  if (!res.ok) throw new Error("Failed to decide transfer");
+  return res.json();
+}
+
+export async function fetchTransferReceiptBlobUrlAsAdmin(transferId) {
+  const res = await fetch(`${API_BASE}/api/admin/transfers/${transferId}/receipt`, { headers: { ...adminAuthHeaders() } });
+  if (!res.ok) throw new Error("Failed to fetch receipt");
+  const blob = await res.blob();
+  return { url: URL.createObjectURL(blob), contentType: blob.type };
 }
 
 function authHeaders() {
@@ -105,6 +231,16 @@ export async function fetchPrice() {
 export async function fetchOrderLimits() {
   const res = await fetch(`${API_BASE}/api/order-limits`);
   if (!res.ok) throw new Error("Failed to fetch order limits");
+  return res.json();
+}
+
+export async function updateOrderLimits(payload) {
+  const res = await fetch(`${API_BASE}/api/admin/order-limits`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to update order limits");
   return res.json();
 }
 
@@ -236,6 +372,77 @@ export async function fetchAdminUsers(search) {
   if (search) url.searchParams.set("search", search);
   const res = await fetch(url, { headers: { ...adminAuthHeaders() } });
   if (!res.ok) throw new Error("Failed to fetch users");
+  return res.json();
+}
+
+export async function fetchAllPrices() {
+  const res = await fetch(`${API_BASE}/api/admin/all-prices`, {
+    headers: { ...adminAuthHeaders() },
+  });
+  if (res.status === 401 || res.status === 403) {
+    clearAdminToken();
+    throw new Error("ADMIN_SESSION_EXPIRED");
+  }
+  if (!res.ok) throw new Error("Failed to fetch prices");
+  return res.json();
+}
+
+export async function fetchPermissionScopes() {
+  const res = await fetch(`${API_BASE}/api/admin/admins/permission-scopes`, {
+    headers: { ...adminAuthHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to fetch permission scopes");
+  return res.json();
+}
+
+export async function fetchSubAdmins() {
+  const res = await fetch(`${API_BASE}/api/admin/admins`, {
+    headers: { ...adminAuthHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to fetch admin users");
+  return res.json();
+}
+
+export async function createSubAdmin(payload) {
+  const res = await fetch(`${API_BASE}/api/admin/admins`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to create admin user");
+  }
+  return res.json();
+}
+
+export async function updateSubAdmin(adminUserId, payload) {
+  const res = await fetch(`${API_BASE}/api/admin/admins/${adminUserId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to update admin user");
+  }
+  return res.json();
+}
+
+export async function deleteSubAdmin(adminUserId) {
+  const res = await fetch(`${API_BASE}/api/admin/admins/${adminUserId}`, {
+    method: "DELETE",
+    headers: { ...adminAuthHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to delete admin user");
+  return res.json();
+}
+
+export async function fetchAdminActivity(limit = 200) {
+  const res = await fetch(`${API_BASE}/api/admin/admins/activity?limit=${limit}`, {
+    headers: { ...adminAuthHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to fetch admin activity");
   return res.json();
 }
 

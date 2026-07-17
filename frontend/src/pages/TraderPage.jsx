@@ -6,8 +6,8 @@ import { useTheme } from "../context/ThemeContext";
 import PriceButton from "../components/PriceButton";
 import OrderModal from "../components/OrderModal";
 import NoticeCard from "../components/NoticeCard";
+import NoticeModal from "../components/NoticeModal";
 import RecentOrdersTable from "../components/RecentOrdersTable";
-import BalanceStrip from "../components/BalanceStrip";
 import BottomTabBar from "../components/BottomTabBar";
 import RefreshBar from "../components/RefreshBar";
 
@@ -73,6 +73,7 @@ export default function TraderPage() {
 
   return (
     <div className="app">
+      <NoticeModal />
       <header className="app__header">
         <span className={`app__status ${tradingOnline ? "is-live" : "is-offline"}`}>
           <span className="app__status-dot" />
@@ -87,7 +88,7 @@ export default function TraderPage() {
       <div className={`trading-status-bar ${tradingOnline ? "is-online" : "is-offline"}`} />
 
       <main className="app__main app__main--with-tabbar">
-        <BalanceStrip refreshSignal={refreshKey} />
+        <RefreshBar onRefresh={handleManualRefresh} />
 
         {price?.updated_at && (
           <p className="price-updated-note">
@@ -106,7 +107,6 @@ export default function TraderPage() {
             در حال حاضر امکان ثبت سفارش خرید و فروش وجود ندارد.
           </p>
         )}
-        <RefreshBar onRefresh={handleManualRefresh} />
         <div className={`price-stage ${!tradingOnline ? "price-stage--disabled" : ""}`}>
           <PriceButton side="buy" price={price} prevPrice={prevPrice} onClick={openModal} disabled={!tradingOnline} />
           <PriceButton side="sell" price={price} prevPrice={prevPrice} onClick={openModal} disabled={!tradingOnline} />

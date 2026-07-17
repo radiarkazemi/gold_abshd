@@ -49,5 +49,14 @@ class BalanceOut(BaseModel):
 
 
 class OrderLimitsOut(BaseModel):
-    min_weight: float   # مثقال
-    max_weight: float   # مثقال
+    min_weight: float   # گرم ۱۸
+    max_weight: float   # گرم ۱۸
+    min_amount: float   # تومان
+    max_amount: float   # تومان (0 = بدون سقف)
+
+
+class OrderLimitsUpdateIn(BaseModel):
+    min_weight: float | None = None
+    max_weight: float | None = None
+    min_amount: float | None = None
+    max_amount: float | None = None

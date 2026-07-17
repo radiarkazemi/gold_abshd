@@ -1,11 +1,15 @@
 import json
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from sqlalchemy.orm import Session
 
 from app.price_service import price_service
 from app.ws_manager import manager
 from app.config import settings
-from app.schemas.order import OrderLimitsOut
+from app.db import get_db
+from app.admin_auth import get_current_admin, require_permission
+from app.schemas.order import OrderLimitsOut, OrderLimitsUpdateIn
+from app.services.order_limits import get_order_limits, set_order_limits
 
 router = APIRouter(tags=["price"])
 
@@ -16,8 +20,17 @@ async def get_price():
 
 
 @router.get("/api/order-limits", response_model=OrderLimitsOut)
-async def get_order_limits():
-    return OrderLimitsOut(min_weight=settings.MIN_ORDER_WEIGHT, max_weight=settings.MAX_ORDER_WEIGHT)
+async def get_order_limits_endpoint(db: Session = Depends(get_db)):
+    return OrderLimitsOut(**get_order_limits(db))
+
+
+@router.put("/api/admin/order-limits", response_model=OrderLimitsOut)
+async def update_order_limits(
+    payload: OrderLimitsUpdateIn,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_permission("dashboard")),
+):
+    return OrderLimitsOut(**set_order_limits(db, **payload.model_dump()))
 
 
 @router.websocket("/ws/price")

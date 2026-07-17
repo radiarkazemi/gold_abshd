@@ -27,28 +27,29 @@ export default function PriceButton({ side, price, prevPrice, onClick, disabled 
   }, [price, prevPrice, key]);
 
   return (
-    <button
-      className={`price-panel price-panel--${side} ${flash ? `price-panel--flash-${flash}` : ""} ${disabled ? "price-panel--disabled" : ""}`}
-      onClick={() => !disabled && onClick(side)}
-      disabled={disabled}
-    >
+    <div className={`price-panel price-panel--${side} ${flash ? `price-panel--flash-${flash}` : ""} ${disabled ? "price-panel--disabled" : ""}`}>
       <span className="price-panel__eyebrow">{meta.eyebrow}</span>
+
+      <button
+        type="button"
+        className="price-panel__cta"
+        onClick={() => !disabled && onClick(side)}
+        disabled={disabled}
+      >
+        {meta.fa}
+      </button>
+
       <span className="price-panel__value">
         {formatToman(price?.[key])}
         <span className="price-panel__currency">تومان</span>
       </span>
-      <span className="price-panel__units">
-        <span className="price-panel__unit-badge price-panel__unit-badge--mesghal">
-          <span className="price-panel__unit-badge-label">مثقال ۱۷</span>
+
+      {price?.[gram18Key] != null && (
+        <span className="price-panel__unit-badge price-panel__unit-badge--gram18">
+          <span className="price-panel__unit-badge-label">گرم ۱۸:</span>
+          {formatToman(price[gram18Key])}
         </span>
-        {price?.[gram18Key] != null && (
-          <span className="price-panel__unit-badge price-panel__unit-badge--gram18">
-            <span className="price-panel__unit-badge-label">گرم ۱۸:</span>
-            {formatToman(price[gram18Key])}
-          </span>
-        )}
-      </span>
-      <span className="price-panel__cta">{meta.fa}</span>
-    </button>
+      )}
+    </div>
   );
 }

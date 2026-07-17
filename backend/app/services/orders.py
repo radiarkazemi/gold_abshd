@@ -40,6 +40,7 @@ from app.models_db import (
 from app.config import settings
 from app.gold_conversion import mesghal17_to_gram18
 from app.schemas.order import OrderOut
+from app.services.order_limits import get_order_limits
 
 
 def weight_equivalent(order: Order) -> float:
@@ -57,41 +58,77 @@ def order_total_toman(order: Order) -> float:
     return order.value * order.price_at_submit
 
 
-def apply_commission(base_price: float, user: User) -> float:
+def _user_commission(user: User, avg_mesghal17_price: float) -> float:
     """
-    Adds the user's role-based commission on top of the base گرم۱۸ price.
-    No role assigned -> price is used as-is, no markup.
+    Per-user commission, sourced from the user's role (دسته‌بندی) - set
+    server-side in the admin روles tab, either as a flat Toman amount or
+    a percentage. No role assigned -> zero commission.
     """
     if not user.role:
-        return base_price
+        return 0.0
     if user.role.commission_type.value == "fixed":
-        return base_price + user.role.commission_value
-    # percentage
-    return base_price * (1 + user.role.commission_value / 100)
+        return user.role.commission_value
+    # percentage - applied against the مثقال۱۷ average, before the
+    # buy/sell spread is added back in.
+    return avg_mesghal17_price * (user.role.commission_value / 100)
+
+
+def apply_pricing_formula(mesghal17_buy: float, mesghal17_sell: float, side: str, user: User) -> float:
+    """
+    The final مثقال۱۷ price for a specific order side and a specific
+    user, per the specified formula:
+
+        diff       = buy - sell
+        avg        = (buy + sell) / 2
+        commission = this user's role commission (see _user_commission)
+        final_buy  = avg + diff + commission
+        final_sell = avg - diff - commission
+
+    Commission is per-user (from their role), not global - two users
+    with different roles placing the same-side order right now get
+    different final prices.
+    """
+    diff = mesghal17_buy - mesghal17_sell
+    avg = (mesghal17_buy + mesghal17_sell) / 2
+    commission = _user_commission(user, avg)
+
+    final_buy = avg + diff + commission
+    final_sell = avg - diff - commission
+    return final_buy if side == "buy" else final_sell
 
 
 def create_order(db: Session, user: User, side: str, amount_type: str, value: float,
-                  description: str, current_price) -> Order:
-    mesghal17_price = (
-        current_price.buy_price if side == "buy" else current_price.sell_price
+                 description: str, current_price) -> Order:
+    mesghal17_price = apply_pricing_formula(
+        current_price.buy_price, current_price.sell_price, side, user
     )
-    real_gram18 = (
-        current_price.gram18_buy_price if side == "buy" else current_price.gram18_sell_price
-    )
-    base_gram18_price = real_gram18 if real_gram18 is not None else mesghal17_to_gram18(mesghal17_price)
-    price_at_submit = apply_commission(base_gram18_price, user)
+    price_at_submit = mesghal17_to_gram18(mesghal17_price)
 
+    limits = get_order_limits(db)
     weight = value if amount_type == "weight" else value / price_at_submit
-    if weight < settings.MIN_ORDER_WEIGHT:
-        raise HTTPException(
-            status_code=400,
-            detail=f"حداقل مقدار سفارش {settings.MIN_ORDER_WEIGHT} گرم ۱۸ است",
-        )
-    if weight > settings.MAX_ORDER_WEIGHT:
-        raise HTTPException(
-            status_code=400,
-            detail=f"حداکثر مقدار سفارش {settings.MAX_ORDER_WEIGHT} گرم ۱۸ است",
-        )
+
+    if amount_type == "weight":
+        if weight < limits["min_weight"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"حداقل مقدار سفارش {limits['min_weight']} گرم ۱۸ است",
+            )
+        if weight > limits["max_weight"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"حداکثر مقدار سفارش {limits['max_weight']} گرم ۱۸ است",
+            )
+    else:
+        if limits["min_amount"] and value < limits["min_amount"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"حداقل مبلغ سفارش {limits['min_amount']} تومان است",
+            )
+        if limits["max_amount"] and value > limits["max_amount"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"حداکثر مبلغ سفارش {limits['max_amount']} تومان است",
+            )
 
     order = Order(
         user_id=user.id,
@@ -189,9 +226,11 @@ def cancel_order(db: Session, order_id: str, user_id: str) -> Order:
     if not order:
         raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
     if order.user_id != user_id:
-        raise HTTPException(status_code=403, detail="این سفارش متعلق به شما نیست")
+        raise HTTPException(
+            status_code=403, detail="این سفارش متعلق به شما نیست")
     if order.status != OrderStatusEnum.pending:
-        raise HTTPException(status_code=400, detail="فقط سفارش‌های در انتظار را می‌توان لغو کرد")
+        raise HTTPException(
+            status_code=400, detail="فقط سفارش‌های در انتظار را می‌توان لغو کرد")
 
     order.status = OrderStatusEnum.cancelled
     db.commit()
@@ -204,7 +243,8 @@ def decide_order(db: Session, order_id: str, status: str) -> Order:
     if not order:
         raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
     if order.status != OrderStatusEnum.pending:
-        raise HTTPException(status_code=400, detail="این سفارش قبلا تصمیم‌گیری شده")
+        raise HTTPException(
+            status_code=400, detail="این سفارش قبلا تصمیم‌گیری شده")
     if status not in ("accepted", "rejected"):
         raise HTTPException(status_code=400, detail="وضعیت نامعتبر است")
 
@@ -278,7 +318,7 @@ def list_users_with_balance(db: Session, search: str | None = None) -> list[dict
 
 
 def update_user(db: Session, user_id: str, full_name: str | None, role_id: str | None,
-                 national_id: str | None, notes: str | None) -> User:
+                national_id: str | None, notes: str | None) -> User:
     user = get_user_or_404(db, user_id)
 
     if full_name is not None:
@@ -286,7 +326,8 @@ def update_user(db: Session, user_id: str, full_name: str | None, role_id: str |
     if role_id is not None:
         role = db.query(Role).filter(Role.id == role_id).first()
         if not role:
-            raise HTTPException(status_code=400, detail="دسته‌بندی انتخاب‌شده پیدا نشد")
+            raise HTTPException(
+                status_code=400, detail="دسته‌بندی انتخاب‌شده پیدا نشد")
         user.role_id = role_id
     if national_id is not None:
         user.national_id = national_id
@@ -346,7 +387,8 @@ def adjust_balance(db: Session, user_id: str, gold_change: float, cash_change: f
     get_user_or_404(db, user_id)  # 404s if missing
 
     if not gold_change and not cash_change:
-        raise HTTPException(status_code=400, detail="حداقل یکی از مقادیر طلا یا نقدی باید غیرصفر باشد")
+        raise HTTPException(
+            status_code=400, detail="حداقل یکی از مقادیر طلا یا نقدی باید غیرصفر باشد")
 
     txn = BalanceTransaction(
         user_id=user_id,

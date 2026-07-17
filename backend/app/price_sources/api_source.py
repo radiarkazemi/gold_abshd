@@ -34,7 +34,8 @@ def _get_path(data: dict, path: str):
 class ApiPriceSource(PriceSource):
     async def run(self, on_price: OnPriceCallback):
         if not settings.PRICE_API_URL:
-            raise RuntimeError("GOLDAPP_PRICE_API_URL must be set in .env to use the api price source")
+            raise RuntimeError(
+                "GOLDAPP_PRICE_API_URL must be set in .env to use the api price source")
 
         headers = {}
         if settings.PRICE_API_KEY:
@@ -61,7 +62,22 @@ class ApiPriceSource(PriceSource):
                             f"not emitting this update"
                         )
                     else:
-                        await on_price(float(buy), float(sell))
+                        buy, sell = float(buy), float(sell)
+
+                        # goldbridge/sekefarshad.ir reports Rial - convert to
+                        # Toman before anything else touches these numbers.
+                        # NOTE: no commission/markup applied here - this is
+                        # the shared base price broadcast to everyone. Each
+                        # user's commission (fixed or %) comes from their
+                        # role (دسته‌بندی) and is applied per-user at
+                        # order-submit time - see apply_pricing_formula() in
+                        # app/services/orders.py. Applying a commission here
+                        # too would double-charge it.
+                        if settings.PRICE_API_RIAL_TO_TOMAN:
+                            buy /= 10
+                            sell /= 10
+
+                        await on_price(buy, sell)
 
                 except Exception as e:
                     logger.warning(f"[api-price] fetch failed: {e}")

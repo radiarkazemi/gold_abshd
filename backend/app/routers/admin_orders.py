@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.ws_manager import manager
-from app.admin_auth import get_current_admin, verify_admin_ws_token
+from app.admin_auth import get_current_admin, verify_admin_ws_token, require_permission
 from app.models_db import Order, OrderStatusEnum
 from app.schemas.order import OrderOut, OrderDecisionIn
 from app.schemas.admin import PhoneOrderCreateIn
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/admin/orders", tags=["admin-orders"])
 
 
 @router.get("", response_model=list[OrderOut])
-async def list_orders(status: str | None = None, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+async def list_orders(status: str | None = None, db: Session = Depends(get_db), _admin=Depends(require_permission("orders"))):
     query = db.query(Order)
     if status:
         query = query.filter(Order.status == OrderStatusEnum(status))
@@ -27,14 +27,14 @@ async def list_orders(status: str | None = None, db: Session = Depends(get_db), 
 
 
 @router.post("/{order_id}/decide", response_model=OrderOut)
-async def decide_order(order_id: str, decision: OrderDecisionIn, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+async def decide_order(order_id: str, decision: OrderDecisionIn, db: Session = Depends(get_db), _admin=Depends(require_permission("orders"))):
     order = decide_order_db(db, order_id, decision.status)
     await manager.broadcast_to_admins({"type": "order_updated", "order": order_to_dict(db, order)})
     return order_to_admin_out(db, order)
 
 
 @router.post("/phone", response_model=OrderOut)
-async def create_phone_order_endpoint(payload: PhoneOrderCreateIn, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+async def create_phone_order_endpoint(payload: PhoneOrderCreateIn, db: Session = Depends(get_db), _admin=Depends(require_permission("phone-order"))):
     order = create_phone_order_db(
         db,
         user_id=payload.user_id,

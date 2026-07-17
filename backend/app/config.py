@@ -25,7 +25,8 @@ class Settings:
     DB_NAME: str = os.getenv("GOLDAPP_DB_NAME", "goldapp")
 
     JWT_SECRET: str = os.getenv("GOLDAPP_JWT_SECRET", "dev-secret-change-me")
-    JWT_EXPIRE_MINUTES: int = int(os.getenv("GOLDAPP_JWT_EXPIRE_MINUTES", "43200"))  # 30 days
+    JWT_EXPIRE_MINUTES: int = int(
+        os.getenv("GOLDAPP_JWT_EXPIRE_MINUTES", "43200"))  # 30 days
 
     # When true, the OTP code is printed to the server console AND returned
     # in the API response, so you can test without a real SMS provider.
@@ -40,7 +41,8 @@ class Settings:
     # conversion happens automatically). Orders placed in تومان are
     # converted to their گرم۱۸ equivalent before being checked against these.
     MIN_ORDER_WEIGHT: float = float(os.getenv("GOLDAPP_MIN_ORDER_WEIGHT", "1"))
-    MAX_ORDER_WEIGHT: float = float(os.getenv("GOLDAPP_MAX_ORDER_WEIGHT", "200"))
+    MAX_ORDER_WEIGHT: float = float(
+        os.getenv("GOLDAPP_MAX_ORDER_WEIGHT", "200"))
 
     # Admin login. ADMIN_PASSWORD_HASH is a bcrypt hash - never store the
     # plain password. Generate one with:
@@ -72,7 +74,8 @@ class Settings:
 
     # After this hour (24h, local server time), a trade placed "today"
     # settles one trading day LATER than it would before this hour.
-    SETTLEMENT_CUTOFF_HOUR: int = int(os.getenv("GOLDAPP_SETTLEMENT_CUTOFF_HOUR", "13"))
+    SETTLEMENT_CUTOFF_HOUR: int = int(
+        os.getenv("GOLDAPP_SETTLEMENT_CUTOFF_HOUR", "13"))
 
     @property
     def WEEKEND_DAYS_SET(self) -> set[int]:
@@ -86,7 +89,8 @@ class Settings:
     # --- Telegram source settings ---
     TG_API_ID: str = os.getenv("GOLDAPP_TG_API_ID", "")
     TG_API_HASH: str = os.getenv("GOLDAPP_TG_API_HASH", "")
-    TG_SESSION_NAME: str = os.getenv("GOLDAPP_TG_SESSION_NAME", "goldapp_price_session")
+    TG_SESSION_NAME: str = os.getenv(
+        "GOLDAPP_TG_SESSION_NAME", "goldapp_price_session")
     TG_CHANNEL: str = os.getenv("GOLDAPP_TG_CHANNEL", "")
     # The number to extract. Real channel messages look like:
     #   **77,950,000**⏳باحواله🔵خرید
@@ -97,11 +101,13 @@ class Settings:
     # Each message is checked for the buy/sell keyword to decide which
     # price it's reporting; messages with neither (or both) are skipped
     # (e.g. a "معامله"/trade-executed post isn't a buy or sell quote).
-    TG_PRICE_REGEX: str = os.getenv("GOLDAPP_TG_PRICE_REGEX", r"\*\*([\d,]+)\*\*")
+    TG_PRICE_REGEX: str = os.getenv(
+        "GOLDAPP_TG_PRICE_REGEX", r"\*\*([\d,]+)\*\*")
     # The channel also reports its own real گرم۱۸ price directly in each
     # message - we use that number as-is instead of computing an
     # approximation, since it's guaranteed to match the source exactly.
-    TG_GRAM18_REGEX: str = os.getenv("GOLDAPP_TG_GRAM18_REGEX", r"گرم:[^\d]*([\d,]+)")
+    TG_GRAM18_REGEX: str = os.getenv(
+        "GOLDAPP_TG_GRAM18_REGEX", r"گرم:[^\d]*([\d,]+)")
     TG_BUY_KEYWORD: str = os.getenv("GOLDAPP_TG_BUY_KEYWORD", "خرید")
     TG_SELL_KEYWORD: str = os.getenv("GOLDAPP_TG_SELL_KEYWORD", "فروش")
 
@@ -109,8 +115,10 @@ class Settings:
     # this network, e.g. via V2rayN or any other local SOCKS5/HTTP proxy).
     # V2rayN's default local SOCKS5 port is usually 10808 - check your
     # V2rayN "Parameter setting" / "Local port" field if unsure.
-    TG_PROXY_ENABLED: bool = os.getenv("GOLDAPP_TG_PROXY_ENABLED", "false").lower() == "true"
-    TG_PROXY_TYPE: str = os.getenv("GOLDAPP_TG_PROXY_TYPE", "socks5")  # socks5, socks4, or http
+    TG_PROXY_ENABLED: bool = os.getenv(
+        "GOLDAPP_TG_PROXY_ENABLED", "false").lower() == "true"
+    TG_PROXY_TYPE: str = os.getenv(
+        "GOLDAPP_TG_PROXY_TYPE", "socks5")  # socks5, socks4, or http
     TG_PROXY_HOST: str = os.getenv("GOLDAPP_TG_PROXY_HOST", "127.0.0.1")
     TG_PROXY_PORT: int = int(os.getenv("GOLDAPP_TG_PROXY_PORT", "10808"))
 
@@ -119,12 +127,28 @@ class Settings:
     PRICE_API_KEY: str = os.getenv("GOLDAPP_PRICE_API_KEY", "")
     PRICE_API_BUY_PATH: str = os.getenv("GOLDAPP_PRICE_API_BUY_PATH", "buy")
     PRICE_API_SELL_PATH: str = os.getenv("GOLDAPP_PRICE_API_SELL_PATH", "sell")
-    PRICE_API_POLL_SECONDS: int = int(os.getenv("GOLDAPP_PRICE_API_POLL_SECONDS", "5"))
+    PRICE_API_POLL_SECONDS: int = int(
+        os.getenv("GOLDAPP_PRICE_API_POLL_SECONDS", "5"))
+
+    # goldbridge's "all items" endpoint - sibling of PRICE_API_URL
+    # (which points at goldbridge's single-item /price). Only used for
+    # the admin "all prices" dashboard, not the live trading price.
+    # Falls back to swapping /price -> /prices on PRICE_API_URL if unset.
+    PRICE_API_ALL_URL: str = os.getenv("GOLDAPP_PRICE_API_ALL_URL", "")
+
+    # goldbridge (and sekefarshad.ir underneath it) reports prices in
+    # Rial; the app displays and stores everything in Toman (Rial / 10).
+    # Kept as a flag rather than hardcoded in case a future price source
+    # already reports in Toman.
+    PRICE_API_RIAL_TO_TOMAN: bool = os.getenv(
+        "GOLDAPP_PRICE_API_RIAL_TO_TOMAN", "true").lower() == "true"
 
     # Receipt uploads (proof of bank transfer / حواله for cash orders)
     UPLOAD_DIR: str = os.getenv("GOLDAPP_UPLOAD_DIR", "uploads/receipts")
-    MAX_RECEIPT_SIZE_MB: int = int(os.getenv("GOLDAPP_MAX_RECEIPT_SIZE_MB", "5"))
-    ALLOWED_RECEIPT_EXTENSIONS: set = {".jpg", ".jpeg", ".png", ".pdf", ".webp"}
+    MAX_RECEIPT_SIZE_MB: int = int(
+        os.getenv("GOLDAPP_MAX_RECEIPT_SIZE_MB", "5"))
+    ALLOWED_RECEIPT_EXTENSIONS: set = {
+        ".jpg", ".jpeg", ".png", ".pdf", ".webp"}
 
     @property
     def DATABASE_URL(self) -> str:

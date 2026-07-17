@@ -34,7 +34,8 @@ def ensure_database_exists():
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT 1 FROM pg_database WHERE datname = %s", (settings.DB_NAME,)
+                "SELECT 1 FROM pg_database WHERE datname = %s", (
+                    settings.DB_NAME,)
             )
             exists = cur.fetchone() is not None
             if not exists:
@@ -54,6 +55,49 @@ engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+def _patch_admin_users_table():
+    """
+    admin_users may already exist from before phone/OTP fields were
+    added to the AdminUser model - create_all() only creates missing
+    TABLES, it never alters existing ones. This adds any missing
+    columns in place, safe to run every startup (IF NOT EXISTS), and
+    drops the old NOT NULL "display_name" column (renamed to
+    full_name) if a pre-rename install still has it - otherwise every
+    insert fails with a NotNullViolation on a column nothing writes to
+    anymore.
+    """
+    from sqlalchemy import text
+    statements = [
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS phone_number VARCHAR",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS national_id VARCHAR",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS full_name VARCHAR",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS registration_key VARCHAR",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS registration_key_expires_at TIMESTAMP",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS activated_at TIMESTAMP",
+        "ALTER TABLE admin_users DROP COLUMN IF EXISTS display_name",
+    ]
+    with engine.connect() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+        conn.commit()
+
+
+def _patch_users_table():
+    """users already exists - add the KYC columns in place if missing."""
+    from sqlalchemy import text
+    statements = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_status VARCHAR NOT NULL DEFAULT 'none'",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_document_path VARCHAR",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_submitted_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_reviewed_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_reject_reason VARCHAR",
+    ]
+    with engine.connect() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+        conn.commit()
+
+
 def init_db():
     """Call once at app startup: creates the database, then the tables."""
     ensure_database_exists()
@@ -62,6 +106,8 @@ def init_db():
     from app import models_db  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _patch_admin_users_table()
+    _patch_users_table()
     print("[db] Tables ready")
 
 

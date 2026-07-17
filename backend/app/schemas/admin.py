@@ -81,7 +81,8 @@ class UserSummaryOut(BaseModel):
     cash_balance: float
     role: Optional[RoleOut] = None
     is_online: bool = False
-    registration_status: Optional[str] = None  # pending | active | banned | None (no key issued)
+    # pending | active | banned | None (no key issued)
+    registration_status: Optional[str] = None
 
 
 class TransactionOut(BaseModel):
@@ -132,4 +133,28 @@ class AdminLoginIn(BaseModel):
 
 
 class AdminLoginOut(BaseModel):
-    token: str
+    """
+    For the super-admin, or a sub-admin whose OTP step just succeeded:
+    token is set, requires_verification is False.
+
+    For a sub-admin right after a correct password (before OTP): token
+    is None, requires_verification is True, admin_user_id identifies
+    which account to complete verification for at
+    POST /api/admin/auth/verify, and is_first_activation tells the
+    frontend whether to also ask for the registration key.
+    """
+    token: str | None = None
+    requires_verification: bool = False
+    admin_user_id: str | None = None
+    is_first_activation: bool = False
+    is_super: bool = True
+    display_name: str = ""
+    permissions: list[str] = []
+    # only set when GOLDAPP_DEBUG_OTP=true (dev/no real SMS provider)
+    debug_code: str | None = None
+
+
+class AdminVerifyIn(BaseModel):
+    admin_user_id: str
+    code: str
+    registration_key: str | None = None

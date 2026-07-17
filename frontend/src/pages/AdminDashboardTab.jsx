@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { fetchOrders, decideOrder, fetchAdminUsers, fetchTradingStatus, updateTradingStatus } from "../api";
+import { fetchOrders, decideOrder, fetchAdminUsers, fetchTradingStatus, updateTradingStatus, fetchOrderLimits, updateOrderLimits } from "../api";
 import { orderGoldWeight, orderTotalMoney } from "../utils/orderCalc";
 
-const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
+const SIDE_LABEL = { buy: "خرید مشتری از ما", sell: "فروش مشتری به ما" };
 
 function fa(n) {
   return Number(n).toLocaleString("fa-IR");
@@ -37,6 +37,31 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
+  const [limits, setLimits] = useState(null);
+  const [limitsDraft, setLimitsDraft] = useState(null);
+  const [limitsBusy, setLimitsBusy] = useState(false);
+
+  function loadLimits() {
+    fetchOrderLimits().then((l) => { setLimits(l); setLimitsDraft(l); }).catch(() => {});
+  }
+
+  async function handleSaveLimits() {
+    setLimitsBusy(true);
+    try {
+      const updated = await updateOrderLimits({
+        min_weight: parseFloat(limitsDraft.min_weight) || 0,
+        max_weight: parseFloat(limitsDraft.max_weight) || 0,
+        min_amount: parseFloat(limitsDraft.min_amount) || 0,
+        max_amount: parseFloat(limitsDraft.max_amount) || 0,
+      });
+      setLimits(updated);
+      setLimitsDraft(updated);
+    } catch (e) {
+      alert("ذخیره محدودیت‌ها با خطا مواجه شد");
+    } finally {
+      setLimitsBusy(false);
+    }
+  }
 
   function reload() {
     Promise.all([
@@ -56,6 +81,7 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
 
   useEffect(() => {
     reload();
+    loadLimits();
     // fallback in case the websocket ever disconnects without reconnecting
     const interval = setInterval(reload, 8000);
     return () => clearInterval(interval);
@@ -90,6 +116,61 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
     { label: "تعداد کاربران", value: users.length, color: "var(--text)" },
     { label: "کاربران مسدود", value: blockedCount, color: "var(--sell-bright)" },
   ];
+
+  const pendingBuy = pending.filter((o) => o.side === "buy");
+  const pendingSell = pending.filter((o) => o.side === "sell");
+
+  function renderPendingCard(order) {
+    return (
+      <div key={order.id} className={`order-card order-card--${order.side}`}>
+        <div className="order-card__top">
+          <span className={`order-card__badge order-card__badge--${order.side}`}>
+            {SIDE_LABEL[order.side]}
+          </span>
+          {order.is_manual && <span className="manual-order-tag">دستی</span>}
+          <span className="order-card__time">{formatTime(order.created_at)}</span>
+        </div>
+        <div className="order-card__body">
+          <div className="order-card__row">
+            <span className="order-card__label">مشتری</span>
+            <span className="order-card__value">
+              {order.customer_name || "بدون نام"} #{order.customer_code}
+            </span>
+          </div>
+          <div className="order-card__row">
+            <span className="order-card__label">وزن طلا</span>
+            <span className="order-card__value">{fa(orderGoldWeight(order), { maximumFractionDigits: 3 })} گرم۱۸</span>
+          </div>
+          <div className="order-card__row">
+            <span className="order-card__label">مبلغ کل</span>
+            <span className="order-card__value">{fa(Math.round(orderTotalMoney(order)))} تومان</span>
+          </div>
+          <div className="order-card__row">
+            <span className="order-card__label">قیمت (مثقال ۱۷)</span>
+            <span className="order-card__value">
+              {order.mesghal17_price_at_submit ? fa(Math.round(order.mesghal17_price_at_submit)) : "—"} تومان
+            </span>
+          </div>
+        </div>
+        <div className="order-card__actions">
+          <button
+            className="order-btn order-btn--reject"
+            disabled={busyId === order.id}
+            onClick={() => handleDecision(order.id, "rejected")}
+          >
+            رد
+          </button>
+          <button
+            className="order-btn order-btn--accept"
+            disabled={busyId === order.id}
+            onClick={() => handleDecision(order.id, "accepted")}
+          >
+            تایید
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) return <p className="myorders__empty">در حال بارگذاری…</p>;
 
@@ -135,6 +216,37 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
         ))}
       </div>
 
+      {limitsDraft && (
+        <div className="order-limits-box">
+          <h3 className="dashboard__section-title">محدودیت سفارش (وزن طلا و مبلغ)</h3>
+          <div className="order-limits-box__grid">
+            <label className="order-limits-box__field">
+              <span>حداقل وزن (گرم ۱۸)</span>
+              <input type="number" value={limitsDraft.min_weight}
+                onChange={(e) => setLimitsDraft({ ...limitsDraft, min_weight: e.target.value })} />
+            </label>
+            <label className="order-limits-box__field">
+              <span>حداکثر وزن (گرم ۱۸)</span>
+              <input type="number" value={limitsDraft.max_weight}
+                onChange={(e) => setLimitsDraft({ ...limitsDraft, max_weight: e.target.value })} />
+            </label>
+            <label className="order-limits-box__field">
+              <span>حداقل مبلغ (تومان، ۰ = بدون حداقل)</span>
+              <input type="number" value={limitsDraft.min_amount}
+                onChange={(e) => setLimitsDraft({ ...limitsDraft, min_amount: e.target.value })} />
+            </label>
+            <label className="order-limits-box__field">
+              <span>حداکثر مبلغ (تومان، ۰ = بدون سقف)</span>
+              <input type="number" value={limitsDraft.max_amount}
+                onChange={(e) => setLimitsDraft({ ...limitsDraft, max_amount: e.target.value })} />
+            </label>
+          </div>
+          <button className="order-limits-box__save" disabled={limitsBusy} onClick={handleSaveLimits}>
+            {limitsBusy ? "در حال ذخیره…" : "ذخیره محدودیت‌ها"}
+          </button>
+        </div>
+      )}
+
       <div>
         <div className="dashboard__section-head">
           <h3 className="dashboard__section-title">سفارش‌های در انتظار بررسی</h3>
@@ -146,56 +258,31 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
             سفارش در انتظاری وجود ندارد.
           </p>
         ) : (
-          <div className="dashboard__pending-list">
-            {pending.slice(0, 3).map((order) => (
-              <div key={order.id} className={`order-card order-card--${order.side}`}>
-                <div className="order-card__top">
-                  <span className={`order-card__badge order-card__badge--${order.side}`}>
-                    {SIDE_LABEL[order.side]}
-                  </span>
-                  {order.is_manual && <span className="manual-order-tag">دستی</span>}
-                  <span className="order-card__time">{formatTime(order.created_at)}</span>
+          <div className="dashboard__pending-columns">
+            <div className="dashboard__pending-column">
+              <h4 className="dashboard__pending-column-title dashboard__pending-column-title--buy">
+                خرید مشتری از ما ({fa(pendingBuy.length)})
+              </h4>
+              {pendingBuy.length === 0 ? (
+                <p className="myorders__empty myorders__empty--compact">موردی نیست</p>
+              ) : (
+                <div className="dashboard__pending-list">
+                  {pendingBuy.slice(0, 3).map(renderPendingCard)}
                 </div>
-                <div className="order-card__body">
-                  <div className="order-card__row">
-                    <span className="order-card__label">مشتری</span>
-                    <span className="order-card__value">
-                      {order.customer_name || "بدون نام"} #{order.customer_code}
-                    </span>
-                  </div>
-                  <div className="order-card__row">
-                    <span className="order-card__label">وزن طلا</span>
-                    <span className="order-card__value">{fa(orderGoldWeight(order), { maximumFractionDigits: 3 })} گرم۱۸</span>
-                  </div>
-                  <div className="order-card__row">
-                    <span className="order-card__label">مبلغ کل</span>
-                    <span className="order-card__value">{fa(Math.round(orderTotalMoney(order)))} تومان</span>
-                  </div>
-                  <div className="order-card__row">
-                    <span className="order-card__label">قیمت (مثقال ۱۷)</span>
-                    <span className="order-card__value">
-                      {order.mesghal17_price_at_submit ? fa(Math.round(order.mesghal17_price_at_submit)) : "—"} تومان
-                    </span>
-                  </div>
+              )}
+            </div>
+            <div className="dashboard__pending-column">
+              <h4 className="dashboard__pending-column-title dashboard__pending-column-title--sell">
+                فروش مشتری به ما ({fa(pendingSell.length)})
+              </h4>
+              {pendingSell.length === 0 ? (
+                <p className="myorders__empty myorders__empty--compact">موردی نیست</p>
+              ) : (
+                <div className="dashboard__pending-list">
+                  {pendingSell.slice(0, 3).map(renderPendingCard)}
                 </div>
-                <div className="order-card__actions">
-                  <button
-                    className="order-btn order-btn--reject"
-                    disabled={busyId === order.id}
-                    onClick={() => handleDecision(order.id, "rejected")}
-                  >
-                    رد
-                  </button>
-                  <button
-                    className="order-btn order-btn--accept"
-                    disabled={busyId === order.id}
-                    onClick={() => handleDecision(order.id, "accepted")}
-                  >
-                    تایید
-                  </button>
-                </div>
-              </div>
-            ))}
+              )}
+            </div>
           </div>
         )}
       </div>

@@ -727,6 +727,63 @@
   font-variant-numeric: tabular-nums;
 }
 
+.order-limits-box {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.order-limits-box__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 560px) {
+  .order-limits-box__grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.order-limits-box__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.order-limits-box__field input {
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+  font-family: var(--font-display);
+}
+
+.order-limits-box__save {
+  align-self: flex-start;
+  background: var(--gold-dim);
+  color: #1a1508;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 22px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.order-limits-box__save:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .dashboard__section-head {
   display: flex;
   align-items: baseline;
@@ -755,11 +812,206 @@
   gap: 8px;
 }
 
+/* Buy/sell split under "سفارش‌های در انتظار بررسی" - one column each,
+   stacked on mobile, side by side from tablet width up. */
+.dashboard__pending-columns {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+@media (min-width: 720px) {
+  .dashboard__pending-columns {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .dashboard__pending-column {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.dashboard__pending-column-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 10px;
+  padding-inline-start: 10px;
+  border-inline-start: 3px solid var(--hairline);
+}
+
+.dashboard__pending-column-title--buy {
+  color: var(--buy-bright);
+  border-inline-start-color: var(--buy);
+}
+
+.dashboard__pending-column-title--sell {
+  color: var(--sell-bright);
+  border-inline-start-color: var(--sell);
+}
+
+.myorders__empty--compact {
+  padding: 14px !important;
+  font-size: 12.5px;
+}
+
+/* --- Admin "all prices" tab --- */
+.admin-prices {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.admin-prices__head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-prices__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.admin-prices__stale-badge {
+  color: var(--sell-bright);
+  font-weight: 700;
+}
+
+.admin-prices__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 560px) {
+  .admin-prices__grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 @media (min-width: 900px) {
-  .dashboard__pending-list {
-    display: grid;
+  .admin-prices__grid {
     grid-template-columns: repeat(3, 1fr);
   }
+}
+
+@media (min-width: 1280px) {
+  .admin-prices__grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.admin-price-card {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 200ms ease;
+}
+
+.admin-price-card--inactive {
+  opacity: 0.55;
+}
+
+.admin-price-card__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.admin-price-card__name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.admin-price-card__type {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.admin-price-card__values {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.admin-price-card__value-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+}
+
+.admin-price-card__value-item--buy {
+  background: rgba(76, 154, 114, 0.12);
+}
+
+.admin-price-card__value-item--sell {
+  background: rgba(207, 100, 70, 0.12);
+}
+
+.admin-price-card__value-label {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.admin-price-card__value-amount {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-price-card__value-item--buy .admin-price-card__value-amount {
+  color: var(--buy-bright);
+}
+
+.admin-price-card__value-item--sell .admin-price-card__value-amount {
+  color: var(--sell-bright);
+}
+
+.admin-price-card__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.admin-price-card__flag {
+  font-size: 10px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  color: var(--text-faint);
+}
+
+.admin-price-card__flag.is-on {
+  color: var(--buy-bright);
+  border-color: var(--buy);
+}
+
+.admin-price-card__flag.is-off {
+  color: var(--sell-bright);
+  border-color: var(--sell);
+}
+
+.admin-price-card__footer {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-faint);
+  direction: ltr;
+  text-align: right;
 }
 
 .new-order-flash {
@@ -946,4 +1198,236 @@
 .history-card__status--cancelled {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-faint);
+}
+/* --- Admin accounts (sub-admins + activity log) tab --- */
+.admin-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.admin-accounts__tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.admin-accounts__tab {
+  background: none;
+  border: none;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.admin-accounts__tab.is-active {
+  color: var(--gold-bright);
+  border-bottom-color: var(--gold-dim);
+}
+
+.admin-accounts__create-form {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-accounts__error {
+  color: var(--sell-bright);
+  font-size: 12.5px;
+  margin: 0;
+}
+
+.admin-accounts__create-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 640px) {
+  .admin-accounts__create-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.admin-accounts__scopes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-accounts__scopes-label {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.admin-accounts__scope-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.admin-accounts__chip {
+  font-size: 11.5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.admin-accounts__chip.is-on {
+  border-color: var(--gold-dim);
+  color: var(--gold-bright);
+  background: rgba(201, 162, 39, 0.12);
+}
+
+.admin-accounts__no-scope {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.admin-accounts__list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 720px) {
+  .admin-accounts__list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.admin-accounts__card {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-accounts__card.is-inactive {
+  opacity: 0.55;
+}
+
+.admin-accounts__card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.admin-accounts__name {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.admin-accounts__username {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.admin-accounts__status {
+  font-size: 10.5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+
+.admin-accounts__status.is-on {
+  color: var(--buy-bright);
+  border-color: var(--buy);
+}
+
+.admin-accounts__status.is-off {
+  color: var(--sell-bright);
+  border-color: var(--sell);
+}
+
+.admin-accounts__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.admin-accounts__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.admin-accounts__delete {
+  background: none;
+  border: none;
+  color: var(--sell-bright);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.admin-accounts__activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-accounts__activity-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.admin-accounts__activity-actor {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.admin-accounts__activity-actor.is-super {
+  color: var(--gold-bright);
+}
+
+.admin-accounts__activity-action {
+  color: var(--text-muted);
+}
+
+.admin-accounts__activity-detail {
+  color: var(--text-faint);
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-accounts__activity-time {
+  color: var(--text-faint);
+  font-size: 10.5px;
+  margin-inline-start: auto;
+}
+
+.admin-accounts__key-expiry {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.reg-key-box--compact {
+  padding: 8px 10px;
 }

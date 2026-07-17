@@ -21,6 +21,11 @@ def get_notice(db: Session) -> str:
     return row.value if row else DEFAULT_NOTICE
 
 
+def get_notice_updated_at(db: Session) -> str | None:
+    row = db.query(AppSetting).filter(AppSetting.key == NOTICE_KEY).first()
+    return row.updated_at.isoformat() if row and row.updated_at else None
+
+
 def set_notice(db: Session, text: str) -> str:
     row = db.query(AppSetting).filter(AppSetting.key == NOTICE_KEY).first()
     if row:

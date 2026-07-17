@@ -70,6 +70,13 @@
   cursor: default;
 }
 
+.login__btn--ghost {
+  background: none;
+  border: 1px solid var(--hairline);
+  color: var(--text-faint);
+  margin-top: 8px;
+}
+
 .login__error {
   color: var(--sell-bright);
   font-size: 13px;

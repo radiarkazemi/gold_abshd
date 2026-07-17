@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.admin_auth import get_current_admin
+from app.admin_auth import get_current_admin, require_permission
 from app.schemas.calendar import TradingStatusOut, TradingStatusUpdateIn
 from app.services.trading_status import is_trading_online, set_trading_online
 
@@ -15,6 +15,6 @@ async def get_trading_status(db: Session = Depends(get_db)):
 
 
 @router.post("/api/admin/trading-status", response_model=TradingStatusOut)
-async def update_trading_status(payload: TradingStatusUpdateIn, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+async def update_trading_status(payload: TradingStatusUpdateIn, db: Session = Depends(get_db), _admin=Depends(require_permission("dashboard"))):
     online = set_trading_online(db, payload.is_online)
     return TradingStatusOut(is_online=online)
