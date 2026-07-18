@@ -34,8 +34,7 @@ def ensure_database_exists():
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT 1 FROM pg_database WHERE datname = %s", (
-                    settings.DB_NAME,)
+                "SELECT 1 FROM pg_database WHERE datname = %s", (settings.DB_NAME,)
             )
             exists = cur.fetchone() is not None
             if not exists:
@@ -98,6 +97,32 @@ def _patch_users_table():
         conn.commit()
 
 
+def _patch_orders_table():
+    """orders already exists - add mesghal17_raw_price_at_submit in place if missing."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text(
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS mesghal17_raw_price_at_submit FLOAT"
+        ))
+        conn.commit()
+
+
+def _patch_roles_table():
+    """roles already exists - add per-role limit/display columns in place if missing."""
+    from sqlalchemy import text
+    statements = [
+        "ALTER TABLE roles ADD COLUMN IF NOT EXISTS min_weight FLOAT",
+        "ALTER TABLE roles ADD COLUMN IF NOT EXISTS max_weight FLOAT",
+        "ALTER TABLE roles ADD COLUMN IF NOT EXISTS min_amount FLOAT",
+        "ALTER TABLE roles ADD COLUMN IF NOT EXISTS max_amount FLOAT",
+        "ALTER TABLE roles ADD COLUMN IF NOT EXISTS price_label_mode VARCHAR NOT NULL DEFAULT 'mesghal_and_gram18'",
+    ]
+    with engine.connect() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+        conn.commit()
+
+
 def init_db():
     """Call once at app startup: creates the database, then the tables."""
     ensure_database_exists()
@@ -108,6 +133,8 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     _patch_admin_users_table()
     _patch_users_table()
+    _patch_orders_table()
+    _patch_roles_table()
     print("[db] Tables ready")
 
 

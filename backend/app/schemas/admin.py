@@ -10,6 +10,11 @@ class RoleOut(BaseModel):
     name: str
     commission_type: str
     commission_value: float
+    min_weight: Optional[float] = None
+    max_weight: Optional[float] = None
+    min_amount: Optional[float] = None
+    max_amount: Optional[float] = None
+    price_label_mode: str = "mesghal_and_gram18"  # "mesghal_and_gram18" | "gram18_only"
     created_at: datetime
 
     class Config:
@@ -20,11 +25,21 @@ class RoleCreateIn(BaseModel):
     name: str
     commission_type: str  # "fixed" | "percentage"
     commission_value: float
+    min_weight: Optional[float] = None
+    max_weight: Optional[float] = None
+    min_amount: Optional[float] = None
+    max_amount: Optional[float] = None
+    price_label_mode: str = "mesghal_and_gram18"
 
 
 class RoleUpdateIn(BaseModel):
     commission_type: str
     commission_value: float
+    min_weight: Optional[float] = None
+    max_weight: Optional[float] = None
+    min_amount: Optional[float] = None
+    max_amount: Optional[float] = None
+    price_label_mode: str = "mesghal_and_gram18"
 
 
 class RegistrationKeyOut(BaseModel):
@@ -81,8 +96,7 @@ class UserSummaryOut(BaseModel):
     cash_balance: float
     role: Optional[RoleOut] = None
     is_online: bool = False
-    # pending | active | banned | None (no key issued)
-    registration_status: Optional[str] = None
+    registration_status: Optional[str] = None  # pending | active | banned | None (no key issued)
 
 
 class TransactionOut(BaseModel):
@@ -150,8 +164,7 @@ class AdminLoginOut(BaseModel):
     is_super: bool = True
     display_name: str = ""
     permissions: list[str] = []
-    # only set when GOLDAPP_DEBUG_OTP=true (dev/no real SMS provider)
-    debug_code: str | None = None
+    debug_code: str | None = None  # only set when GOLDAPP_DEBUG_OTP=true (dev/no real SMS provider)
 
 
 class AdminVerifyIn(BaseModel):

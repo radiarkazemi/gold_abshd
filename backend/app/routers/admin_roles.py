@@ -16,9 +16,19 @@ async def get_roles(db: Session = Depends(get_db), _admin=Depends(require_permis
 
 @router.post("", response_model=RoleOut)
 async def add_role(payload: RoleCreateIn, db: Session = Depends(get_db), _admin=Depends(require_permission("roles"))):
-    return create_role(db, payload.name, payload.commission_type, payload.commission_value)
+    return create_role(
+        db, payload.name, payload.commission_type, payload.commission_value,
+        min_weight=payload.min_weight, max_weight=payload.max_weight,
+        min_amount=payload.min_amount, max_amount=payload.max_amount,
+        price_label_mode=payload.price_label_mode,
+    )
 
 
 @router.patch("/{role_id}", response_model=RoleOut)
 async def edit_role_commission(role_id: str, payload: RoleUpdateIn, db: Session = Depends(get_db), _admin=Depends(require_permission("roles"))):
-    return update_role_commission(db, role_id, payload.commission_type, payload.commission_value)
+    return update_role_commission(
+        db, role_id, payload.commission_type, payload.commission_value,
+        min_weight=payload.min_weight, max_weight=payload.max_weight,
+        min_amount=payload.min_amount, max_amount=payload.max_amount,
+        price_label_mode=payload.price_label_mode,
+    )

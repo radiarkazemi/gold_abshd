@@ -6,6 +6,8 @@ from fastapi import WebSocket
 from typing import Dict, List
 import json
 
+from app.obfuscation import encode_payload
+
 
 class ConnectionManager:
     def __init__(self):
@@ -22,10 +24,17 @@ class ConnectionManager:
             self.price_connections.remove(ws)
 
     async def broadcast_price(self, price_data: dict):
+        """
+        price_data is obfuscated before it goes over the wire - see
+        app/obfuscation.py for the scheme and what it does/doesn't
+        protect against. Frontend decodes with the matching helper in
+        src/utils/payloadCodec.js.
+        """
+        payload = json.dumps({"payload": encode_payload(price_data)})
         dead = []
         for conn in self.price_connections:
             try:
-                await conn.send_text(json.dumps(price_data, default=str))
+                await conn.send_text(payload)
             except Exception:
                 dead.append(conn)
         for d in dead:

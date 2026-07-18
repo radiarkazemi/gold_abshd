@@ -20,6 +20,7 @@ class OrderOut(BaseModel):
     status: str
     price_at_submit: float
     mesghal17_price_at_submit: Optional[float] = None
+    mesghal17_raw_price_at_submit: Optional[float] = None
     is_manual: bool = False
     has_receipt: bool = False
     created_at: datetime
@@ -53,6 +54,9 @@ class OrderLimitsOut(BaseModel):
     max_weight: float   # گرم ۱۸
     min_amount: float   # تومان
     max_amount: float   # تومان (0 = بدون سقف)
+    price_label_mode: str = "mesghal_and_gram18"  # "mesghal_and_gram18" | "gram18_only"
+    commission_type: str = "fixed"   # "fixed" | "percentage" - this user's own commission
+    commission_value: float = 0.0    # تومان اگر fixed, درصد اگر percentage
 
 
 class OrderLimitsUpdateIn(BaseModel):

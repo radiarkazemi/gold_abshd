@@ -74,17 +74,32 @@ class Role(Base):
     A user category (همکار ویترین دار, خریدار خانگی, ...) with its own
     commission rate. Admin creates/edits these in a separate management
     tab; every new user is assigned one at creation time.
+
+    Also carries two per-category display/limit overrides:
+      - min/max weight and amount: overrides the app-wide order limits
+        (see services/order_limits.py) for users in this role. Null =
+        inherit the global default for that field.
+      - price_label_mode: whether users in this role see both مثقال۱۷
+        and گرم۱۸ prices, or only گرم۱۸ - e.g. a "خانگی" (home/retail)
+        category that doesn't deal in مثقال has no reason to see it.
     """
 
     __tablename__ = "roles"
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
     name = Column(String, unique=True, nullable=False)
-    commission_type = Column(Enum(CommissionTypeEnum),
-                             nullable=False, default=CommissionTypeEnum.fixed)
-    # تومان اگر fixed, درصد اگر percentage
-    commission_value = Column(Float, nullable=False, default=0)
+    commission_type = Column(Enum(CommissionTypeEnum), nullable=False, default=CommissionTypeEnum.fixed)
+    commission_value = Column(Float, nullable=False, default=0)  # تومان اگر fixed, درصد اگر percentage
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Per-role order limit overrides - null means "use the global default"
+    min_weight = Column(Float, nullable=True)
+    max_weight = Column(Float, nullable=True)
+    min_amount = Column(Float, nullable=True)
+    max_amount = Column(Float, nullable=True)
+
+    # "mesghal_and_gram18" | "gram18_only"
+    price_label_mode = Column(String, nullable=False, default="mesghal_and_gram18")
 
     users = relationship("User", back_populates="role")
 
@@ -93,15 +108,13 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
-    user_code = Column(String, unique=True, nullable=False,
-                       index=True)  # کد کوتاه و یکتای مشتری
+    user_code = Column(String, unique=True, nullable=False, index=True)  # کد کوتاه و یکتای مشتری
     phone_number = Column(String, unique=True, nullable=False, index=True)
     full_name = Column(String, nullable=True)
     national_id = Column(String, nullable=True)   # کد ملی
     notes = Column(Text, nullable=True)            # یادداشت آزاد ادمین
 
-    role_id = Column(UUID(as_uuid=False),
-                     ForeignKey("roles.id"), nullable=True)
+    role_id = Column(UUID(as_uuid=False), ForeignKey("roles.id"), nullable=True)
 
     is_blocked = Column(Boolean, default=False, nullable=False)
 
@@ -112,8 +125,7 @@ class User(Base):
     # lost (cache cleared, different browser), the account is locked
     # until an admin issues a new registration key.
     device_id = Column(String, nullable=True)
-    # user-agent string, informational only
-    device_info = Column(String, nullable=True)
+    device_info = Column(String, nullable=True)  # user-agent string, informational only
 
     last_seen_at = Column(DateTime, nullable=True)
 
@@ -121,8 +133,7 @@ class User(Base):
 
     # KYC (احراز هویت) - customer submits a document photo for review;
     # admin approves or rejects. "none" until the customer submits once.
-    # none | pending | approved | rejected
-    kyc_status = Column(String, nullable=False, default="none")
+    kyc_status = Column(String, nullable=False, default="none")  # none | pending | approved | rejected
     kyc_document_path = Column(String, nullable=True)
     kyc_submitted_at = Column(DateTime, nullable=True)
     kyc_reviewed_at = Column(DateTime, nullable=True)
@@ -137,8 +148,7 @@ class User(Base):
     role = relationship("Role", back_populates="users")
     orders = relationship("Order", back_populates="user")
     transactions = relationship("BalanceTransaction", back_populates="user")
-    registration_key = relationship(
-        "RegistrationKey", back_populates="user", uselist=False)
+    registration_key = relationship("RegistrationKey", back_populates="user", uselist=False)
 
 
 class RegistrationKey(Base):
@@ -153,11 +163,9 @@ class RegistrationKey(Base):
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
     key = Column(String, unique=True, nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=False), ForeignKey(
-        "users.id"), nullable=False)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
 
-    status = Column(Enum(RegistrationKeyStatusEnum),
-                    default=RegistrationKeyStatusEnum.pending, nullable=False)
+    status = Column(Enum(RegistrationKeyStatusEnum), default=RegistrationKeyStatusEnum.pending, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     activated_at = Column(DateTime, nullable=True)
     device_id = Column(String, nullable=True)  # set once activated
@@ -171,21 +179,17 @@ class Order(Base):
     __tablename__ = "orders"
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
-    user_id = Column(UUID(as_uuid=False),
-                     ForeignKey("users.id"), nullable=True)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)
 
     side = Column(Enum(OrderSideEnum), nullable=False)
     amount_type = Column(Enum(AmountTypeEnum), nullable=False)
     value = Column(Float, nullable=False)
     description = Column(Text, default="")
-    status = Column(Enum(OrderStatusEnum),
-                    default=OrderStatusEnum.pending, nullable=False)
-    # گرم۱۸ price (commission-adjusted), used for balance math
-    price_at_submit = Column(Float, nullable=False)
-    # raw مثقال۱۷ quote at submit time, for display only
-    mesghal17_price_at_submit = Column(Float, nullable=True)
-    # True for حواله تلفنی (admin-entered) orders
-    is_manual = Column(Boolean, default=False, nullable=False)
+    status = Column(Enum(OrderStatusEnum), default=OrderStatusEnum.pending, nullable=False)
+    price_at_submit = Column(Float, nullable=False)  # گرم۱۸ price (commission-adjusted), used for balance math
+    mesghal17_price_at_submit = Column(Float, nullable=True)  # FINAL مثقال۱۷ quote (raw + this user's commission) - what the customer actually got
+    mesghal17_raw_price_at_submit = Column(Float, nullable=True)  # raw مثقال۱۷ quote from the source, no commission - for "has the market price moved" comparisons only
+    is_manual = Column(Boolean, default=False, nullable=False)  # True for حواله تلفنی (admin-entered) orders
 
     # Path (on disk, relative to the upload directory) to an optional
     # bank-transfer receipt the user attached as proof of payment for a
@@ -200,8 +204,7 @@ class Order(Base):
         return bool(self.receipt_path)
 
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user = relationship("User", back_populates="orders")
 
@@ -217,16 +220,13 @@ class BalanceTransaction(Base):
     __tablename__ = "balance_transactions"
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
-    user_id = Column(UUID(as_uuid=False), ForeignKey(
-        "users.id"), nullable=False)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
 
     gold_change = Column(Float, default=0)   # مثقال - positive or negative
     cash_change = Column(Float, default=0)   # تومان - positive or negative
     reason = Column(Enum(TransactionReasonEnum), nullable=False)
-    # e.g. admin's reason for manual adjustment
-    note = Column(Text, default="")
-    related_order_id = Column(
-        UUID(as_uuid=False), ForeignKey("orders.id"), nullable=True)
+    note = Column(Text, default="")          # e.g. admin's reason for manual adjustment
+    related_order_id = Column(UUID(as_uuid=False), ForeignKey("orders.id"), nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -246,16 +246,13 @@ class TransferRequest(Base):
     __tablename__ = "transfer_requests"
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
-    user_id = Column(UUID(as_uuid=False), ForeignKey(
-        "users.id"), nullable=False)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
     amount = Column(Float, nullable=False)  # تومان
     bank_reference = Column(String, nullable=True)  # شماره پیگیری / کد رهگیری
-    # customer-entered, Jalali string
-    transfer_date = Column(String, nullable=True)
+    transfer_date = Column(String, nullable=True)  # customer-entered, Jalali string
     description = Column(Text, nullable=True)
     receipt_path = Column(String, nullable=True)
-    status = Column(Enum(TransferStatusEnum),
-                    default=TransferStatusEnum.pending, nullable=False)
+    status = Column(Enum(TransferStatusEnum), default=TransferStatusEnum.pending, nullable=False)
     admin_note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     reviewed_at = Column(DateTime, nullable=True)
@@ -274,8 +271,7 @@ class Holiday(Base):
     __tablename__ = "holidays"
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
-    # stored as midnight of that Gregorian date
-    date = Column(DateTime, nullable=False, unique=True)
+    date = Column(DateTime, nullable=False, unique=True)  # stored as midnight of that Gregorian date
     description = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -306,8 +302,7 @@ class AppSetting(Base):
 
     key = Column(String, primary_key=True)
     value = Column(Text, nullable=False, default="")
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class AdminUser(Base):
@@ -335,11 +330,9 @@ class AdminUser(Base):
     full_name = Column(String, nullable=True)
     phone_number = Column(String, unique=True, nullable=True, index=True)
     national_id = Column(String, nullable=True)
-    # JSON list of scope strings
-    permissions = Column(Text, nullable=False, default="[]")
+    permissions = Column(Text, nullable=False, default="[]")  # JSON list of scope strings
     is_active = Column(Boolean, default=True)
-    # username of the super-admin who created this row
-    created_by = Column(String, nullable=True)
+    created_by = Column(String, nullable=True)  # username of the super-admin who created this row
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login_at = Column(DateTime, nullable=True)
 

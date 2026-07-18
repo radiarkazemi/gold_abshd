@@ -167,9 +167,9 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
 
   const priceChanged =
     liveOrder?.status === "pending" &&
-    liveOrder?.mesghal17_price_at_submit != null &&
+    liveOrder?.mesghal17_raw_price_at_submit != null &&
     mesghal17Price() != null &&
-    Math.round(mesghal17Price()) !== Math.round(liveOrder.mesghal17_price_at_submit);
+    Math.round(mesghal17Price()) !== Math.round(liveOrder.mesghal17_raw_price_at_submit);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -209,7 +209,7 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
 
             {priceChanged && (
               <p className="modal-result__price-change">
-                مظنه از {toFarsiNumber(Math.round(liveOrder.mesghal17_price_at_submit))} به{" "}
+                مظنه از {toFarsiNumber(Math.round(liveOrder.mesghal17_raw_price_at_submit))} به{" "}
                 {toFarsiNumber(Math.round(mesghal17Price()))} تومان تغییر کرده
               </p>
             )}
@@ -225,10 +225,12 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
         ) : confirming ? (
           <div className="modal-confirm">
             <p className="modal-confirm__text">لطفا اطلاعات سفارش را بررسی و تایید کنید:</p>
-            <div className="modal-confirm__row">
-              <span>قیمت (مثقال ۱۷)</span>
-              <span>{mesghal17Price() ? toFarsiNumber(Math.round(mesghal17Price())) : "—"} تومان</span>
-            </div>
+            {limits?.price_label_mode !== "gram18_only" && (
+              <div className="modal-confirm__row">
+                <span>قیمت (مثقال ۱۷)</span>
+                <span>{mesghal17Price() ? toFarsiNumber(Math.round(mesghal17Price())) : "—"} تومان</span>
+              </div>
+            )}
             <div className="modal-confirm__row">
               <span>{amountType === "weight" ? "وزن" : "مبلغ"}</span>
               <span>

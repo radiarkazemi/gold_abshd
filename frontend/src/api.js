@@ -1,6 +1,7 @@
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 const WS_BASE = API_BASE.replace(/^http/, "ws");
 import { getDeviceId, getDeviceInfo } from "./utils/deviceId";
+import { decodePayload } from "./utils/payloadCodec";
 const TOKEN_KEY = "goldapp_token";
 
 export function getToken() {
@@ -225,11 +226,12 @@ export async function fetchMe() {
 export async function fetchPrice() {
   const res = await fetch(`${API_BASE}/api/price`);
   if (!res.ok) throw new Error("Failed to fetch price");
-  return res.json();
+  const { payload } = await res.json();
+  return decodePayload(payload);
 }
 
 export async function fetchOrderLimits() {
-  const res = await fetch(`${API_BASE}/api/order-limits`);
+  const res = await fetch(`${API_BASE}/api/order-limits`, { headers: { ...authHeaders() } });
   if (!res.ok) throw new Error("Failed to fetch order limits");
   return res.json();
 }
@@ -384,7 +386,8 @@ export async function fetchAllPrices() {
     throw new Error("ADMIN_SESSION_EXPIRED");
   }
   if (!res.ok) throw new Error("Failed to fetch prices");
-  return res.json();
+  const { payload } = await res.json();
+  return decodePayload(payload);
 }
 
 export async function fetchPermissionScopes() {
@@ -501,11 +504,16 @@ export async function fetchRoles() {
   return res.json();
 }
 
-export async function createRole(name, commissionType, commissionValue) {
+export async function createRole(name, commissionType, commissionValue, extra = {}) {
   const res = await fetch(`${API_BASE}/api/admin/roles`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
-    body: JSON.stringify({ name, commission_type: commissionType, commission_value: commissionValue }),
+    body: JSON.stringify({
+      name, commission_type: commissionType, commission_value: commissionValue,
+      min_weight: extra.minWeight ?? null, max_weight: extra.maxWeight ?? null,
+      min_amount: extra.minAmount ?? null, max_amount: extra.maxAmount ?? null,
+      price_label_mode: extra.priceLabelMode || "mesghal_and_gram18",
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -514,11 +522,16 @@ export async function createRole(name, commissionType, commissionValue) {
   return res.json();
 }
 
-export async function updateRoleCommission(roleId, commissionType, commissionValue) {
+export async function updateRoleCommission(roleId, commissionType, commissionValue, extra = {}) {
   const res = await fetch(`${API_BASE}/api/admin/roles/${roleId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
-    body: JSON.stringify({ commission_type: commissionType, commission_value: commissionValue }),
+    body: JSON.stringify({
+      commission_type: commissionType, commission_value: commissionValue,
+      min_weight: extra.minWeight ?? null, max_weight: extra.maxWeight ?? null,
+      min_amount: extra.minAmount ?? null, max_amount: extra.maxAmount ?? null,
+      price_label_mode: extra.priceLabelMode || "mesghal_and_gram18",
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -654,7 +667,8 @@ export function openPriceSocket(onPrice) {
   const ws = new WebSocket(`${WS_BASE}/ws/price`);
   ws.onmessage = (event) => {
     try {
-      onPrice(JSON.parse(event.data));
+      const { payload } = JSON.parse(event.data);
+      onPrice(decodePayload(payload));
     } catch (e) {
       console.error("Bad price payload", e);
     }

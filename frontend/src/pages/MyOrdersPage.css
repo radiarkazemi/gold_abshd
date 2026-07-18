@@ -290,6 +290,24 @@
   gap: 8px;
 }
 
+.date-filter__download-all {
+  width: 100%;
+  margin-top: 10px;
+  background: var(--gold-dim);
+  color: #1a1508;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 10px 0;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.date-filter__download-all:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .date-filter__input-group {
   flex: 1;
   display: flex;

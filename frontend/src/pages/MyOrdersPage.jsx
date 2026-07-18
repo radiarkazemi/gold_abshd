@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchMyOrders, fetchMyBalance, fetchReceiptBlobUrl, uploadReceipt, cancelMyOrder } from "../api";
-import { downloadOrderReceipt } from "../utils/printReceipt";
+import { downloadOrdersReceipt } from "../utils/printReceipt";
 import { formatCashStatus, formatGoldStatus } from "../utils/balanceFormat";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
@@ -197,6 +197,14 @@ export default function MyOrdersPage() {
           <JalaliDateInput label="از" value={dateFrom} onChange={setDateFrom} />
           <JalaliDateInput label="تا" value={dateTo} onChange={setDateTo} />
         </div>
+        <button
+          type="button"
+          className="date-filter__download-all"
+          disabled={visible.length === 0}
+          onClick={() => downloadOrdersReceipt(visible, { dateFrom, dateTo })}
+        >
+          دانلود همه ({fa(visible.length)}) — PDF
+        </button>
       </div>
 
       {loading ? (
@@ -291,13 +299,6 @@ export default function MyOrdersPage() {
                 </button>
               )}
 
-              <button
-                type="button"
-                className="history-card__pdf-btn"
-                onClick={() => downloadOrderReceipt(order)}
-              >
-                دانلود رسید (PDF)
-              </button>
             </div>
           ))}
         </div>

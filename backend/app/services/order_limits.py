@@ -44,3 +44,31 @@ def set_order_limits(db: Session, **updates: float) -> dict:
             db.add(row)
     db.commit()
     return get_order_limits(db)
+
+
+def get_effective_limits(db: Session, user) -> dict:
+    """
+    Global limits (get_order_limits), with any of the four fields
+    overridden by the user's role if that role has a non-null value
+    set for it - see min_weight/max_weight/min_amount/max_amount on
+    the Role model. Also includes price_label_mode and the user's own
+    commission (type + value) from their role, so the frontend can
+    show the ACTUAL price this user would get - not the raw source
+    price - on the main trading screen, not just at order-submit time.
+    """
+    result = get_order_limits(db)
+    result["price_label_mode"] = "mesghal_and_gram18"
+    result["commission_type"] = "fixed"
+    result["commission_value"] = 0.0
+
+    role = getattr(user, "role", None)
+    if role:
+        for field in ("min_weight", "max_weight", "min_amount", "max_amount"):
+            override = getattr(role, field, None)
+            if override is not None:
+                result[field] = override
+        result["price_label_mode"] = role.price_label_mode or "mesghal_and_gram18"
+        result["commission_type"] = role.commission_type.value if hasattr(role.commission_type, "value") else role.commission_type
+        result["commission_value"] = role.commission_value
+
+    return result
