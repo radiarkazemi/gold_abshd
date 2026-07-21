@@ -9,6 +9,30 @@ response shapes in app/schemas/ - main.py itself should stay small
 forever; if it starts growing again, something belongs in a router
 instead.
 """
+import asyncio
+import logging
+import os
+
+logger = logging.getLogger(__name__)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
+from app.rate_limit import limiter
+from app.price_service import price_service
+from app.services import price_cards
+from app.ws_manager import manager
+from app.db import init_db, SessionLocal
+from app.config import settings
+
 from app.routers import (
     auth,
     price,
@@ -24,27 +48,9 @@ from app.routers import (
     admin_prices,
     admin_accounts,
     kyc,
-    transfer,
+    transfers,
+    admin_price_cards,
 )
-from app.config import settings
-from app.db import init_db
-from app.ws_manager import manager
-from app.price_service import price_service
-from app.rate_limit import limiter
-from slowapi.errors import RateLimitExceeded
-from slowapi import _rate_limit_exceeded_handler
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, Request
-import asyncio
-import logging
-import os
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-    datefmt="%H:%M:%S",
-)
-
 
 app = FastAPI(title="آبشده قصر طلا - Gold Trading Server")
 
@@ -85,17 +91,86 @@ async def startup_event():
     init_db()
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     asyncio.create_task(price_service.run_simulation())
+    asyncio.create_task(price_cards.poll_all_items())
     asyncio.create_task(price_broadcaster())
 
 
 async def price_broadcaster():
-    """قیمت فعلی رو دائم برای همه کلاینت‌های وصل‌شده پخش می‌کنه"""
+    """قیمت فعلی رو دائم برای همه کلاینت‌های وصل‌شده پخش می‌کنه.
+
+    Two modes:
+      - GOLDAPP_PRICE_SOURCE=api: driven by price_cards' own poll of
+        ALL goldbridge items. Broadcasts {"cards": [...], "updated_at":
+        ...} - every enabled card, each carrying its own
+        orderable_buy/orderable_sell/is_primary flags (see
+        services/price_cards.py). The frontend renders every card the
+        same way, sized differently only for whichever one
+        is_primary=true.
+      - simulator/telegram: no concept of multiple items, so this
+        falls back to the original single-price broadcast, wrapped as
+        a single-item "cards" list so the frontend doesn't need two
+        different payload formats.
+    """
+    if settings.PRICE_SOURCE.lower() == "api":
+        await _price_cards_broadcaster_loop()
+    else:
+        await _legacy_single_price_broadcaster_loop()
+
+
+async def _price_cards_broadcaster_loop():
+    last_payload = None
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                payload = price_cards.build_broadcast_payload(db)
+            finally:
+                db.close()
+
+            if payload != last_payload:
+                await manager.broadcast_price(payload)
+                last_payload = payload
+        except Exception as e:
+            # Without this, ANY exception here (a transient DB hiccup,
+            # anything) kills this asyncio task permanently and silently -
+            # no more price updates ever again, with nothing in the logs
+            # pointing at why. Log it and keep the loop alive instead.
+            logger.error(f"[price-broadcast] tick failed: {type(e).__name__}: {e}")
+
+        await asyncio.sleep(2)
+
+
+async def _legacy_single_price_broadcaster_loop():
+    """
+    NOTE: since order creation now always targets a specific
+    goldbridge_item_id (see routers/orders.py), and this fallback has
+    no real item id to offer (simulator/telegram don't have the
+    concept), orders can't actually be placed while running in this
+    mode - it's display-only. This is an acceptable gap for a
+    dev/testing-only price source; production always runs
+    GOLDAPP_PRICE_SOURCE=api.
+    """
     queue = asyncio.Queue()
     price_service.subscribe(queue)
     try:
         while True:
             price = await queue.get()
-            await manager.broadcast_price(price.model_dump())
+            p = price.model_dump()
+            card = {
+                "goldbridge_item_id": None,
+                "name": "قیمت",
+                "type": 1,
+                "unit": "gram18",
+                "item_weight": None,
+                "is_primary": True,
+                "orderable_buy": True,
+                "orderable_sell": True,
+                "buy_price": p["buy_price"],
+                "sell_price": p["sell_price"],
+                "gram18_buy_price": p.get("gram18_buy_price"),
+                "gram18_sell_price": p.get("gram18_sell_price"),
+            }
+            await manager.broadcast_price({"cards": [card], "updated_at": p.get("updated_at")})
     finally:
         price_service.unsubscribe(queue)
 
@@ -119,4 +194,5 @@ app.include_router(admin_roles.router)
 app.include_router(admin_prices.router)
 app.include_router(admin_accounts.router)
 app.include_router(kyc.router)
-app.include_router(transfer.router)
+app.include_router(transfers.router)
+app.include_router(admin_price_cards.router)

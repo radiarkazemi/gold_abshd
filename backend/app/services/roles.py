@@ -47,14 +47,13 @@ def update_role_commission(
     db: Session, role_id: str, commission_type: str, commission_value: float,
     min_weight: float | None = None, max_weight: float | None = None,
     min_amount: float | None = None, max_amount: float | None = None,
-    price_label_mode: str = "mesghal_and_gram18",
+    price_label_mode: str | None = None,
 ) -> Role:
     role = db.query(Role).filter(Role.id == role_id).first()
     if not role:
         raise HTTPException(status_code=404, detail="نقش پیدا نشد")
     if commission_type not in ("fixed", "percentage"):
         raise HTTPException(status_code=400, detail="نوع کمیسیون نامعتبر است")
-    _validate_price_label_mode(price_label_mode)
 
     role.commission_type = CommissionTypeEnum(commission_type)
     role.commission_value = commission_value
@@ -62,7 +61,11 @@ def update_role_commission(
     role.max_weight = max_weight
     role.min_amount = min_amount
     role.max_amount = max_amount
-    role.price_label_mode = price_label_mode
+
+    if price_label_mode is not None:
+        _validate_price_label_mode(price_label_mode)
+        role.price_label_mode = price_label_mode
+
     db.commit()
     db.refresh(role)
     return role

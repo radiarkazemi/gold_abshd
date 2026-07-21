@@ -11,6 +11,7 @@ from datetime import datetime
 from sqlalchemy import (
     Column,
     String,
+    Integer,
     Float,
     DateTime,
     ForeignKey,
@@ -42,8 +43,9 @@ class OrderStatusEnum(str, enum.Enum):
 
 
 class AmountTypeEnum(str, enum.Enum):
-    weight = "weight"
-    amount = "amount"
+    weight = "weight"   # گرم۱۸ - gold items
+    amount = "amount"   # تومان - gold items
+    count = "count"     # تعداد - coin items, no گرم/تومان conversion
 
 
 class TransactionReasonEnum(str, enum.Enum):
@@ -189,6 +191,7 @@ class Order(Base):
     price_at_submit = Column(Float, nullable=False)  # گرم۱۸ price (commission-adjusted), used for balance math
     mesghal17_price_at_submit = Column(Float, nullable=True)  # FINAL مثقال۱۷ quote (raw + this user's commission) - what the customer actually got
     mesghal17_raw_price_at_submit = Column(Float, nullable=True)  # raw مثقال۱۷ quote from the source, no commission - for "has the market price moved" comparisons only
+    goldbridge_item_id = Column(Integer, nullable=True)  # which goldbridge instrument this was priced against - see PriceCard
     is_manual = Column(Boolean, default=False, nullable=False)  # True for حواله تلفنی (admin-entered) orders
 
     # Path (on disk, relative to the upload directory) to an optional
@@ -227,6 +230,12 @@ class BalanceTransaction(Base):
     reason = Column(Enum(TransactionReasonEnum), nullable=False)
     note = Column(Text, default="")          # e.g. admin's reason for manual adjustment
     related_order_id = Column(UUID(as_uuid=False), ForeignKey("orders.id"), nullable=True)
+
+    # None = the legacy universal گرم۱۸ gold ledger (unchanged meaning).
+    # Set to a goldbridge coin item's id = this row belongs to THAT
+    # coin's own separate count-based ledger instead - gold_change here
+    # means "number of coins", never mixed with the گرم۱۸ ledger above.
+    goldbridge_item_id = Column(Integer, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -303,6 +312,47 @@ class AppSetting(Base):
     key = Column(String, primary_key=True)
     value = Column(Text, nullable=False, default="")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PriceCard(Base):
+    """
+    Admin-managed set of goldbridge items shown to customers as price
+    cards on the main screen. Each row references a goldbridge item by
+    its numeric id (see goldbridge's /prices) - the live name/type/ayar/
+    buy/sell always comes fresh from the price poller's cache, never
+    stored here, so this table only holds admin CHOICES:
+
+      - is_enabled: shown to customers at all (as a display card)
+      - orderable_buy / orderable_sell: independent per-side switches -
+        a card can allow buying but not selling, or vice versa, or
+        neither (still shown, just not tradable on that side). Any
+        number of cards may be orderable simultaneously - there is no
+        longer a single exclusive "the orderable card".
+
+    Gold items (type=1, گرم/عیار) trade in گرم۱۸ terms against the
+    existing balance ledger, exactly as before. Coin items (type=2)
+    trade by COUNT against their OWN separate per-item balance ledger
+    (see BalanceTransaction.goldbridge_item_id) - a coin is never
+    converted into or mixed with گرم۱۸ gold balance, since that would
+    misrepresent its actual purity/value.
+    """
+
+    __tablename__ = "price_cards"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    goldbridge_item_id = Column(Integer, unique=True, nullable=False)
+    display_name = Column(String, nullable=True)  # None = use goldbridge's own name
+    is_enabled = Column(Boolean, default=False, nullable=False)
+    orderable_buy = Column(Boolean, default=False, nullable=False)
+    orderable_sell = Column(Boolean, default=False, nullable=False)
+    # When True, this app's own orderable_buy/orderable_sell above are
+    # final - goldbridge's own allow_buy/allow_sell flags for this item
+    # are ignored entirely. Off by default: normally BOTH this app's
+    # toggle AND goldbridge's own flag must agree before customers can
+    # order (see services/price_cards.get_enabled_cards_for_broadcast).
+    override_source_restriction = Column(Boolean, default=False, nullable=False)
+    sort_order = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class AdminUser(Base):

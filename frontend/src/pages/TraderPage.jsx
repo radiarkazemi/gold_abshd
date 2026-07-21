@@ -3,7 +3,7 @@ import { usePriceFeed } from "../hooks/usePriceFeed";
 import { submitOrder, fetchSettlementLabel, fetchTradingStatus } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
-import PriceButton from "../components/PriceButton";
+import PriceCardRow from "../components/PriceCardRow";
 import OrderModal from "../components/OrderModal";
 import NoticeCard from "../components/NoticeCard";
 import NoticeModal from "../components/NoticeModal";
@@ -12,10 +12,10 @@ import BottomTabBar from "../components/BottomTabBar";
 import RefreshBar from "../components/RefreshBar";
 
 export default function TraderPage() {
-  const { price, prevPrice, connected } = usePriceFeed();
+  const { cards, prevCards, connected, priceLabelMode } = usePriceFeed();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const [activeSide, setActiveSide] = useState(null); // "buy" | "sell" | null
+  const [activeOrder, setActiveOrder] = useState(null); // { card, side } | null
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
@@ -44,15 +44,15 @@ export default function TraderPage() {
     return () => clearInterval(interval);
   }, []);
 
-  function openModal(side) {
+  function openModal(card, side) {
     if (!tradingOnline) return;
     setResult(null);
     setError("");
-    setActiveSide(side);
+    setActiveOrder({ card, side });
   }
 
   function closeModal() {
-    setActiveSide(null);
+    setActiveOrder(null);
     setResult(null);
     setError("");
   }
@@ -61,7 +61,7 @@ export default function TraderPage() {
     setSubmitting(true);
     setError("");
     try {
-      const order = await submitOrder(payload);
+      const order = await submitOrder({ ...payload, goldbridgeItemId: activeOrder.card.goldbridge_item_id });
       setResult(order);
     } catch (e) {
       console.error(e);
@@ -70,6 +70,10 @@ export default function TraderPage() {
       setSubmitting(false);
     }
   }
+
+  const primaryCard = cards.find((c) => c.is_primary);
+  const otherCards = cards.filter((c) => !c.is_primary);
+  const prevByItemId = Object.fromEntries((prevCards || []).map((c) => [c.goldbridge_item_id, c]));
 
   return (
     <div className="app">
@@ -90,16 +94,9 @@ export default function TraderPage() {
       <main className="app__main app__main--with-tabbar">
         <RefreshBar onRefresh={handleManualRefresh} />
 
-        {price?.updated_at && (
+        {settlement && (
           <p className="price-updated-note">
-            آخرین آپدیت قیمت:{" "}
-            {new Date(price.updated_at).toLocaleString("fa-IR", {
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-              weekday: "long",
-            })}
-            {settlement && <span className="settlement-badge"> · {settlement.label}</span>}
+            <span className="settlement-badge">{settlement.label}</span>
           </p>
         )}
         {!tradingOnline && (
@@ -107,18 +104,45 @@ export default function TraderPage() {
             در حال حاضر امکان ثبت سفارش خرید و فروش وجود ندارد.
           </p>
         )}
-        <div className={`price-stage ${!tradingOnline ? "price-stage--disabled" : ""}`}>
-          <PriceButton side="buy" price={price} prevPrice={prevPrice} onClick={openModal} disabled={!tradingOnline} />
-          <PriceButton side="sell" price={price} prevPrice={prevPrice} onClick={openModal} disabled={!tradingOnline} />
-        </div>
+
+        {!primaryCard && otherCards.length === 0 ? (
+          <p className="price-updated-note">در حال دریافت قیمت…</p>
+        ) : (
+          <>
+            {primaryCard && (
+              <PriceCardRow
+                card={primaryCard}
+                prevCard={prevByItemId[primaryCard.goldbridge_item_id]}
+                onOrder={openModal}
+                disabled={!tradingOnline}
+                priceLabelMode={priceLabelMode}
+              />
+            )}
+            {otherCards.length > 0 && (
+              <div className="secondary-cards-grid">
+                {otherCards.map((card) => (
+                  <PriceCardRow
+                    key={card.goldbridge_item_id}
+                    card={card}
+                    prevCard={prevByItemId[card.goldbridge_item_id]}
+                    onOrder={openModal}
+                    disabled={!tradingOnline}
+                    priceLabelMode={priceLabelMode}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
         <NoticeCard />
         <RecentOrdersTable refreshSignal={refreshKey} limit={5} />
       </main>
 
-      {activeSide && (
+      {activeOrder && (
         <OrderModal
-          side={activeSide}
-          price={price}
+          card={activeOrder.card}
+          side={activeOrder.side}
           onClose={closeModal}
           onSubmit={handleSubmit}
           submitting={submitting}

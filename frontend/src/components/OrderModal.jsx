@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchOrderLimits, fetchMyOrderDetail } from "../api";
+import { mesghal17ToGram18 } from "../utils/priceCommission";
 import FormattedNumberInput from "./FormattedNumberInput";
 
 const SIDE_META = {
@@ -31,8 +32,9 @@ function formatMMSS(totalSeconds) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export default function OrderModal({ side, price, onClose, onSubmit, submitting, result, error }) {
-  const [amountType, setAmountType] = useState("weight");
+export default function OrderModal({ card, side, onClose, onSubmit, submitting, result, error }) {
+  const isCoin = card?.unit === "count";
+  const [amountType, setAmountType] = useState(isCoin ? "count" : "weight");
   const [value, setValue] = useState("");
   const [description, setDescription] = useState("");
   const [limits, setLimits] = useState(null);
@@ -49,8 +51,6 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
     fetchOrderLimits().then(setLimits).catch(() => {});
   }, []);
 
-  // Poll for live status while the order is pending, so it turns green
-  // (or red) the moment the admin decides, without needing a refresh.
   useEffect(() => {
     if (!result) return;
     setLiveOrder(result);
@@ -72,7 +72,6 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
     return () => clearInterval(pollRef.current);
   }, [result]);
 
-  // Countdown timer, only while still pending.
   useEffect(() => {
     if (!result || liveOrder?.status !== "pending") {
       clearInterval(tickRef.current);
@@ -88,31 +87,29 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
   function handleRetry() {
     setRetryCount((c) => c + 1);
     setSecondsLeft(COUNTDOWN_SECONDS);
-    // immediate re-check, don't wait for the next 3s poll tick
     fetchMyOrderDetail(result.id).then(setLiveOrder).catch(() => {});
   }
 
   function unitPrice() {
-    return side === "buy" ? price?.gram18_buy_price : price?.gram18_sell_price;
+    return side === "buy" ? card?.gram18_buy_price : card?.gram18_sell_price;
   }
 
-  function mesghal17Price() {
-    return side === "buy" ? price?.buy_price : price?.sell_price;
-  }
-
-  function weightEquivalent(numeric) {
-    if (amountType === "weight") return numeric;
-    const up = unitPrice();
-    if (!up) return null;
-    return numeric / up;
+  function rawSidePrice() {
+    return side === "buy" ? card?.buy_price : card?.sell_price;
   }
 
   function computedTotal() {
     const numeric = parseFloat(value);
     if (!numeric || numeric <= 0) return null;
+
+    if (isCoin) {
+      const p = rawSidePrice();
+      if (!p) return null;
+      return { label: "مبلغ کل", value: `${toFarsiNumber(Math.round(numeric * p))} تومان` };
+    }
+
     const up = unitPrice();
     if (!up) return null;
-
     if (amountType === "weight") {
       return { label: "مبلغ کل", value: `${toFarsiNumber(Math.round(numeric * up))} تومان` };
     }
@@ -126,6 +123,19 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
       setLocalError("مقدار وارد شده معتبر نیست");
       return null;
     }
+
+    if (isCoin) {
+      if (!Number.isInteger(numeric)) {
+        setLocalError("تعداد باید عددی صحیح باشد");
+        return null;
+      }
+      if (numeric > 50) {
+        setLocalError("حداکثر تعداد سفارش سکه ۵۰ عدد است");
+        return null;
+      }
+      return numeric;
+    }
+
     if (limits) {
       if (amountType === "weight") {
         if (numeric < limits.min_weight) {
@@ -164,12 +174,13 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
   const shownError = localError || error;
   const total = computedTotal();
   const statusMeta = liveOrder ? STATUS_META[liveOrder.status] : STATUS_META.pending;
+  const gram18OnlyDisplay = !isCoin && limits?.price_label_mode === "gram18_only";
 
   const priceChanged =
     liveOrder?.status === "pending" &&
     liveOrder?.mesghal17_raw_price_at_submit != null &&
-    mesghal17Price() != null &&
-    Math.round(mesghal17Price()) !== Math.round(liveOrder.mesghal17_raw_price_at_submit);
+    rawSidePrice() != null &&
+    Math.round(rawSidePrice()) !== Math.round(liveOrder.mesghal17_raw_price_at_submit);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -180,7 +191,7 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
         aria-modal="true"
       >
         <div className="modal-sheet__handle" />
-        <h2 className="modal-sheet__title">{meta.title}</h2>
+        <h2 className="modal-sheet__title">{meta.title}{card?.name ? ` — ${card.name}` : ""}</h2>
 
         {result ? (
           <div className="modal-result">
@@ -209,8 +220,17 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
 
             {priceChanged && (
               <p className="modal-result__price-change">
-                مظنه از {toFarsiNumber(Math.round(liveOrder.mesghal17_raw_price_at_submit))} به{" "}
-                {toFarsiNumber(Math.round(mesghal17Price()))} تومان تغییر کرده
+                {gram18OnlyDisplay ? (
+                  <>
+                    مظنه از {toFarsiNumber(Math.round(mesghal17ToGram18(liveOrder.mesghal17_raw_price_at_submit)))} به{" "}
+                    {toFarsiNumber(Math.round(mesghal17ToGram18(rawSidePrice())))} تومان (گرم ۱۸) تغییر کرده
+                  </>
+                ) : (
+                  <>
+                    مظنه از {toFarsiNumber(Math.round(liveOrder.mesghal17_raw_price_at_submit))} به{" "}
+                    {toFarsiNumber(Math.round(rawSidePrice()))} تومان تغییر کرده
+                  </>
+                )}
               </p>
             )}
 
@@ -225,16 +245,25 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
         ) : confirming ? (
           <div className="modal-confirm">
             <p className="modal-confirm__text">لطفا اطلاعات سفارش را بررسی و تایید کنید:</p>
-            {limits?.price_label_mode !== "gram18_only" && (
-              <div className="modal-confirm__row">
-                <span>قیمت (مثقال ۱۷)</span>
-                <span>{mesghal17Price() ? toFarsiNumber(Math.round(mesghal17Price())) : "—"} تومان</span>
-              </div>
-            )}
             <div className="modal-confirm__row">
-              <span>{amountType === "weight" ? "وزن" : "مبلغ"}</span>
+              <span>{isCoin ? "قیمت (هر عدد)" : gram18OnlyDisplay ? "قیمت (گرم ۱۸)" : "قیمت (مثقال ۱۷)"}</span>
               <span>
-                {amountType === "weight" ? formatWeight(value) : toFarsiNumber(value)} {amountType === "weight" ? "گرم ۱۸" : "تومان"}
+                {rawSidePrice()
+                  ? toFarsiNumber(
+                      Math.round(
+                        !isCoin && gram18OnlyDisplay ? mesghal17ToGram18(rawSidePrice()) : rawSidePrice()
+                      )
+                    )
+                  : "—"}{" "}
+                تومان
+              </span>
+            </div>
+            <div className="modal-confirm__row">
+              <span>{isCoin ? "تعداد" : amountType === "weight" ? "وزن" : "مبلغ"}</span>
+              <span>
+                {isCoin
+                  ? `${toFarsiNumber(value)} عدد`
+                  : `${amountType === "weight" ? formatWeight(value) : toFarsiNumber(value)} ${amountType === "weight" ? "گرم ۱۸" : "تومان"}`}
               </span>
             </div>
             {total && (
@@ -260,29 +289,44 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
           </div>
         ) : (
           <form onSubmit={handleFormSubmit}>
-            <div className="segmented">
-              <button
-                type="button"
-                className={amountType === "weight" ? "segmented__opt is-active" : "segmented__opt"}
-                onClick={() => setAmountType("weight")}
-              >
-                وزن
-              </button>
-              <button
-                type="button"
-                className={amountType === "amount" ? "segmented__opt is-active" : "segmented__opt"}
-                onClick={() => setAmountType("amount")}
-              >
-                مبلغ
-              </button>
-            </div>
+            {!isCoin && (
+              <div className="segmented">
+                <button
+                  type="button"
+                  className={amountType === "weight" ? "segmented__opt is-active" : "segmented__opt"}
+                  onClick={() => setAmountType("weight")}
+                >
+                  وزن
+                </button>
+                <button
+                  type="button"
+                  className={amountType === "amount" ? "segmented__opt is-active" : "segmented__opt"}
+                  onClick={() => setAmountType("amount")}
+                >
+                  مبلغ
+                </button>
+              </div>
+            )}
 
             <label className="field">
               <span className="field__label">
-                <span className="field__icon">{amountType === "weight" ? "⚖️" : "💰"}</span>
-                {amountType === "weight" ? "وزن (گرم ۱۸)" : "مبلغ (تومان)"}
+                <span className="field__icon">{isCoin ? "🔢" : amountType === "weight" ? "⚖️" : "💰"}</span>
+                {isCoin ? "تعداد" : amountType === "weight" ? "وزن (گرم ۱۸)" : "مبلغ (تومان)"}
               </span>
-              {amountType === "amount" ? (
+              {isCoin ? (
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  step="1"
+                  min="1"
+                  autoFocus
+                  required
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  placeholder="مثلاً ۱"
+                  className="field__input"
+                />
+              ) : amountType === "amount" ? (
                 <FormattedNumberInput
                   value={value}
                   onChange={setValue}
@@ -305,19 +349,20 @@ export default function OrderModal({ side, price, onClose, onSubmit, submitting,
                   className="field__input"
                 />
               )}
-              {limits && amountType === "weight" && (
+              {!isCoin && limits && amountType === "weight" && (
                 <span className="field__hint">
                   حداقل: {toFarsiNumber(limits.min_weight)} گرم ۱۸ &nbsp;·&nbsp; حداکثر:{" "}
                   {toFarsiNumber(limits.max_weight)} گرم ۱۸
                 </span>
               )}
-              {limits && amountType === "amount" && (limits.min_amount > 0 || limits.max_amount > 0) && (
+              {!isCoin && limits && amountType === "amount" && (limits.min_amount > 0 || limits.max_amount > 0) && (
                 <span className="field__hint">
                   {limits.min_amount > 0 && <>حداقل: {toFarsiNumber(limits.min_amount)} تومان</>}
                   {limits.min_amount > 0 && limits.max_amount > 0 && <>&nbsp;·&nbsp;</>}
                   {limits.max_amount > 0 && <>حداکثر: {toFarsiNumber(limits.max_amount)} تومان</>}
                 </span>
               )}
+              {isCoin && <span className="field__hint">حداکثر ۵۰ عدد در هر سفارش</span>}
             </label>
 
             {total && (

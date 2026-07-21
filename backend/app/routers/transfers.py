@@ -7,7 +7,7 @@ from app.auth import get_current_user
 from app.admin_auth import require_permission
 from app.models_db import User
 from app.schemas.transfer import TransferRequestOut, TransferDecisionIn
-from app.services.transfer import (
+from app.services.transfers import (
     create_transfer_request,
     list_my_transfer_requests,
     list_transfer_requests,
@@ -26,8 +26,7 @@ def _to_out(row, with_user: bool = False) -> TransferRequestOut:
         transfer_date=row.transfer_date,
         description=row.description,
         has_receipt=bool(row.receipt_path),
-        status=row.status.value if hasattr(
-            row.status, "value") else row.status,
+        status=row.status.value if hasattr(row.status, "value") else row.status,
         admin_note=row.admin_note,
         created_at=row.created_at,
         reviewed_at=row.reviewed_at,
@@ -63,8 +62,7 @@ async def get_my_transfers(current_user: User = Depends(get_current_user), db: S
 async def view_own_transfer_receipt(
     transfer_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
-    path = get_transfer_document_path(
-        db, transfer_id, current_user.id, is_admin=False)
+    path = get_transfer_document_path(db, transfer_id, current_user.id, is_admin=False)
     return FileResponse(path)
 
 
@@ -79,8 +77,7 @@ async def get_admin_transfers(
 async def view_transfer_receipt_as_admin(
     transfer_id: str, db: Session = Depends(get_db), _admin=Depends(require_permission("transfers"))
 ):
-    path = get_transfer_document_path(
-        db, transfer_id, viewer_user_id=None, is_admin=True)
+    path = get_transfer_document_path(db, transfer_id, viewer_user_id=None, is_admin=True)
     return FileResponse(path)
 
 
@@ -91,6 +88,5 @@ async def decide_transfer(
     db: Session = Depends(get_db),
     _admin=Depends(require_permission("transfers")),
 ):
-    row = decide_transfer_request(
-        db, transfer_id, payload.accept, payload.admin_note)
+    row = decide_transfer_request(db, transfer_id, payload.accept, payload.admin_note)
     return _to_out(row, with_user=True)

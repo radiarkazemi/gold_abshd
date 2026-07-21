@@ -25,11 +25,12 @@ export function personalizePrice(rawPrice, commissionType, commissionValue) {
   if (!rawPrice) return rawPrice;
   const buy = applyCommission(rawPrice.buy_price, "buy", commissionType, commissionValue);
   const sell = applyCommission(rawPrice.sell_price, "sell", commissionType, commissionValue);
+  const isCoin = rawPrice.unit === "count";
   return {
     ...rawPrice,
     buy_price: buy,
     sell_price: sell,
-    gram18_buy_price: mesghal17ToGram18(buy),
-    gram18_sell_price: mesghal17ToGram18(sell),
+    gram18_buy_price: isCoin ? null : mesghal17ToGram18(buy),
+    gram18_sell_price: isCoin ? null : mesghal17ToGram18(sell),
   };
 }

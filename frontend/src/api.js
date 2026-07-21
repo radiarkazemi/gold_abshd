@@ -290,11 +290,12 @@ export async function fetchMyBalance() {
   return res.json();
 }
 
-export async function submitOrder({ side, amountType, value, description }) {
+export async function submitOrder({ goldbridgeItemId, side, amountType, value, description }) {
   const res = await fetch(`${API_BASE}/api/orders`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
+      goldbridge_item_id: goldbridgeItemId,
       side,
       amount_type: amountType,
       value,
@@ -374,6 +375,55 @@ export async function fetchAdminUsers(search) {
   if (search) url.searchParams.set("search", search);
   const res = await fetch(url, { headers: { ...adminAuthHeaders() } });
   if (!res.ok) throw new Error("Failed to fetch users");
+  return res.json();
+}
+
+export async function fetchAdminPriceCards() {
+  const res = await fetch(`${API_BASE}/api/admin/price-cards`, { headers: { ...adminAuthHeaders() } });
+  if (!res.ok) throw new Error("Failed to fetch price cards");
+  return res.json();
+}
+
+export async function setPriceCardEnabled(goldbridgeItemId, isEnabled, extra = {}) {
+  const res = await fetch(`${API_BASE}/api/admin/price-cards/${goldbridgeItemId}/enabled`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({
+      is_enabled: isEnabled,
+      display_name: extra.displayName ?? null,
+      sort_order: extra.sortOrder ?? null,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to update card");
+  }
+  return res.json();
+}
+
+export async function setPriceCardOverride(goldbridgeItemId, override) {
+  const res = await fetch(`${API_BASE}/api/admin/price-cards/${goldbridgeItemId}/override`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({ override_source_restriction: override }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to update override");
+  }
+  return res.json();
+}
+
+export async function setPriceCardOrderable(goldbridgeItemId, orderableBuy, orderableSell) {
+  const res = await fetch(`${API_BASE}/api/admin/price-cards/${goldbridgeItemId}/orderable`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({ orderable_buy: orderableBuy, orderable_sell: orderableSell }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to update orderable state");
+  }
   return res.json();
 }
 
@@ -530,7 +580,7 @@ export async function updateRoleCommission(roleId, commissionType, commissionVal
       commission_type: commissionType, commission_value: commissionValue,
       min_weight: extra.minWeight ?? null, max_weight: extra.maxWeight ?? null,
       min_amount: extra.minAmount ?? null, max_amount: extra.maxAmount ?? null,
-      price_label_mode: extra.priceLabelMode || "mesghal_and_gram18",
+      price_label_mode: extra.priceLabelMode ?? null,
     }),
   });
   if (!res.ok) {

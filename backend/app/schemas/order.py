@@ -4,8 +4,9 @@ from typing import Optional
 
 
 class OrderCreateIn(BaseModel):
+    goldbridge_item_id: int
     side: str            # "buy" | "sell"
-    amount_type: str     # "weight" | "amount"
+    amount_type: str     # "weight" | "amount" (gold items) | "count" (coin items)
     value: float
     description: Optional[str] = ""
 

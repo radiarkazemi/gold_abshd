@@ -39,7 +39,7 @@ class RoleUpdateIn(BaseModel):
     max_weight: Optional[float] = None
     min_amount: Optional[float] = None
     max_amount: Optional[float] = None
-    price_label_mode: str = "mesghal_and_gram18"
+    price_label_mode: Optional[str] = None  # None = leave unchanged - see services/roles.py
 
 
 class RegistrationKeyOut(BaseModel):

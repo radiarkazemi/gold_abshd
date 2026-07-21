@@ -1,0 +1,99 @@
+.secondary-cards {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  max-width: 720px;
+}
+
+.secondary-cards--roomy {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
+.secondary-cards--cozy {
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+}
+
+.secondary-cards--compact {
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+}
+
+.secondary-card {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.secondary-cards--compact .secondary-card {
+  padding: 6px 8px;
+  gap: 4px;
+}
+
+.secondary-card__name {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.secondary-cards--compact .secondary-card__name {
+  font-size: 10.5px;
+}
+
+.secondary-card__type {
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+.secondary-card__values {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.secondary-card__value {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.secondary-card__label {
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+.secondary-card__amount {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.secondary-cards--compact .secondary-card__amount {
+  font-size: 10.5px;
+}
+
+.secondary-card__value--buy .secondary-card__amount {
+  color: var(--buy-bright);
+}
+
+.secondary-card__value--sell .secondary-card__amount {
+  color: var(--sell-bright);
+}
+
+.secondary-card__readonly {
+  align-self: flex-start;
+  font-size: 9px;
+  color: var(--text-faint);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 8px;
+  border-radius: 999px;
+}

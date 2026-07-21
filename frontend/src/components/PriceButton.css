@@ -134,6 +134,18 @@
   font-weight: 500;
 }
 
+/* Small qualifier line for گرم۱۸-only roles - "بر اساس گرم ۱۸" under
+   the price, replacing the badge since there's no second number to
+   show (the primary value already IS the گرم۱۸ price). */
+.price-panel__unit-qualifier {
+  font-family: var(--font-fa);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
 .price-panel--flash-up .price-panel__value {
   color: #7ee2ac;
 }
@@ -144,4 +156,75 @@
 
 .price-panel--disabled {
   opacity: 0.6;
+}
+
+.price-panel__no-order-note {
+  font-size: 9px;
+  color: var(--sell-bright);
+  opacity: 0.8;
+}
+
+/* --- PriceCardRow: wraps one card's name + buy/sell pair --- */
+.price-card-row {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.price-card-row__name {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--gold-bright);
+  letter-spacing: 0.01em;
+  padding: 0 2px;
+}
+
+.price-card-row--primary .price-card-row__name {
+  font-size: 15px;
+}
+
+/* Secondary cards keep the exact same layout/component as the primary
+   one, just visually smaller - scaling the whole row is simpler and
+   more reliable than overriding a dozen nested font-sizes by hand. */
+.price-card-row--secondary {
+  max-width: 480px;
+}
+
+.price-card-row--secondary .price-stage {
+  transform-origin: top right;
+}
+
+.price-card-row--secondary .price-panel {
+  padding: 10px 8px 9px;
+  gap: 3px;
+}
+
+.price-card-row--secondary .price-panel__eyebrow {
+  font-size: 10px;
+}
+
+.price-card-row--secondary .price-panel__cta {
+  padding: 6px 16px;
+  font-size: 12px;
+}
+
+.price-card-row--secondary .price-panel__value {
+  font-size: clamp(13px, 3.6vw, 16px);
+}
+
+.price-card-row--secondary .price-panel__unit-badge,
+.price-card-row--secondary .price-panel__unit-qualifier {
+  font-size: 9px;
+  padding: 2px 8px;
+}
+
+.secondary-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
 }

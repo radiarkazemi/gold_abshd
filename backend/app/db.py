@@ -98,11 +98,14 @@ def _patch_users_table():
 
 
 def _patch_orders_table():
-    """orders already exists - add mesghal17_raw_price_at_submit in place if missing."""
+    """orders already exists - add the newer columns in place if missing."""
     from sqlalchemy import text
     with engine.connect() as conn:
         conn.execute(text(
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS mesghal17_raw_price_at_submit FLOAT"
+        ))
+        conn.execute(text(
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS goldbridge_item_id INTEGER"
         ))
         conn.commit()
 
@@ -123,6 +126,65 @@ def _patch_roles_table():
         conn.commit()
 
 
+def _patch_balance_transactions_table():
+    """balance_transactions already exists - add goldbridge_item_id in place if missing."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text(
+            "ALTER TABLE balance_transactions ADD COLUMN IF NOT EXISTS goldbridge_item_id INTEGER"
+        ))
+        conn.commit()
+
+
+def _patch_price_cards_table():
+    """
+    price_cards already exists from an earlier version that had a single
+    is_orderable column - replace it with the two independent
+    orderable_buy/orderable_sell columns (any number of cards can now be
+    orderable, not just one, and buy/sell toggle independently).
+    """
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text(
+            "ALTER TABLE price_cards ADD COLUMN IF NOT EXISTS orderable_buy BOOLEAN NOT NULL DEFAULT false"
+        ))
+        conn.execute(text(
+            "ALTER TABLE price_cards ADD COLUMN IF NOT EXISTS orderable_sell BOOLEAN NOT NULL DEFAULT false"
+        ))
+        conn.execute(text(
+            "ALTER TABLE price_cards ADD COLUMN IF NOT EXISTS override_source_restriction BOOLEAN NOT NULL DEFAULT false"
+        ))
+        # Carry over whatever the old single-flag value was, if that
+        # column still exists, before dropping it.
+        conn.execute(text("""
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='price_cards' AND column_name='is_orderable') THEN
+                    UPDATE price_cards SET orderable_buy = is_orderable, orderable_sell = is_orderable
+                    WHERE is_orderable = true;
+                    ALTER TABLE price_cards DROP COLUMN is_orderable;
+                END IF;
+            END $$;
+        """))
+        conn.commit()
+
+
+def _patch_amount_type_enum():
+    """
+    AmountTypeEnum gained a 'count' value (coin orders). Postgres native
+    enum types are NOT altered by create_all() when a Python enum gains
+    a new member - the type must be extended explicitly, exactly once
+    (ADD VALUE ... IF NOT EXISTS makes this safe to run every startup).
+    Without this, any coin order attempt fails with an
+    "invalid input value for enum" database error.
+    """
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TYPE amounttypeenum ADD VALUE IF NOT EXISTS 'count'"))
+        conn.commit()
+
+
 def init_db():
     """Call once at app startup: creates the database, then the tables."""
     ensure_database_exists()
@@ -135,6 +197,9 @@ def init_db():
     _patch_users_table()
     _patch_orders_table()
     _patch_roles_table()
+    _patch_balance_transactions_table()
+    _patch_price_cards_table()
+    _patch_amount_type_enum()
     print("[db] Tables ready")
 
 

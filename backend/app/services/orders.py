@@ -1,26 +1,34 @@
 """
 Order + balance business logic.
 
-Units: orders and gold balances are tracked in گرم ۱۸ (not مثقال ۱۷ -
-the price feed itself is quoted per مثقال ۱۷, but every order's weight,
-every user's gold balance, and price_at_submit on each order are all in
-گرم ۱۸ terms, converted at submit time via gold_conversion.py).
+Two kinds of instrument now:
+  - Gold items (type=1, گرم/عیار): tracked in گرم ۱۸ against the single
+    universal gold balance ledger (BalanceTransaction.goldbridge_item_id
+    IS NULL), exactly as before - every gold card shares this one
+    balance, since they're all just different quotes on the same
+    physical unit (a gram of 18k gold).
+  - Coin items (type=2): tracked by COUNT against their OWN separate
+    ledger, keyed by BalanceTransaction.goldbridge_item_id = that
+    coin's id. A سکه تمام count is never mixed with a ربع سکه count or
+    with the گرم۱۸ gold balance - they're different things.
 
 Key rule: a user's balance is never stored directly - it's always the sum
-of their balance_transactions rows. This keeps a full audit trail (every
-gold/cash movement has a reason and a timestamp).
+of their balance_transactions rows (filtered to the right ledger). This
+keeps a full audit trail (every gold/cash/coin movement has a reason and
+a timestamp).
 
 When an order is accepted:
-  - buy  -> gold balance increases; the toman value of the order is
+  - buy  -> gold/coin balance increases; the toman value of the order is
             recorded as a NEGATIVE cash change (the customer now owes
-            the shop that amount, since they received gold without an
+            the shop that amount, since they received it without an
             in-app cash payment).
-  - sell -> gold balance decreases; the toman value is recorded as a
+  - sell -> gold/coin balance decreases; the toman value is recorded as a
             POSITIVE cash change (the shop now owes the customer that
-            amount for the gold they handed over).
-  If the order was placed in "amount" (تومان) rather than "weight"
-  (گرم ۱۸), it's converted using the گرم۱۸ price active when the order
-  was submitted.
+            amount for what they handed over).
+  For gold orders placed in "amount" (تومان) rather than "weight"
+  (گرم ۱۸), the weight is derived using the گرم۱۸ price active when the
+  order was submitted. Coin orders are always by count directly - no
+  weight/amount toggle exists for them.
 """
 import json
 from datetime import datetime
@@ -41,14 +49,26 @@ from app.config import settings
 from app.gold_conversion import mesghal17_to_gram18
 from app.schemas.order import OrderOut
 from app.services.order_limits import get_effective_limits
+from app.services import price_cards
 
 
 def weight_equivalent(order: Order) -> float:
-    """Converts an order's value to گرم ۱۸, regardless of how it was entered."""
+    """Converts a GOLD order's value to گرم ۱۸, regardless of how it was entered.
+    Not meaningful for coin (amount_type="count") orders - see order_quantity."""
     if order.amount_type.value == "weight":
         return order.value
     # amount_type == "amount" (تومان) -> convert using the گرم۱۸ price at submit time
     return order.value / order.price_at_submit
+
+
+def order_quantity(order: Order) -> float:
+    """The quantity to apply to the balance ledger for this order -
+    گرم۱۸ for gold orders, count of coins for coin orders (amount_type
+    == "count", where value already IS the count directly, no
+    weight/amount conversion involved)."""
+    if order.amount_type.value == "count":
+        return order.value
+    return weight_equivalent(order)
 
 
 def order_total_toman(order: Order) -> float:
@@ -92,38 +112,59 @@ def apply_pricing_formula(mesghal17_buy: float, mesghal17_sell: float, side: str
 
 
 def create_order(db: Session, user: User, side: str, amount_type: str, value: float,
-                  description: str, current_price) -> Order:
-    mesghal17_raw_price = current_price.buy_price if side == "buy" else current_price.sell_price
-    mesghal17_price = apply_pricing_formula(
-        current_price.buy_price, current_price.sell_price, side, user
-    )
-    price_at_submit = mesghal17_to_gram18(mesghal17_price)
+                  description: str, goldbridge_item_id: int, raw_item: dict) -> Order:
+    is_coin = raw_item.get("type") == price_cards.COIN_ITEM_TYPE
 
-    limits = get_effective_limits(db, user)
-    weight = value if amount_type == "weight" else value / price_at_submit
+    if is_coin:
+        if amount_type != "count":
+            raise HTTPException(status_code=400, detail="سفارش سکه فقط بر اساس تعداد ثبت می‌شود")
+        if value <= 0 or value != int(value):
+            raise HTTPException(status_code=400, detail="تعداد باید عددی صحیح و بزرگتر از صفر باشد")
 
-    if amount_type == "weight":
-        if weight < limits["min_weight"]:
-            raise HTTPException(
-                status_code=400,
-                detail=f"حداقل مقدار سفارش {limits['min_weight']} گرم ۱۸ است",
-            )
-        if weight > limits["max_weight"]:
-            raise HTTPException(
-                status_code=400,
-                detail=f"حداکثر مقدار سفارش {limits['max_weight']} گرم ۱۸ است",
-            )
+        mesghal17_raw_price = raw_item["buy"] if side == "buy" else raw_item["sell"]
+        final_price = apply_pricing_formula(raw_item["buy"], raw_item["sell"], side, user)
+        price_at_submit = final_price  # coins: no گرم۱۸ conversion, this IS the final per-coin price
+
+        # No min/max quantity enforcement for coins yet (the existing
+        # per-role limits are گرم۱۸/تومان-specific) - a reasonable sanity
+        # cap prevents obviously-wrong input while a proper per-coin
+        # limits setting doesn't exist yet.
+        if value > 50:
+            raise HTTPException(status_code=400, detail="حداکثر تعداد سفارش سکه در هر درخواست ۵۰ عدد است")
     else:
-        if limits["min_amount"] and value < limits["min_amount"]:
-            raise HTTPException(
-                status_code=400,
-                detail=f"حداقل مبلغ سفارش {limits['min_amount']} تومان است",
-            )
-        if limits["max_amount"] and value > limits["max_amount"]:
-            raise HTTPException(
-                status_code=400,
-                detail=f"حداکثر مبلغ سفارش {limits['max_amount']} تومان است",
-            )
+        if amount_type == "count":
+            raise HTTPException(status_code=400, detail="این کارت بر اساس وزن یا مبلغ سفارش داده می‌شود، نه تعداد")
+
+        mesghal17_raw_price = raw_item["buy"] if side == "buy" else raw_item["sell"]
+        mesghal17_price = apply_pricing_formula(raw_item["buy"], raw_item["sell"], side, user)
+        price_at_submit = mesghal17_to_gram18(mesghal17_price)
+        final_price = mesghal17_price
+
+        limits = get_effective_limits(db, user)
+        weight = value if amount_type == "weight" else value / price_at_submit
+
+        if amount_type == "weight":
+            if weight < limits["min_weight"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"حداقل مقدار سفارش {limits['min_weight']} گرم ۱۸ است",
+                )
+            if weight > limits["max_weight"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"حداکثر مقدار سفارش {limits['max_weight']} گرم ۱۸ است",
+                )
+        else:
+            if limits["min_amount"] and value < limits["min_amount"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"حداقل مبلغ سفارش {limits['min_amount']} تومان است",
+                )
+            if limits["max_amount"] and value > limits["max_amount"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"حداکثر مبلغ سفارش {limits['max_amount']} تومان است",
+                )
 
     order = Order(
         user_id=user.id,
@@ -132,8 +173,9 @@ def create_order(db: Session, user: User, side: str, amount_type: str, value: fl
         value=value,
         description=description or "",
         price_at_submit=price_at_submit,
-        mesghal17_price_at_submit=mesghal17_price,
+        mesghal17_price_at_submit=final_price,
         mesghal17_raw_price_at_submit=mesghal17_raw_price,
+        goldbridge_item_id=goldbridge_item_id,
     )
     db.add(order)
     db.commit()
@@ -190,16 +232,33 @@ def create_phone_order(
 
 
 def get_user_balance(db: Session, user_id: str) -> dict:
+    """گرم۱۸ gold + cash only - excludes coin-ledger transactions
+    entirely (see get_user_coin_balances for those)."""
     result = (
         db.query(
             func.coalesce(func.sum(BalanceTransaction.gold_change), 0.0),
             func.coalesce(func.sum(BalanceTransaction.cash_change), 0.0),
         )
         .filter(BalanceTransaction.user_id == user_id)
+        .filter(BalanceTransaction.goldbridge_item_id.is_(None))
         .first()
     )
     gold_balance, cash_balance = result
     return {"gold_balance": float(gold_balance), "cash_balance": float(cash_balance)}
+
+
+def get_user_coin_balances(db: Session, user_id: str) -> dict[int, float]:
+    """{goldbridge_item_id: count} for every coin type this user has
+    ever traded - each coin type is its own separate ledger, never
+    mixed with another or with گرم۱۸ gold."""
+    rows = (
+        db.query(BalanceTransaction.goldbridge_item_id, func.coalesce(func.sum(BalanceTransaction.gold_change), 0.0))
+        .filter(BalanceTransaction.user_id == user_id)
+        .filter(BalanceTransaction.goldbridge_item_id.isnot(None))
+        .group_by(BalanceTransaction.goldbridge_item_id)
+        .all()
+    )
+    return {item_id: float(count) for item_id, count in rows}
 
 
 def get_user_transactions(db: Session, user_id: str, limit: int = 20) -> list[BalanceTransaction]:
@@ -245,24 +304,30 @@ def decide_order(db: Session, order_id: str, status: str) -> Order:
     order.updated_at = datetime.utcnow()
 
     if status == "accepted" and order.user_id:
-        gold_amount = weight_equivalent(order)
-        gold_change = gold_amount if order.side.value == "buy" else -gold_amount
+        is_coin = order.amount_type.value == "count"
+        quantity = order_quantity(order)
+        gold_change = quantity if order.side.value == "buy" else -quantity
 
         total_toman = order_total_toman(order)
-        # buy: customer received gold, now owes the shop -> negative
-        # sell: shop received gold, now owes the customer cash -> positive
+        # buy: customer received it, now owes the shop -> negative
+        # sell: shop received it, now owes the customer cash -> positive
         cash_change = -total_toman if order.side.value == "buy" else total_toman
 
+        unit_label = "عدد سکه" if is_coin else "گرم ۱۸"
         txn = BalanceTransaction(
             user_id=order.user_id,
             gold_change=gold_change,
             cash_change=cash_change,
             reason=TransactionReasonEnum.order_accepted,
             note=(
-                f"سفارش {order.side.value} به مقدار {gold_amount:.4f} گرم ۱۸ "
+                f"سفارش {order.side.value} به مقدار {quantity:.4f} {unit_label} "
                 f"به ارزش {total_toman:,.0f} تومان"
             ),
             related_order_id=order.id,
+            # Coin trades get their OWN ledger (goldbridge_item_id set);
+            # gold trades always go into the single universal گرم۱۸
+            # ledger regardless of which gold card priced them.
+            goldbridge_item_id=order.goldbridge_item_id if is_coin else None,
         )
         db.add(txn)
 
@@ -274,12 +339,17 @@ def decide_order(db: Session, order_id: str, status: str) -> Order:
 # ---------------- مدیریت کاربران (ادمین) ----------------
 
 def list_users_with_balance(db: Session, search: str | None = None) -> list[dict]:
-    """Every user, with their current gold/cash balance computed alongside."""
+    """Every user, with their current گرم۱۸ gold/cash balance computed
+    alongside (coin-ledger transactions excluded - see
+    get_user_coin_balances for those, shown separately)."""
     query = db.query(
         User,
         func.coalesce(func.sum(BalanceTransaction.gold_change), 0.0),
         func.coalesce(func.sum(BalanceTransaction.cash_change), 0.0),
-    ).outerjoin(BalanceTransaction, BalanceTransaction.user_id == User.id)
+    ).outerjoin(
+        BalanceTransaction,
+        (BalanceTransaction.user_id == User.id) & (BalanceTransaction.goldbridge_item_id.is_(None)),
+    )
 
     if search:
         like = f"%{search}%"
