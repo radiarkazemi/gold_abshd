@@ -94,11 +94,6 @@ export default function TraderPage() {
       <main className="app__main app__main--with-tabbar">
         <RefreshBar onRefresh={handleManualRefresh} />
 
-        {settlement && (
-          <p className="price-updated-note">
-            <span className="settlement-badge">{settlement.label}</span>
-          </p>
-        )}
         {!tradingOnline && (
           <p className="trading-offline-note">
             در حال حاضر امکان ثبت سفارش خرید و فروش وجود ندارد.
