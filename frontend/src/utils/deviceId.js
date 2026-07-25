@@ -12,3 +12,7 @@ export function getDeviceId() {
 
     return id;
 }
+
+export function getDeviceInfo() {
+    return navigator.userAgent || "";
+}
