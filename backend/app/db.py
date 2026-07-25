@@ -56,14 +56,14 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def _patch_admin_users_table():
     """
-    admin_users may already exist from before phone/OTP fields were
-    added to the AdminUser model - create_all() only creates missing
-    TABLES, it never alters existing ones. This adds any missing
-    columns in place, safe to run every startup (IF NOT EXISTS), and
-    drops the old NOT NULL "display_name" column (renamed to
-    full_name) if a pre-rename install still has it - otherwise every
-    insert fails with a NotNullViolation on a column nothing writes to
-    anymore.
+    admin_users may already exist from before phone/OTP fields (or the
+    is_super column) were added to the AdminUser model - create_all()
+    only creates missing TABLES, it never alters existing ones. This
+    adds any missing columns in place, safe to run every startup (IF
+    NOT EXISTS), and drops the old NOT NULL "display_name" column
+    (renamed to full_name) if a pre-rename install still has it -
+    otherwise every insert fails with a NotNullViolation on a column
+    nothing writes to anymore.
     """
     from sqlalchemy import text
     statements = [
@@ -73,6 +73,7 @@ def _patch_admin_users_table():
         "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS registration_key VARCHAR",
         "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS registration_key_expires_at TIMESTAMP",
         "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS activated_at TIMESTAMP",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS is_super BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE admin_users DROP COLUMN IF EXISTS display_name",
     ]
     with engine.connect() as conn:

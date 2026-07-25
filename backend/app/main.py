@@ -29,6 +29,7 @@ from slowapi.errors import RateLimitExceeded
 from app.rate_limit import limiter
 from app.price_service import price_service
 from app.services import price_cards
+from app.services.admin_accounts import ensure_super_admin_seeded
 from app.ws_manager import manager
 from app.db import init_db, SessionLocal
 from app.config import settings
@@ -90,6 +91,13 @@ async def add_security_headers(request: Request, call_next):
 async def startup_event():
     init_db()
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+
+    db = SessionLocal()
+    try:
+        ensure_super_admin_seeded(db)
+    finally:
+        db.close()
+
     asyncio.create_task(price_service.run_simulation())
     asyncio.create_task(price_cards.poll_all_items())
     asyncio.create_task(price_broadcaster())

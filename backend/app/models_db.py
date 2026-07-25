@@ -357,19 +357,27 @@ class PriceCard(Base):
 
 class AdminUser(Base):
     """
-    A sub-admin account (accountant, manager, etc), created by the one
-    super-admin (whose own credentials still live in .env, unchanged -
-    see admin_auth.py). Each sub-admin has their own username/password
-    and a list of permission scopes limiting which admin panel sections
-    they can use. The super-admin themselves does NOT have a row here -
-    they're identified purely by is_super=True in their JWT.
+    Every admin account - including the ONE super-admin - is a row
+    here. The super-admin (is_super=True) is auto-seeded once from
+    GOLDAPP_ADMIN_USERNAME/GOLDAPP_ADMIN_PASSWORD_HASH in .env the
+    first time the app starts with zero AdminUser rows - see
+    services/admin_accounts.ensure_super_admin_seeded(). After that
+    seed, .env is never read again for auth - username/password live
+    only in the database, and the super-admin can change their own
+    password the same way any sub-admin does (PATCH their own row).
 
-    Login is two-step, same spirit as the customer OTP flow: username +
-    password first, then an SMS code sent to phone_number. On a
-    sub-admin's very first login, registration_key must also be
-    supplied (handed to them by the super-admin at creation time) -
-    after that, activated_at is set and only the OTP step is needed
-    going forward.
+    Sub-admins (accountant, manager, etc) are created BY the
+    super-admin, each with their own username/password and a list of
+    permission scopes limiting which admin panel sections they can
+    use.
+
+    Login is two-step for sub-admins, same spirit as the customer OTP
+    flow: username + password first, then an SMS code sent to
+    phone_number. On a sub-admin's very first login, registration_key
+    must also be supplied (handed to them by the super-admin at
+    creation time) - after that, activated_at is set and only the OTP
+    step is needed going forward. The super-admin (is_super=True)
+    skips the OTP step entirely - unchanged from before.
     """
 
     __tablename__ = "admin_users"
@@ -382,6 +390,7 @@ class AdminUser(Base):
     national_id = Column(String, nullable=True)
     permissions = Column(Text, nullable=False, default="[]")  # JSON list of scope strings
     is_active = Column(Boolean, default=True)
+    is_super = Column(Boolean, default=False, nullable=False)
     created_by = Column(String, nullable=True)  # username of the super-admin who created this row
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login_at = Column(DateTime, nullable=True)

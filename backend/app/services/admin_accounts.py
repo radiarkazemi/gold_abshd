@@ -7,6 +7,7 @@ Distinct from services/... admin_users for CUSTOMER users - this is
 specifically about admin_users, the ADMIN PANEL identities.
 """
 import json
+import logging
 import random
 import string
 from datetime import datetime, timedelta
@@ -16,8 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.models_db import AdminUser, AdminActivityLog, OtpCode
 from app.permissions import valid_scopes
-# same test-mode SMS placeholder as the customer flow
-from app.auth import generate_otp_code, send_sms
+from app.auth import generate_otp_code, send_sms  # same test-mode SMS placeholder as the customer flow
 
 SAFE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I
 KEY_DEFAULT_TTL_DAYS = 14
@@ -26,6 +26,60 @@ OTP_TTL_MINUTES = 5
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def ensure_super_admin_seeded(db: Session):
+    """
+    Runs once at every startup, but only actually does anything the
+    very first time: if there is NOT already an AdminUser row with
+    is_super=True, and GOLDAPP_ADMIN_USERNAME/GOLDAPP_ADMIN_PASSWORD_HASH
+    are set in .env, create that one row from those values.
+
+    After this seed happens once, .env is never consulted for auth
+    again - the super-admin's username/password live only in the
+    database from then on, and can be changed the normal way (their
+    own row can be PATCHed like any admin's, via the same
+    update_sub_admin() function - "sub" is just a name, it works on
+    any AdminUser row including is_super=True ones).
+
+    Safe to leave GOLDAPP_ADMIN_USERNAME/GOLDAPP_ADMIN_PASSWORD_HASH in
+    .env indefinitely after the seed - they're simply ignored once a
+    super-admin row exists.
+    """
+    from app.config import settings
+
+    if db.query(AdminUser).filter(AdminUser.is_super == True).first():  # noqa: E712
+        return
+
+    if not settings.ADMIN_USERNAME or not settings.ADMIN_PASSWORD_HASH:
+        logging.getLogger(__name__).warning(
+            "[admin-seed] no super-admin exists yet and GOLDAPP_ADMIN_USERNAME/"
+            "GOLDAPP_ADMIN_PASSWORD_HASH aren't set - no one can log into the admin panel"
+        )
+        return
+
+    existing = db.query(AdminUser).filter(AdminUser.username == settings.ADMIN_USERNAME).first()
+    if existing:
+        # A non-super row already has this username (shouldn't normally
+        # happen) - just promote it rather than fail outright.
+        existing.is_super = True
+        existing.is_active = True
+        db.commit()
+        logging.getLogger(__name__).info(f"[admin-seed] promoted existing admin_users row '{settings.ADMIN_USERNAME}' to super-admin")
+        return
+
+    row = AdminUser(
+        username=settings.ADMIN_USERNAME,
+        password_hash=settings.ADMIN_PASSWORD_HASH,  # already a bcrypt hash from .env - reused as-is
+        full_name="مدیر اصلی",
+        is_super=True,
+        is_active=True,
+        activated_at=datetime.utcnow(),  # super-admin never needs the OTP/registration-key flow
+        created_by="system (.env seed)",
+    )
+    db.add(row)
+    db.commit()
+    logging.getLogger(__name__).info(f"[admin-seed] created super-admin '{settings.ADMIN_USERNAME}' from .env (one-time)")
 
 
 def _generate_registration_key() -> str:
@@ -50,8 +104,8 @@ def mark_login(db: Session, admin_user: AdminUser):
 
 
 def create_sub_admin(db: Session, username: str, password: str, full_name: str,
-                     phone_number: str, national_id: str, permissions: list[str],
-                     created_by: str, key_ttl_days: int = KEY_DEFAULT_TTL_DAYS) -> AdminUser:
+                      phone_number: str, national_id: str, permissions: list[str],
+                      created_by: str, key_ttl_days: int = KEY_DEFAULT_TTL_DAYS) -> AdminUser:
     if db.query(AdminUser).filter(AdminUser.username == username).first():
         raise ValueError("این نام کاربری قبلا استفاده شده")
     if phone_number and db.query(AdminUser).filter(AdminUser.phone_number == phone_number).first():
@@ -83,8 +137,8 @@ def get_sub_admin(db: Session, admin_user_id: str) -> AdminUser | None:
 
 
 def update_sub_admin(db: Session, admin_user_id: str, full_name: str | None = None,
-                     permissions: list[str] | None = None, is_active: bool | None = None,
-                     new_password: str | None = None) -> AdminUser:
+                      permissions: list[str] | None = None, is_active: bool | None = None,
+                      new_password: str | None = None) -> AdminUser:
     row = get_sub_admin(db, admin_user_id)
     if not row:
         raise ValueError("کاربر ادمین پیدا نشد")
@@ -126,8 +180,7 @@ def send_login_otp(db: Session, admin_user: AdminUser) -> str:
     it except possibly for logging - never send it back in an API
     response)."""
     if not admin_user.phone_number:
-        raise ValueError(
-            "برای این حساب شماره موبایلی ثبت نشده - با مدیر اصلی هماهنگ کنید")
+        raise ValueError("برای این حساب شماره موبایلی ثبت نشده - با مدیر اصلی هماهنگ کنید")
 
     code = generate_otp_code()
     otp = OtpCode(
