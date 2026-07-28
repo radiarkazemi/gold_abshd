@@ -293,16 +293,33 @@
 }
 
 @media (max-width: 899px) {
+  .order-totals__item {
+    padding: 11px 12px;
+    gap: 2px;
+  }
+
+  .order-totals__label {
+    font-size: 11px;
+  }
+
+  .order-totals__value {
+    font-size: 15px;
+  }
+
+  .order-totals__sub {
+    font-size: 11px;
+  }
+
   .date-filter {
     display: grid;
-    gap: 10px;
+    gap: 8px;
   }
 
   .date-filter__quick,
   .date-filter__inputs {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    gap: 6px;
   }
 
   .order-totals {
@@ -334,30 +351,31 @@
   .order-table tbody {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
   }
 
   .order-table tr {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px 12px;
+    gap: 6px 10px;
     background: var(--surface);
     border: 1px solid var(--hairline);
     border-radius: var(--radius-md);
-    padding: 10px 11px;
+    padding: 8px 9px;
   }
 
   .order-table td {
     border: none;
     padding: 0;
     min-width: 0;
+    font-size: 12px;
   }
 
   .order-table td::before {
     content: attr(data-label);
     display: block;
-    margin-bottom: 3px;
-    font-size: 10px;
+    margin-bottom: 2px;
+    font-size: 9px;
     color: var(--text-faint);
     font-weight: 600;
   }
@@ -376,11 +394,13 @@
 
   .order-table__balance {
     align-items: flex-start;
+    gap: 1px;
+    font-size: 10.5px;
   }
 
   .order-table__actions {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
   }
 
@@ -389,9 +409,30 @@
     width: fit-content;
   }
 
+  .order-table td[data-label="وضعیت"] .order-card__status {
+    padding: 5px 10px;
+    font-size: 11px;
+  }
+
+  .order-table td[data-label="مهلت"] .order-card__countdown {
+    font-size: 11px;
+  }
+
   .manual-order-tag {
-    font-size: 10px;
-    padding: 2px 7px;
+    font-size: 9px;
+    padding: 2px 6px;
+  }
+
+  .order-table__receipt-btn {
+    min-height: 34px;
+    font-size: 11px;
+    padding: 6px 0;
+  }
+
+  .order-table .order-btn {
+    min-height: 34px;
+    font-size: 11px;
+    padding: 6px 0;
   }
 }
 

@@ -15,7 +15,6 @@ import AdminKycTab from "./AdminKycTab";
 import AdminTransfersTab from "./AdminTransfersTab";
 import AdminShell from "../components/AdminShell";
 import JalaliDateInput from "../components/JalaliDateInput";
-import { downloadOrderReceipt } from "../utils/printReceipt";
 import { playNotificationSound } from "../utils/notificationSound";
 import { orderGoldWeight, orderTotalMoney, summarizeOrders } from "../utils/orderCalc";
 import { formatCashStatus } from "../utils/balanceFormat";
@@ -326,12 +325,6 @@ function AdminPanel({ onLogout }) {
                               قبض
                             </button>
                           )}
-                          <button
-                            className="order-table__receipt-btn"
-                            onClick={() => downloadOrderReceipt(order)}
-                          >
-                            PDF
-                          </button>
                         </div>
                       </td>
                     </tr>
