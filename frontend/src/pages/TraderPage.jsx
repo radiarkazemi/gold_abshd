@@ -10,7 +10,6 @@ import NoticeModal from "../components/NoticeModal";
 import RecentOrdersTable from "../components/RecentOrdersTable";
 import BottomTabBar from "../components/BottomTabBar";
 import RefreshBar from "../components/RefreshBar";
-import BalanceStrip from "../components/BalanceStrip";
 
 export default function TraderPage() {
   const { cards, prevCards, connected, priceLabelMode, tradingBanned } = usePriceFeed();
@@ -137,7 +136,6 @@ export default function TraderPage() {
         )}
 
         <NoticeCard />
-        <BalanceStrip refreshSignal={refreshKey} />
         <RecentOrdersTable refreshSignal={refreshKey} limit={5} />
       </main>
 
