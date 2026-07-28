@@ -1,11 +1,10 @@
 // Mirrors backend/app/gold_conversion.py exactly - keep both in sync
 // if the formula ever changes there.
-const MESGHAL_TO_GRAM = 4.6083;
-const PURITY_18K = 750;
-const PURITY_17K = 708;
+// Market formula: گرم۱۸ = مثقال۱۷ / 4.3318
+const MESGHAL17_TO_GRAM18 = 4.3318;
 
 export function mesghal17ToGram18(mesghal17Price) {
-  return (mesghal17Price * PURITY_18K) / PURITY_17K / MESGHAL_TO_GRAM;
+  return mesghal17Price / MESGHAL17_TO_GRAM18;
 }
 
 // Applies a user's own commission to a raw مثقال۱۷ price - mirrors
