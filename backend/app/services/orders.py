@@ -108,6 +108,25 @@ def _user_commission(user: User, base_price: float) -> float:
     return base_price * (user.role.commission_value / 100)
 
 
+def commission_amount(base_price: float, commission_type: str, commission_value: float) -> float:
+    """Shared raw-price -> commission helper.
+
+    Percentage commissions are always based on the raw side price itself:
+      buy  => final = raw + (raw * %)
+      sell => final = raw - (raw * %)
+    """
+    if commission_type == "fixed":
+        return commission_value
+    if commission_type == "percentage":
+        return base_price * (commission_value / 100)
+    return 0.0
+
+
+def apply_role_pricing_formula(raw_side_price: float, side: str, commission_type: str, commission_value: float) -> float:
+    commission = commission_amount(raw_side_price, commission_type, commission_value)
+    return raw_side_price + commission if side == "buy" else raw_side_price - commission
+
+
 def apply_pricing_formula(mesghal17_buy: float, mesghal17_sell: float, side: str, user: User) -> float:
     """
     The final مثقال۱۷ price for a specific order side and a specific
@@ -122,9 +141,11 @@ def apply_pricing_formula(mesghal17_buy: float, mesghal17_sell: float, side: str
     with different roles placing the same-side order right now get
     different final prices.
     """
+    commission_type = user.role.commission_type.value if user.role else "fixed"
+    commission_value = user.role.commission_value if user.role else 0.0
     if side == "buy":
-        return mesghal17_buy + _user_commission(user, mesghal17_buy)
-    return mesghal17_sell - _user_commission(user, mesghal17_sell)
+        return apply_role_pricing_formula(mesghal17_buy, "buy", commission_type, commission_value)
+    return apply_role_pricing_formula(mesghal17_sell, "sell", commission_type, commission_value)
 
 
 def create_order(db: Session, user: User, side: str, amount_type: str, value: float,

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { fetchRoles, createRole, updateRoleCommission } from "../api";
+import { fetchRoles, createRole, updateRoleCommission, fetchPrice } from "../api";
+import { personalizePrice } from "../utils/priceCommission";
 
 function emptyLimits(role) {
   return {
@@ -21,13 +22,37 @@ function toExtra(limits) {
   };
 }
 
-function RoleRow({ role, onUpdated }) {
+function pickPrimaryGoldCard(payload) {
+  const cards = payload?.cards || [];
+  return cards.find((c) => c.type === 1 && c.is_primary) || cards.find((c) => c.type === 1) || null;
+}
+
+function autoAmountFromWeight(weight, commissionType, commissionValue, rawGoldCard) {
+  if (weight === "" || weight == null || !rawGoldCard) return "";
+  const numericWeight = Number(weight);
+  if (!numericWeight) return "";
+  const personalized = personalizePrice(rawGoldCard, commissionType, Number(commissionValue) || 0);
+  const gram18 = personalized?.gram18_buy_price;
+  if (!gram18) return "";
+  return String(Math.round(numericWeight * gram18));
+}
+
+function RoleRow({ role, onUpdated, rawGoldCard }) {
   const [type, setType] = useState(role.commission_type);
   const [value, setValue] = useState(role.commission_value);
   const [limits, setLimits] = useState(emptyLimits(role));
   const [expanded, setExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setLimits((prev) => {
+      const nextMinAmount = autoAmountFromWeight(prev.minWeight, type, value, rawGoldCard);
+      const nextMaxAmount = autoAmountFromWeight(prev.maxWeight, type, value, rawGoldCard);
+      if (prev.minAmount === nextMinAmount && prev.maxAmount === nextMaxAmount) return prev;
+      return { ...prev, minAmount: nextMinAmount, maxAmount: nextMaxAmount };
+    });
+  }, [type, value, rawGoldCard]);
 
   async function handleSave() {
     setSaving(true);
@@ -71,19 +96,41 @@ function RoleRow({ role, onUpdated }) {
           <div className="role-row__advanced-grid">
             <label className="order-limits-box__field">
               <span>حداقل وزن (گرم ۱۸) — خالی = پیش‌فرض عمومی</span>
-              <input type="number" value={limits.minWeight} onChange={(e) => setLimits({ ...limits, minWeight: e.target.value })} />
+              <input
+                type="number"
+                value={limits.minWeight}
+                onChange={(e) => {
+                  const minWeight = e.target.value;
+                  setLimits({
+                    ...limits,
+                    minWeight,
+                    minAmount: autoAmountFromWeight(minWeight, type, value, rawGoldCard),
+                  });
+                }}
+              />
             </label>
             <label className="order-limits-box__field">
               <span>حداکثر وزن (گرم ۱۸)</span>
-              <input type="number" value={limits.maxWeight} onChange={(e) => setLimits({ ...limits, maxWeight: e.target.value })} />
+              <input
+                type="number"
+                value={limits.maxWeight}
+                onChange={(e) => {
+                  const maxWeight = e.target.value;
+                  setLimits({
+                    ...limits,
+                    maxWeight,
+                    maxAmount: autoAmountFromWeight(maxWeight, type, value, rawGoldCard),
+                  });
+                }}
+              />
             </label>
             <label className="order-limits-box__field">
-              <span>حداقل مبلغ (تومان)</span>
-              <input type="number" value={limits.minAmount} onChange={(e) => setLimits({ ...limits, minAmount: e.target.value })} />
+              <span>حداقل مبلغ (تومان) — خودکار از قیمت گرم ۱۸</span>
+              <input type="number" value={limits.minAmount} readOnly />
             </label>
             <label className="order-limits-box__field">
-              <span>حداکثر مبلغ (تومان)</span>
-              <input type="number" value={limits.maxAmount} onChange={(e) => setLimits({ ...limits, maxAmount: e.target.value })} />
+              <span>حداکثر مبلغ (تومان) — خودکار از قیمت گرم ۱۸</span>
+              <input type="number" value={limits.maxAmount} readOnly />
             </label>
           </div>
           <label className="order-limits-box__field">
@@ -108,6 +155,7 @@ function RoleRow({ role, onUpdated }) {
 
 export default function AdminRolesTab() {
   const [roles, setRoles] = useState([]);
+  const [rawGoldCard, setRawGoldCard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("fixed");
@@ -122,7 +170,21 @@ export default function AdminRolesTab() {
       .finally(() => setLoading(false));
   }
 
-  useEffect(reload, []);
+  useEffect(() => {
+    reload();
+    fetchPrice()
+      .then((payload) => setRawGoldCard(pickPrimaryGoldCard(payload)))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setNewLimits((prev) => {
+      const nextMinAmount = autoAmountFromWeight(prev.minWeight, newType, newValue, rawGoldCard);
+      const nextMaxAmount = autoAmountFromWeight(prev.maxWeight, newType, newValue, rawGoldCard);
+      if (prev.minAmount === nextMinAmount && prev.maxAmount === nextMaxAmount) return prev;
+      return { ...prev, minAmount: nextMinAmount, maxAmount: nextMaxAmount };
+    });
+  }, [newType, newValue, rawGoldCard]);
 
   async function handleCreate(e) {
     e.preventDefault();
@@ -152,7 +214,7 @@ export default function AdminRolesTab() {
       ) : (
         <div className="role-list">
           {roles.map((r) => (
-            <RoleRow key={r.id} role={r} onUpdated={reload} />
+            <RoleRow key={r.id} role={r} onUpdated={reload} rawGoldCard={rawGoldCard} />
           ))}
         </div>
       )}
@@ -188,19 +250,41 @@ export default function AdminRolesTab() {
         <div className="role-row__advanced-grid">
           <label className="order-limits-box__field">
             <span>حداقل وزن (گرم ۱۸) — خالی = پیش‌فرض عمومی</span>
-            <input type="number" value={newLimits.minWeight} onChange={(e) => setNewLimits({ ...newLimits, minWeight: e.target.value })} />
+            <input
+              type="number"
+              value={newLimits.minWeight}
+              onChange={(e) => {
+                const minWeight = e.target.value;
+                setNewLimits({
+                  ...newLimits,
+                  minWeight,
+                  minAmount: autoAmountFromWeight(minWeight, newType, newValue, rawGoldCard),
+                });
+              }}
+            />
           </label>
           <label className="order-limits-box__field">
             <span>حداکثر وزن (گرم ۱۸)</span>
-            <input type="number" value={newLimits.maxWeight} onChange={(e) => setNewLimits({ ...newLimits, maxWeight: e.target.value })} />
+            <input
+              type="number"
+              value={newLimits.maxWeight}
+              onChange={(e) => {
+                const maxWeight = e.target.value;
+                setNewLimits({
+                  ...newLimits,
+                  maxWeight,
+                  maxAmount: autoAmountFromWeight(maxWeight, newType, newValue, rawGoldCard),
+                });
+              }}
+            />
           </label>
           <label className="order-limits-box__field">
-            <span>حداقل مبلغ (تومان)</span>
-            <input type="number" value={newLimits.minAmount} onChange={(e) => setNewLimits({ ...newLimits, minAmount: e.target.value })} />
+            <span>حداقل مبلغ (تومان) — خودکار از قیمت گرم ۱۸</span>
+            <input type="number" value={newLimits.minAmount} readOnly />
           </label>
           <label className="order-limits-box__field">
-            <span>حداکثر مبلغ (تومان)</span>
-            <input type="number" value={newLimits.maxAmount} onChange={(e) => setNewLimits({ ...newLimits, maxAmount: e.target.value })} />
+            <span>حداکثر مبلغ (تومان) — خودکار از قیمت گرم ۱۸</span>
+            <input type="number" value={newLimits.maxAmount} readOnly />
           </label>
         </div>
         <label className="order-limits-box__field" style={{ marginBottom: 14 }}>
