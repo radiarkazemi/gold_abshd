@@ -202,26 +202,64 @@
 }
 
 @media (max-width: 899px) {
-  .order-card__top {
-    align-items: flex-start;
-    gap: 8px;
-    flex-wrap: wrap;
+  .order-card {
+    padding: 12px 12px 10px;
+    border-inline-start-width: 2px;
   }
 
-  .order-card__top-meta {
-    width: 100%;
-    justify-content: space-between;
-    margin-inline-start: 0;
+  .order-card__top {
+    align-items: flex-start;
+    gap: 6px;
+    margin-bottom: 8px;
   }
 
   .order-card__row {
     align-items: flex-start;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
+    font-size: 12.5px;
   }
 
   .order-card__value {
     text-align: right;
+  }
+
+  .order-card__badge {
+    font-size: 10.5px;
+    padding: 2px 9px;
+  }
+
+  .order-card__time,
+  .order-card__countdown {
+    font-size: 11px;
+  }
+
+  .order-card__top-meta {
+    gap: 8px;
+    margin-inline-start: auto;
+  }
+
+  .order-card__body {
+    gap: 5px;
+    margin-bottom: 10px;
+  }
+
+  .order-card__label {
+    font-size: 11px;
+  }
+
+  .order-card__value {
+    font-size: 12.5px;
+  }
+
+  .order-card__actions {
+    gap: 8px;
+  }
+
+  .order-btn {
+    padding: 8px 0;
+    font-size: 12px;
+    border-radius: 10px;
   }
 }
 
@@ -294,26 +332,26 @@
   .order-table tbody {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
   }
 
   .order-table tr {
     background: var(--surface);
     border: 1px solid var(--hairline);
     border-radius: var(--radius-md);
-    padding: 12px 14px;
+    padding: 10px 11px;
   }
 
   .order-table td {
     border: none;
-    padding: 8px 0;
+    padding: 6px 0;
   }
 
   .order-table td::before {
     content: attr(data-label);
     display: block;
-    margin-bottom: 4px;
-    font-size: 11px;
+    margin-bottom: 3px;
+    font-size: 10px;
     color: var(--text-faint);
     font-weight: 600;
   }
@@ -329,7 +367,12 @@
   .order-table__actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    gap: 6px;
+  }
+
+  .manual-order-tag {
+    font-size: 10px;
+    padding: 2px 7px;
   }
 }
 
