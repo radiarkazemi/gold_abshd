@@ -1,6 +1,10 @@
 .modal-backdrop {
   position: fixed;
-  inset: 0;
+  top: var(--vv-top, 0px);
+  left: 0;
+  right: 0;
+  height: var(--vv-height, 100dvh);
+  bottom: auto;
   background: rgba(8, 7, 4, 0.7);
   backdrop-filter: blur(2px);
   display: flex;
@@ -9,6 +13,8 @@
   padding: 8px;
   z-index: 50;
   animation: fadeIn 160ms ease;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 @media (min-width: 640px) {
@@ -178,18 +184,42 @@
 @media (max-width: 639px) {
   .modal-backdrop {
     align-items: flex-end;
+    padding: 6px;
+  }
+
+  .modal-backdrop.is-keyboard-open {
+    padding-bottom: 4px;
   }
 
   .modal-sheet {
     max-width: none;
-    padding-inline: 16px;
+    padding: 10px 14px 14px;
+    max-height: calc(var(--modal-viewport-height, 100dvh) - 12px);
+  }
+
+  .modal-sheet__title {
+    margin-bottom: 12px;
+    font-size: 16px;
   }
 
   .modal-actions {
     position: sticky;
-    bottom: calc(-14px - env(safe-area-inset-bottom));
-    background: linear-gradient(to top, var(--surface) 70%, rgba(0, 0, 0, 0));
-    padding-top: 12px;
+    bottom: 0;
+    z-index: 2;
+    background: linear-gradient(to top, var(--surface) 72%, rgba(0, 0, 0, 0));
+    padding-top: 10px;
+    margin-top: 12px;
+    margin-bottom: 4px;
+  }
+
+  .field--notes {
+    margin-top: 8px;
+    margin-bottom: 0;
+  }
+
+  .field--notes .field__textarea {
+    min-height: 56px;
+    padding: 10px 12px;
   }
 
   .modal-confirm__row,

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchRoles, createUserAdmin } from "../api";
+import { copyText } from "../utils/clipboard";
 
 export default function AdminAddUserTab() {
   const [roles, setRoles] = useState([]);
@@ -14,6 +15,7 @@ export default function AdminAddUserTab() {
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState("");
 
   useEffect(() => {
     fetchRoles()
@@ -50,10 +52,15 @@ export default function AdminAddUserTab() {
     }
   }
 
-  function handleCopy() {
-    navigator.clipboard.writeText(result.registration_key);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  async function handleCopy() {
+    setCopyError("");
+    try {
+      await copyText(result.registration_key);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopyError("کپی نشد — کد را دستی انتخاب و کپی کنید");
+    }
   }
 
   function handleReset() {
@@ -64,6 +71,7 @@ export default function AdminAddUserTab() {
     setNotes("");
     setReferrer("");
     setCopied(false);
+    setCopyError("");
   }
 
   if (result) {
@@ -74,10 +82,11 @@ export default function AdminAddUserTab() {
 
         <div className="add-user-result__key-box">
           <span className="add-user-result__key-label">کد ثبت‌نام</span>
-          <span className="add-user-result__key">{result.registration_key}</span>
-          <button className="add-user-result__copy-btn" onClick={handleCopy}>
+          <span className="add-user-result__key" dir="ltr">{result.registration_key}</span>
+          <button type="button" className="add-user-result__copy-btn" onClick={handleCopy}>
             {copied ? "کپی شد ✓" : "کپی"}
           </button>
+          {copyError && <p className="field__error">{copyError}</p>}
         </div>
 
         <p className="add-user-result__warning">

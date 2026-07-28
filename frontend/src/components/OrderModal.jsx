@@ -57,28 +57,44 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
   }, []);
 
   useEffect(() => {
-    const root = modalRef.current;
-    if (!root) return;
+    const sheet = modalRef.current;
+    const backdrop = sheet?.parentElement;
+    if (!sheet || !backdrop) return;
 
-    function updateViewportHeight() {
-      const viewportHeight = window.visualViewport?.height || window.innerHeight;
-      root.style.setProperty("--modal-viewport-height", `${viewportHeight}px`);
+    function syncViewport() {
+      const vv = window.visualViewport;
+      const height = vv?.height ?? window.innerHeight;
+      const offsetTop = vv?.offsetTop ?? 0;
+      // Pin the overlay to the *visible* viewport so the Android/iOS
+      // keyboard doesn't cover the sheet (layout viewport stays full-
+      // screen while visualViewport shrinks).
+      backdrop.style.setProperty("--vv-top", `${offsetTop}px`);
+      backdrop.style.setProperty("--vv-height", `${height}px`);
+      sheet.style.setProperty("--modal-viewport-height", `${height}px`);
+      backdrop.classList.toggle("is-keyboard-open", height < window.innerHeight - 80);
     }
 
     function keepFocusedFieldVisible(event) {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
-      requestAnimationFrame(() => {
+      if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") return;
+      // Wait for keyboard + visualViewport resize, then scroll.
+      window.setTimeout(() => {
+        syncViewport();
         target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
-      });
+      }, 120);
     }
 
-    updateViewportHeight();
-    window.visualViewport?.addEventListener("resize", updateViewportHeight);
-    root.addEventListener("focusin", keepFocusedFieldVisible);
+    syncViewport();
+    window.visualViewport?.addEventListener("resize", syncViewport);
+    window.visualViewport?.addEventListener("scroll", syncViewport);
+    window.addEventListener("resize", syncViewport);
+    sheet.addEventListener("focusin", keepFocusedFieldVisible);
     return () => {
-      window.visualViewport?.removeEventListener("resize", updateViewportHeight);
-      root.removeEventListener("focusin", keepFocusedFieldVisible);
+      window.visualViewport?.removeEventListener("resize", syncViewport);
+      window.visualViewport?.removeEventListener("scroll", syncViewport);
+      window.removeEventListener("resize", syncViewport);
+      sheet.removeEventListener("focusin", keepFocusedFieldVisible);
     };
   }, []);
 
@@ -440,17 +456,6 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
               </div>
             )}
 
-            <label className="field">
-              <span className="field__label"><span className="field__icon">📝</span>توضیحات</span>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="توضیح اختیاری برای این درخواست"
-                className="field__textarea"
-                rows={3}
-              />
-            </label>
-
             {shownError && <p className="field__error">{shownError}</p>}
 
             <div className="modal-actions">
@@ -464,6 +469,17 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
                 {meta.cta}
               </button>
             </div>
+
+            <label className="field field--notes">
+              <span className="field__label"><span className="field__icon">📝</span>توضیحات</span>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="توضیح اختیاری برای این درخواست"
+                className="field__textarea"
+                rows={2}
+              />
+            </label>
           </form>
         )}
       </div>
