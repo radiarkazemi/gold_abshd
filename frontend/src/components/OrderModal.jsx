@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchOrderLimits, fetchMyOrderDetail, retryMyOrder } from "../api";
-import { mesghal17ToGram18 } from "../utils/priceCommission";
 import { formatMMSS, localDeadlineMsFromOrder } from "../utils/orderCountdown";
 import FormattedNumberInput from "./FormattedNumberInput";
 
@@ -115,8 +114,20 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
     return side === "buy" ? card?.gram18_buy_price : card?.gram18_sell_price;
   }
 
-  function rawSidePrice() {
+  // Card prices already include this user's commission (see usePriceFeed).
+  function finalSidePrice() {
     return side === "buy" ? card?.buy_price : card?.sell_price;
+  }
+
+  function submitFinalPrice() {
+    if (!liveOrder) return null;
+    if (!isCoin && gram18OnlyDisplay) return liveOrder.price_at_submit;
+    return liveOrder.mesghal17_price_at_submit;
+  }
+
+  function currentFinalPrice() {
+    if (!isCoin && gram18OnlyDisplay) return unitPrice();
+    return finalSidePrice();
   }
 
   function computedTotal() {
@@ -124,7 +135,7 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
     if (!numeric || numeric <= 0) return null;
 
     if (isCoin) {
-      const p = rawSidePrice();
+      const p = finalSidePrice();
       if (!p) return null;
       return { label: "مبلغ کل", value: `${toFarsiNumber(Math.round(numeric * p))} تومان` };
     }
@@ -201,9 +212,9 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
 
   const priceChanged =
     liveOrder?.status === "pending" &&
-    liveOrder?.mesghal17_raw_price_at_submit != null &&
-    rawSidePrice() != null &&
-    Math.round(rawSidePrice()) !== Math.round(liveOrder.mesghal17_raw_price_at_submit);
+    submitFinalPrice() != null &&
+    currentFinalPrice() != null &&
+    Math.round(currentFinalPrice()) !== Math.round(submitFinalPrice());
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -248,15 +259,15 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
 
             {priceChanged && (
               <p className="modal-result__price-change">
-                {gram18OnlyDisplay ? (
+                {gram18OnlyDisplay && !isCoin ? (
                   <>
-                    مظنه از {toFarsiNumber(Math.round(mesghal17ToGram18(liveOrder.mesghal17_raw_price_at_submit)))} به{" "}
-                    {toFarsiNumber(Math.round(mesghal17ToGram18(rawSidePrice())))} تومان (گرم ۱۸) تغییر کرده
+                    مظنه از {toFarsiNumber(Math.round(submitFinalPrice()))} به{" "}
+                    {toFarsiNumber(Math.round(currentFinalPrice()))} تومان (گرم ۱۸) تغییر کرده
                   </>
                 ) : (
                   <>
-                    مظنه از {toFarsiNumber(Math.round(liveOrder.mesghal17_raw_price_at_submit))} به{" "}
-                    {toFarsiNumber(Math.round(rawSidePrice()))} تومان تغییر کرده
+                    مظنه از {toFarsiNumber(Math.round(submitFinalPrice()))} به{" "}
+                    {toFarsiNumber(Math.round(currentFinalPrice()))} تومان تغییر کرده
                   </>
                 )}
               </p>
@@ -277,10 +288,10 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
             <div className="modal-confirm__row">
               <span>{isCoin ? "قیمت (هر عدد)" : gram18OnlyDisplay ? "قیمت (گرم ۱۸)" : "قیمت (مثقال ۱۷)"}</span>
               <span>
-                {rawSidePrice()
+                {finalSidePrice()
                   ? toFarsiNumber(
                       Math.round(
-                        !isCoin && gram18OnlyDisplay ? mesghal17ToGram18(rawSidePrice()) : rawSidePrice()
+                        !isCoin && gram18OnlyDisplay ? unitPrice() : finalSidePrice()
                       )
                     )
                   : "—"}{" "}
