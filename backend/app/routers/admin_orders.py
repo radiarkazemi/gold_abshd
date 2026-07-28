@@ -1,9 +1,11 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, Query, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.ws_manager import manager
-from app.admin_auth import get_current_admin, verify_admin_ws_token, require_permission
+from app.admin_auth import verify_admin_ws_token, require_permission
 from app.models_db import Order, OrderStatusEnum
 from app.schemas.order import OrderOut, OrderDecisionIn
 from app.schemas.admin import PhoneOrderCreateIn
@@ -19,9 +21,24 @@ router = APIRouter(prefix="/api/admin/orders", tags=["admin-orders"])
 
 @router.get("", response_model=list[OrderOut])
 async def list_orders(status: str | None = None, db: Session = Depends(get_db), _admin=Depends(require_permission("orders"))):
+    """
+    Pending queue is urgency-sorted: soonest-expiring countdown first,
+    and orders whose visibility window has already ended are hidden
+    until the customer retries. Other status filters keep newest-first
+    chronological order.
+    """
     query = db.query(Order)
     if status:
         query = query.filter(Order.status == OrderStatusEnum(status))
+        if status == "pending":
+            now = datetime.utcnow()
+            query = query.filter(
+                Order.pending_deadline_at.isnot(None),
+                Order.pending_deadline_at > now,
+            )
+            orders = query.order_by(Order.pending_deadline_at.asc()).all()
+            return [order_to_admin_out(db, o) for o in orders]
+
     orders = query.order_by(Order.created_at.desc()).all()
     return [order_to_admin_out(db, o) for o in orders]
 

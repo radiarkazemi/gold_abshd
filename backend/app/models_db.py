@@ -202,9 +202,28 @@ class Order(Base):
     # (or is an admin) before streaming it.
     receipt_path = Column(String, nullable=True)
 
+    # Admin-queue visibility window. Set to now+ORDER_PENDING_SECONDS on
+    # create (and again on each customer retry). While status is pending
+    # AND pending_deadline_at is in the future, the order appears on the
+    # admin dashboard sorted by soonest deadline. After the deadline
+    # passes unanswered, it is soft-hidden from the admin queue until
+    # the customer retries (which bumps this timestamp).
+    pending_deadline_at = Column(DateTime, nullable=True)
+    # How many times the customer has already bumped the waiting window
+    # after the initial countdown. Capped by ORDER_MAX_RETRIES.
+    retry_count = Column(Integer, nullable=False, default=0)
+
     @property
     def has_receipt(self) -> bool:
         return bool(self.receipt_path)
+
+    @property
+    def seconds_remaining(self) -> int | None:
+        """Seconds left in the current admin-visibility window, or None
+        if this order isn't in an active pending countdown."""
+        if self.status != OrderStatusEnum.pending or not self.pending_deadline_at:
+            return None
+        return max(0, int((self.pending_deadline_at - datetime.utcnow()).total_seconds()))
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -24,6 +24,13 @@ class OrderOut(BaseModel):
     mesghal17_raw_price_at_submit: Optional[float] = None
     is_manual: bool = False
     has_receipt: bool = False
+    pending_deadline_at: Optional[datetime] = None
+    retry_count: int = 0
+    # Computed from pending_deadline_at at response time - preferred
+    # source for client countdowns so clock/timezone skew on naive
+    # ISO timestamps doesn't desync the UI from the server window.
+    seconds_remaining: Optional[int] = None
+    max_retries: int = 5
     created_at: datetime
     updated_at: datetime
 

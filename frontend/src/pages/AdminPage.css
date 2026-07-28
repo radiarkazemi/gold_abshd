@@ -101,6 +101,33 @@
   font-family: var(--font-display);
 }
 
+.order-card__top-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-inline-start: auto;
+}
+
+.order-card__countdown {
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-display);
+  color: var(--gold-bright);
+  letter-spacing: 0.02em;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.order-card__countdown--urgent {
+  color: var(--sell-bright);
+}
+
+.order-card__countdown--expired,
+.order-card__countdown--na {
+  color: var(--text-faint);
+  font-weight: 500;
+}
+
 .order-card__body {
   display: flex;
   flex-direction: column;

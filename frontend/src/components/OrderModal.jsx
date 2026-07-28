@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchOrderLimits, fetchMyOrderDetail } from "../api";
+import { fetchOrderLimits, fetchMyOrderDetail, retryMyOrder } from "../api";
 import { mesghal17ToGram18 } from "../utils/priceCommission";
+import { formatMMSS, localDeadlineMsFromOrder } from "../utils/orderCountdown";
 import FormattedNumberInput from "./FormattedNumberInput";
 
 const SIDE_META = {
@@ -15,8 +16,7 @@ const STATUS_META = {
   cancelled: { label: "لغو شد", className: "modal-result__status--rejected" },
 };
 
-const COUNTDOWN_SECONDS = 60;
-const MAX_RETRIES = 5;
+const FALLBACK_MAX_RETRIES = 5;
 
 function toFarsiNumber(n) {
   return Number(n).toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -24,12 +24,6 @@ function toFarsiNumber(n) {
 
 function formatWeight(n) {
   return Number(n).toLocaleString("en-US", { maximumFractionDigits: 3 });
-}
-
-function formatMMSS(totalSeconds) {
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 export default function OrderModal({ card, side, onClose, onSubmit, submitting, result, error }) {
@@ -41,11 +35,22 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
   const [localError, setLocalError] = useState("");
   const [liveOrder, setLiveOrder] = useState(null);
   const [confirming, setConfirming] = useState(false);
-  const [secondsLeft, setSecondsLeft] = useState(COUNTDOWN_SECONDS);
-  const [retryCount, setRetryCount] = useState(0);
+  const [secondsLeft, setSecondsLeft] = useState(0);
+  const [retrying, setRetrying] = useState(false);
   const pollRef = useRef(null);
   const tickRef = useRef(null);
+  const localDeadlineRef = useRef(0);
   const meta = SIDE_META[side];
+
+  function syncCountdownFromOrder(order) {
+    if (!order || order.status !== "pending") {
+      localDeadlineRef.current = 0;
+      setSecondsLeft(0);
+      return;
+    }
+    localDeadlineRef.current = localDeadlineMsFromOrder(order);
+    setSecondsLeft(Math.max(0, Math.ceil((localDeadlineRef.current - Date.now()) / 1000)));
+  }
 
   useEffect(() => {
     fetchOrderLimits().then(setLimits).catch(() => {});
@@ -54,15 +59,17 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
   useEffect(() => {
     if (!result) return;
     setLiveOrder(result);
-    setSecondsLeft(COUNTDOWN_SECONDS);
-    setRetryCount(0);
+    syncCountdownFromOrder(result);
 
     function poll() {
       fetchMyOrderDetail(result.id)
         .then((updated) => {
           setLiveOrder(updated);
-          if (updated.status !== "pending") {
+          if (updated.status === "pending") {
+            syncCountdownFromOrder(updated);
+          } else {
             clearInterval(pollRef.current);
+            setSecondsLeft(0);
           }
         })
         .catch(() => {});
@@ -78,16 +85,30 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
       return;
     }
     tickRef.current = setInterval(() => {
-      setSecondsLeft((s) => Math.max(0, s - 1));
-    }, 1000);
+      const left = Math.max(0, Math.ceil((localDeadlineRef.current - Date.now()) / 1000));
+      setSecondsLeft(left);
+    }, 250);
     return () => clearInterval(tickRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, liveOrder?.status]);
+  }, [result, liveOrder?.status, liveOrder?.pending_deadline_at, liveOrder?.retry_count]);
 
-  function handleRetry() {
-    setRetryCount((c) => c + 1);
-    setSecondsLeft(COUNTDOWN_SECONDS);
-    fetchMyOrderDetail(result.id).then(setLiveOrder).catch(() => {});
+  async function handleRetry() {
+    if (!result || retrying) return;
+    setRetrying(true);
+    setLocalError("");
+    try {
+      const updated = await retryMyOrder(result.id);
+      setLiveOrder(updated);
+      syncCountdownFromOrder(updated);
+    } catch (e) {
+      setLocalError(e.message || "تلاش دوباره با خطا مواجه شد");
+      fetchMyOrderDetail(result.id).then((updated) => {
+        setLiveOrder(updated);
+        syncCountdownFromOrder(updated);
+      }).catch(() => {});
+    } finally {
+      setRetrying(false);
+    }
   }
 
   function unitPrice() {
@@ -175,6 +196,8 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
   const total = computedTotal();
   const statusMeta = liveOrder ? STATUS_META[liveOrder.status] : STATUS_META.pending;
   const gram18OnlyDisplay = !isCoin && limits?.price_label_mode === "gram18_only";
+  const retryCount = liveOrder?.retry_count ?? 0;
+  const maxRetries = liveOrder?.max_retries ?? FALLBACK_MAX_RETRIES;
 
   const priceChanged =
     liveOrder?.status === "pending" &&
@@ -206,9 +229,14 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
               <div className="modal-result__timer">
                 {secondsLeft > 0 ? (
                   <span className="modal-result__countdown">{formatMMSS(secondsLeft)}</span>
-                ) : retryCount < MAX_RETRIES ? (
-                  <button type="button" className="modal-btn modal-btn--ghost" onClick={handleRetry}>
-                    تلاش دوباره ({retryCount}/{MAX_RETRIES})
+                ) : retryCount < maxRetries ? (
+                  <button
+                    type="button"
+                    className="modal-btn modal-btn--ghost"
+                    onClick={handleRetry}
+                    disabled={retrying}
+                  >
+                    {retrying ? "در حال ارسال…" : `تلاش دوباره (${retryCount}/${maxRetries})`}
                   </button>
                 ) : (
                   <p className="modal-result__hint">
@@ -238,6 +266,7 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
               در صورت پرداخت با حواله بانکی، می‌توانید فیش واریز را از صفحه
               «سفارش‌های من» ضمیمه کنید.
             </p>
+            {shownError && <p className="field__error">{shownError}</p>}
             <button type="button" className="modal-btn modal-btn--ghost" onClick={onClose}>
               بستن
             </button>

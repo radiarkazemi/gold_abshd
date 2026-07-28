@@ -12,7 +12,9 @@ from app.services.orders import (
     get_user_balance,
     get_user_transactions as get_user_transactions_db,
     order_to_dict,
+    order_to_customer_out,
     cancel_order as cancel_order_db,
+    retry_pending_order as retry_pending_order_db,
 )
 from app.services.trading_status import is_trading_online
 from app.services import price_cards
@@ -58,7 +60,7 @@ async def submit_order(
 
     await manager.broadcast_to_admins({"type": "new_order", "order": order_to_dict(db, order)})
 
-    return order
+    return order_to_customer_out(order)
 
 
 @router.get("/api/my/orders", response_model=list[OrderOut])
@@ -72,7 +74,7 @@ async def my_orders(
         .order_by(Order.created_at.desc())
         .all()
     )
-    return orders
+    return [order_to_customer_out(o) for o in orders]
 
 
 @router.get("/api/my/orders/{order_id}", response_model=OrderOut)
@@ -88,7 +90,7 @@ async def my_order_detail(
     )
     if not order:
         raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
-    return order
+    return order_to_customer_out(order)
 
 
 @router.post("/api/my/orders/{order_id}/cancel", response_model=OrderOut)
@@ -97,7 +99,27 @@ async def cancel_my_order(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return cancel_order_db(db, order_id, current_user.id)
+    order = cancel_order_db(db, order_id, current_user.id)
+    # Let the admin dashboard drop this card immediately instead of
+    # waiting for the next poll tick.
+    await manager.broadcast_to_admins({"type": "order_updated", "order": order_to_dict(db, order)})
+    return order_to_customer_out(order)
+
+
+@router.post("/api/my/orders/{order_id}/retry", response_model=OrderOut)
+async def retry_my_order(
+    order_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Customer re-opens the admin-visibility countdown after it expired
+    unanswered. Broadcast as new_order so the admin gets the same
+    alert/sound as a fresh submission - they need to notice it again.
+    """
+    order = retry_pending_order_db(db, order_id, current_user.id)
+    await manager.broadcast_to_admins({"type": "new_order", "order": order_to_dict(db, order)})
+    return order_to_customer_out(order)
 
 
 @router.get("/api/my/balance", response_model=BalanceOut)

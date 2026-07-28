@@ -108,6 +108,23 @@ def _patch_orders_table():
         conn.execute(text(
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS goldbridge_item_id INTEGER"
         ))
+        conn.execute(text(
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pending_deadline_at TIMESTAMP"
+        ))
+        conn.execute(text(
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0"
+        ))
+        # Existing pending rows with no deadline would be invisible to
+        # the admin queue (filter requires deadline > now). Give them a
+        # fresh window so a deploy mid-shift doesn't drop live orders.
+        # Cast via ::text so this works whether the column is a native
+        # enum or a plain varchar (both exist across install ages).
+        conn.execute(text("""
+            UPDATE orders
+            SET pending_deadline_at = NOW() + INTERVAL '60 seconds'
+            WHERE status::text = 'pending'
+              AND pending_deadline_at IS NULL
+        """))
         conn.commit()
 
 

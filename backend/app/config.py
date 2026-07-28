@@ -42,6 +42,15 @@ class Settings:
     MIN_ORDER_WEIGHT: float = float(os.getenv("GOLDAPP_MIN_ORDER_WEIGHT", "1"))
     MAX_ORDER_WEIGHT: float = float(os.getenv("GOLDAPP_MAX_ORDER_WEIGHT", "200"))
 
+    # How long a pending order stays visible on the admin dashboard /
+    # how long the customer's waiting countdown runs. When this window
+    # ends without an admin decision, the order is hidden from the
+    # admin queue (status stays pending) until the customer retries.
+    ORDER_PENDING_SECONDS: int = int(os.getenv("GOLDAPP_ORDER_PENDING_SECONDS", "60"))
+    # How many times the customer may bump the pending window after the
+    # first countdown expires. Matches the client "تلاش دوباره (n/5)" UI.
+    ORDER_MAX_RETRIES: int = int(os.getenv("GOLDAPP_ORDER_MAX_RETRIES", "5"))
+
     # Admin login. ADMIN_PASSWORD_HASH is a bcrypt hash - never store the
     # plain password. Generate one with:
     #   python -c "import bcrypt; print(bcrypt.hashpw(b'yourpassword', bcrypt.gensalt()).decode())"

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { fetchOrders, decideOrder, openAdminSocket, getAdminToken, clearAdminToken, fetchReceiptBlobUrlAsAdmin, getAdminIdentity } from "../api";
+import PendingCountdown from "../components/PendingCountdown";
 import AdminUsersTab from "./AdminUsersTab";
 import AdminLoginPage from "./AdminLoginPage";
 import AdminNoticeTab from "./AdminNoticeTab";
@@ -84,6 +85,11 @@ function AdminPanel({ onLogout }) {
   function refreshPendingCount() {
     fetchOrders("pending").then((data) => setPendingCount(data.length)).catch(() => {});
   }
+
+  const handlePendingExpire = useCallback((orderId) => {
+    setOrders((list) => list.filter((o) => o.id !== orderId));
+    setPendingCount((c) => Math.max(0, c - 1));
+  }, []);
 
   async function reload(currentFilter = filter) {
     try {
@@ -240,6 +246,7 @@ function AdminPanel({ onLogout }) {
                     <th>مشتری</th>
                     <th>موجودی مشتری</th>
                     <th>زمان</th>
+                    <th>مهلت</th>
                     <th>وضعیت</th>
                     <th>عملیات</th>
                   </tr>
@@ -266,6 +273,13 @@ function AdminPanel({ onLogout }) {
                         </span>
                       </td>
                       <td>{formatTime(order.created_at)}</td>
+                      <td>
+                        {order.status === "pending" ? (
+                          <PendingCountdown order={order} onExpire={handlePendingExpire} />
+                        ) : (
+                          <span className="order-card__countdown order-card__countdown--na">—</span>
+                        )}
+                      </td>
                       <td>
                         {order.status === "pending" ? (
                           <span className="order-card__status order-card__status--pending">در انتظار</span>

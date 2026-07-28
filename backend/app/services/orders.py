@@ -31,7 +31,7 @@ When an order is accepted:
   weight/amount toggle exists for them.
 """
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -50,6 +50,22 @@ from app.gold_conversion import mesghal17_to_gram18
 from app.schemas.order import OrderOut
 from app.services.order_limits import get_effective_limits
 from app.services import price_cards
+
+
+def _new_pending_deadline() -> datetime:
+    return datetime.utcnow() + timedelta(seconds=settings.ORDER_PENDING_SECONDS)
+
+
+def enrich_order_out(order: Order, extra: dict | None = None) -> OrderOut:
+    """Build OrderOut including computed countdown fields that Pydantic
+    can't always infer cleanly from the ORM alone."""
+    data = OrderOut.model_validate(order).model_dump()
+    data["max_retries"] = settings.ORDER_MAX_RETRIES
+    data["seconds_remaining"] = order.seconds_remaining
+    data["retry_count"] = order.retry_count or 0
+    if extra:
+        data.update(extra)
+    return OrderOut(**data)
 
 
 def weight_equivalent(order: Order) -> float:
@@ -176,6 +192,8 @@ def create_order(db: Session, user: User, side: str, amount_type: str, value: fl
         mesghal17_price_at_submit=final_price,
         mesghal17_raw_price_at_submit=mesghal17_raw_price,
         goldbridge_item_id=goldbridge_item_id,
+        pending_deadline_at=_new_pending_deadline(),
+        retry_count=0,
     )
     db.add(order)
     db.commit()
@@ -286,9 +304,57 @@ def cancel_order(db: Session, order_id: str, user_id: str) -> Order:
         raise HTTPException(status_code=400, detail="فقط سفارش‌های در انتظار را می‌توان لغو کرد")
 
     order.status = OrderStatusEnum.cancelled
+    order.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(order)
     return order
+
+
+def retry_pending_order(db: Session, order_id: str, user_id: str) -> Order:
+    """
+    Customer bump of the admin-visibility countdown after it expired
+    unanswered. Status stays pending; we just move pending_deadline_at
+    forward and increment retry_count so the order reappears at the
+    front of the admin queue (soonest deadline sorts first).
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
+    if order.user_id != user_id:
+        raise HTTPException(status_code=403, detail="این سفارش متعلق به شما نیست")
+    if order.status != OrderStatusEnum.pending:
+        raise HTTPException(status_code=400, detail="فقط سفارش‌های در انتظار را می‌توان دوباره ارسال کرد")
+    if (order.retry_count or 0) >= settings.ORDER_MAX_RETRIES:
+        raise HTTPException(
+            status_code=400,
+            detail="تعداد تلاش‌های مجاز تمام شده است. لطفا با پشتیبانی تماس بگیرید.",
+        )
+
+    # Only allow a retry once the current window has actually ended -
+    # otherwise the customer could spam bumps while the admin is still
+    # looking at the live countdown.
+    remaining = order.seconds_remaining
+    if remaining is not None and remaining > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="هنوز مهلت بررسی این سفارش به پایان نرسیده است",
+        )
+
+    order.retry_count = (order.retry_count or 0) + 1
+    order.pending_deadline_at = _new_pending_deadline()
+    order.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+def is_active_pending(order: Order, now: datetime | None = None) -> bool:
+    """True when a pending order is still inside its admin-visible window."""
+    if order.status != OrderStatusEnum.pending:
+        return False
+    if not order.pending_deadline_at:
+        return False
+    return order.pending_deadline_at > (now or datetime.utcnow())
 
 
 def decide_order(db: Session, order_id: str, status: str) -> Order:
@@ -425,17 +491,18 @@ def order_customer_fields(db: Session, order: Order) -> dict:
 def order_to_dict(db: Session, order: Order) -> dict:
     """Full JSON-ready representation of an order, admin-enriched. Used
     for WebSocket broadcasts (new_order / order_updated events)."""
-    data = json.loads(OrderOut.model_validate(order).model_dump_json())
-    data.update(order_customer_fields(db, order))
-    return data
+    return json.loads(enrich_order_out(order, order_customer_fields(db, order)).model_dump_json())
 
 
 def order_to_admin_out(db: Session, order: Order) -> OrderOut:
     """Same as order_to_dict but returns the Pydantic model directly,
     for use as a FastAPI response_model return value."""
-    data = OrderOut.model_validate(order).model_dump()
-    data.update(order_customer_fields(db, order))
-    return OrderOut(**data)
+    return enrich_order_out(order, order_customer_fields(db, order))
+
+
+def order_to_customer_out(order: Order) -> OrderOut:
+    """Customer-facing OrderOut with countdown fields populated."""
+    return enrich_order_out(order)
 
 
 def get_user_or_404(db: Session, user_id: str) -> User:

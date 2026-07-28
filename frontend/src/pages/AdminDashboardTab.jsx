@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { fetchOrders, decideOrder, fetchAdminUsers, fetchTradingStatus, updateTradingStatus, fetchOrderLimits, updateOrderLimits } from "../api";
 import { orderGoldWeight, orderTotalMoney } from "../utils/orderCalc";
+import PendingCountdown from "../components/PendingCountdown";
 
 const SIDE_LABEL = { buy: "خرید مشتری از ما", sell: "فروش مشتری به ما" };
 
@@ -79,6 +80,10 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
     fetchTradingStatus().then((s) => setTradingOnline(s.is_online)).catch(() => {});
   }
 
+  const handlePendingExpire = useCallback((orderId) => {
+    setPending((list) => list.filter((o) => o.id !== orderId));
+  }, []);
+
   useEffect(() => {
     reload();
     loadLimits();
@@ -128,7 +133,10 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
             {SIDE_LABEL[order.side]}
           </span>
           {order.is_manual && <span className="manual-order-tag">دستی</span>}
-          <span className="order-card__time">{formatTime(order.created_at)}</span>
+          <div className="order-card__top-meta">
+            <PendingCountdown order={order} onExpire={handlePendingExpire} />
+            <span className="order-card__time">{formatTime(order.created_at)}</span>
+          </div>
         </div>
         <div className="order-card__body">
           <div className="order-card__row">
@@ -151,6 +159,12 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
               {order.mesghal17_price_at_submit ? fa(Math.round(order.mesghal17_price_at_submit)) : "—"} تومان
             </span>
           </div>
+          {(order.retry_count || 0) > 0 && (
+            <div className="order-card__row">
+              <span className="order-card__label">تلاش مجدد</span>
+              <span className="order-card__value">{fa(order.retry_count)}</span>
+            </div>
+          )}
         </div>
         <div className="order-card__actions">
           <button
