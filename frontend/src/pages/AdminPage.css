@@ -313,6 +313,8 @@
 @media (max-width: 760px) {
   .order-table-wrap {
     overflow: visible;
+    border: none;
+    border-radius: 0;
   }
 
   .order-table,
@@ -336,6 +338,9 @@
   }
 
   .order-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 12px;
     background: var(--surface);
     border: 1px solid var(--hairline);
     border-radius: var(--radius-md);
@@ -344,7 +349,8 @@
 
   .order-table td {
     border: none;
-    padding: 6px 0;
+    padding: 0;
+    min-width: 0;
   }
 
   .order-table td::before {
@@ -356,8 +362,16 @@
     font-weight: 600;
   }
 
+  .order-table td:nth-child(1),
+  .order-table td:nth-child(5),
+  .order-table td:nth-child(6),
+  .order-table td:nth-child(10) {
+    grid-column: 1 / -1;
+  }
+
   .order-table__customer {
     direction: rtl;
+    overflow-wrap: anywhere;
   }
 
   .order-table__balance {
@@ -368,6 +382,11 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 6px;
+  }
+
+  .order-table td[data-label="وضعیت"] .order-card__status,
+  .order-table td[data-label="مهلت"] .order-card__countdown {
+    width: fit-content;
   }
 
   .manual-order-tag {
