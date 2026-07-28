@@ -6,7 +6,7 @@ from app.admin_auth import get_current_admin, require_permission
 from app.models_db import Order, BalanceTransaction
 from app.schemas.admin import (
     UserSummaryOut, UserDetailOut, TransactionOut, BalanceAdjustIn, BlockUserIn,
-    AdminCreateUserIn, AdminCreateUserOut, AdminUpdateUserIn,
+    TradingBanUserIn, AdminCreateUserIn, AdminCreateUserOut, AdminUpdateUserIn,
 )
 from app.services.registration import create_user_with_key
 from app.services.orders import (
@@ -15,6 +15,7 @@ from app.services.orders import (
     list_users_with_balance,
     adjust_balance as adjust_balance_db,
     set_user_blocked,
+    set_user_trading_banned,
     update_user as update_user_db,
 )
 
@@ -30,6 +31,7 @@ async def create_user(payload: AdminCreateUserIn, db: Session = Depends(get_db),
         role_id=payload.role_id,
         national_id=payload.national_id,
         notes=payload.notes,
+        referrer=payload.referrer,
         key_ttl_days=payload.key_ttl_days,
     )
     return AdminCreateUserOut(
@@ -72,6 +74,8 @@ async def get_user_detail(user_id: str, db: Session = Depends(get_db), _admin=De
         national_id=user.national_id,
         notes=user.notes,
         is_blocked=user.is_blocked,
+        is_trading_banned=user.is_trading_banned,
+        referrer=user.referrer,
         created_at=user.created_at,
         gold_balance=balance["gold_balance"],
         cash_balance=balance["cash_balance"],
@@ -102,19 +106,20 @@ async def block_user(user_id: str, payload: BlockUserIn, db: Session = Depends(g
         phone_number=user.phone_number,
         full_name=user.full_name,
         is_blocked=user.is_blocked,
+        is_trading_banned=user.is_trading_banned,
         created_at=user.created_at,
         gold_balance=balance["gold_balance"],
         cash_balance=balance["cash_balance"],
         role=user.role,
         is_online=user.is_online,
         registration_status=reg_key.status.value if reg_key else None,
+        referrer=user.referrer,
     )
 
 
-@router.patch("/{user_id}", response_model=UserSummaryOut)
-async def edit_user(user_id: str, payload: AdminUpdateUserIn, db: Session = Depends(get_db), _admin=Depends(require_permission("users"))):
-    user = update_user_db(db, user_id, payload.full_name,
-                          payload.role_id, payload.national_id, payload.notes)
+@router.post("/{user_id}/trading-ban", response_model=UserSummaryOut)
+async def ban_user_trading(user_id: str, payload: TradingBanUserIn, db: Session = Depends(get_db), _admin=Depends(require_permission("users"))):
+    user = set_user_trading_banned(db, user_id, payload.is_trading_banned)
     balance = get_user_balance(db, user_id)
     reg_key = user.registration_key
     return UserSummaryOut(
@@ -123,10 +128,35 @@ async def edit_user(user_id: str, payload: AdminUpdateUserIn, db: Session = Depe
         phone_number=user.phone_number,
         full_name=user.full_name,
         is_blocked=user.is_blocked,
+        is_trading_banned=user.is_trading_banned,
         created_at=user.created_at,
         gold_balance=balance["gold_balance"],
         cash_balance=balance["cash_balance"],
         role=user.role,
         is_online=user.is_online,
         registration_status=reg_key.status.value if reg_key else None,
+        referrer=user.referrer,
+    )
+
+
+@router.patch("/{user_id}", response_model=UserSummaryOut)
+async def edit_user(user_id: str, payload: AdminUpdateUserIn, db: Session = Depends(get_db), _admin=Depends(require_permission("users"))):
+    user = update_user_db(db, user_id, payload.full_name,
+                          payload.role_id, payload.national_id, payload.notes, payload.referrer)
+    balance = get_user_balance(db, user_id)
+    reg_key = user.registration_key
+    return UserSummaryOut(
+        id=user.id,
+        user_code=user.user_code,
+        phone_number=user.phone_number,
+        full_name=user.full_name,
+        is_blocked=user.is_blocked,
+        is_trading_banned=user.is_trading_banned,
+        created_at=user.created_at,
+        gold_balance=balance["gold_balance"],
+        cash_balance=balance["cash_balance"],
+        role=user.role,
+        is_online=user.is_online,
+        registration_status=reg_key.status.value if reg_key else None,
+        referrer=user.referrer,
     )

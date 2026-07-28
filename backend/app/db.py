@@ -91,6 +91,8 @@ def _patch_users_table():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_submitted_at TIMESTAMP",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_reviewed_at TIMESTAMP",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_reject_reason VARCHAR",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_trading_banned BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer VARCHAR",
     ]
     with engine.connect() as conn:
         for stmt in statements:

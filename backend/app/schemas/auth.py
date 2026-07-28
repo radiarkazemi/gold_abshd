@@ -38,6 +38,7 @@ class UserOut(BaseModel):
     phone_number: str
     full_name: str | None = None
     is_blocked: bool
+    is_trading_banned: bool = False
     role: RoleOut | None = None
 
     class Config:

@@ -8,6 +8,7 @@ export default function AdminAddUserTab() {
   const [roleId, setRoleId] = useState("");
   const [nationalId, setNationalId] = useState("");
   const [notes, setNotes] = useState("");
+  const [referrer, setReferrer] = useState("");
   const [keyTtlDays, setKeyTtlDays] = useState(14);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -38,6 +39,7 @@ export default function AdminAddUserTab() {
         roleId,
         nationalId,
         notes,
+        referrer,
         keyTtlDays: Number(keyTtlDays),
       });
       setResult(res);
@@ -60,6 +62,7 @@ export default function AdminAddUserTab() {
     setFullName("");
     setNationalId("");
     setNotes("");
+    setReferrer("");
     setCopied(false);
   }
 
@@ -143,6 +146,17 @@ export default function AdminAddUserTab() {
           onChange={(e) => setNationalId(e.target.value)}
           dir="ltr"
           required
+        />
+      </label>
+
+      <label className="field">
+        <span className="field__label">معرف</span>
+        <input
+          type="text"
+          className="field__input"
+          value={referrer}
+          onChange={(e) => setReferrer(e.target.value)}
+          placeholder="مثلاً: معرفی توسط آقای احمدی"
         />
       </label>
 

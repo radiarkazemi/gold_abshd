@@ -457,18 +457,20 @@ def list_users_with_balance(db: Session, search: str | None = None) -> list[dict
             "phone_number": user.phone_number,
             "full_name": user.full_name,
             "is_blocked": user.is_blocked,
+            "is_trading_banned": user.is_trading_banned,
             "created_at": user.created_at,
             "gold_balance": float(gold),
             "cash_balance": float(cash),
             "role": user.role,
             "is_online": user.is_online,
             "registration_status": reg_key.status.value if reg_key else None,
+            "referrer": user.referrer,
         })
     return results
 
 
 def update_user(db: Session, user_id: str, full_name: str | None, role_id: str | None,
-                 national_id: str | None, notes: str | None) -> User:
+                 national_id: str | None, notes: str | None, referrer: str | None = None) -> User:
     user = get_user_or_404(db, user_id)
 
     if full_name is not None:
@@ -482,6 +484,8 @@ def update_user(db: Session, user_id: str, full_name: str | None, role_id: str |
         user.national_id = national_id
     if notes is not None:
         user.notes = notes
+    if referrer is not None:
+        user.referrer = referrer
 
     db.commit()
     db.refresh(user)
@@ -558,6 +562,14 @@ def set_user_blocked(db: Session, user_id: str, is_blocked: bool) -> User:
     if is_blocked and user.registration_key:
         from app.models_db import RegistrationKeyStatusEnum
         user.registration_key.status = RegistrationKeyStatusEnum.banned
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def set_user_trading_banned(db: Session, user_id: str, is_trading_banned: bool) -> User:
+    user = get_user_or_404(db, user_id)
+    user.is_trading_banned = is_trading_banned
     db.commit()
     db.refresh(user)
     return user

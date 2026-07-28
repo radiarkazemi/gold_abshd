@@ -33,6 +33,11 @@ async def submit_order(
             status_code=403,
             detail="در حال حاضر امکان ثبت سفارش وجود ندارد. لطفا بعدا مراجعه کنید.",
         )
+    if current_user.is_trading_banned:
+        raise HTTPException(
+            status_code=403,
+            detail="برای این حساب امکان خرید و فروش غیرفعال شده است.",
+        )
 
     card = price_cards.get_card_state(db, order_in.goldbridge_item_id)
     if not card or not card.is_enabled:

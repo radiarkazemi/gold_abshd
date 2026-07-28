@@ -4,6 +4,7 @@ import {
   fetchAdminUserDetail,
   adjustUserBalance,
   setUserBlocked,
+  setUserTradingBanned,
   updateUserAdmin,
   fetchRoles,
 } from "../api";
@@ -43,6 +44,7 @@ function EditUserForm({ detail, roles, onSaved, onCancel }) {
   const [roleId, setRoleId] = useState(detail.role?.id || "");
   const [nationalId, setNationalId] = useState(detail.national_id || "");
   const [notes, setNotes] = useState(detail.notes || "");
+  const [referrer, setReferrer] = useState(detail.referrer || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -51,7 +53,7 @@ function EditUserForm({ detail, roles, onSaved, onCancel }) {
     setError("");
     setSaving(true);
     try {
-      await updateUserAdmin(detail.id, { fullName, roleId, nationalId, notes });
+      await updateUserAdmin(detail.id, { fullName, roleId, nationalId, notes, referrer });
       onSaved();
     } catch (err) {
       setError(err.message || "خطا در ذخیره تغییرات");
@@ -82,6 +84,10 @@ function EditUserForm({ detail, roles, onSaved, onCancel }) {
       <label className="field">
         <span className="field__label">یادداشت</span>
         <textarea className="field__textarea" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+      </label>
+      <label className="field">
+        <span className="field__label">معرف</span>
+        <input className="field__input" value={referrer} onChange={(e) => setReferrer(e.target.value)} />
       </label>
       {error && <p className="field__error">{error}</p>}
       <div className="modal-actions">
@@ -156,6 +162,19 @@ function UserDetail({ userId, onClose, onChanged }) {
     }
   }
 
+  async function handleToggleTradingBan() {
+    setBusy(true);
+    try {
+      await setUserTradingBanned(userId, !detail.is_trading_banned);
+      reload();
+      onChanged?.();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="user-detail" onClick={(e) => e.stopPropagation()}>
@@ -183,9 +202,17 @@ function UserDetail({ userId, onClose, onChanged }) {
                   عضویت از {formatDate(detail.created_at)}
                   {detail.is_online && <span className="user-detail__online-dot" title="آنلاین" />}
                 </span>
+                {detail.referrer && <div className="user-detail__joined">معرف: {detail.referrer}</div>}
               </div>
               <div className="user-detail__actions">
                 <button className="user-detail__edit-btn" onClick={() => setEditing(true)}>ویرایش</button>
+                <button
+                  className={detail.is_trading_banned ? "user-detail__block-btn is-blocked" : "user-detail__block-btn"}
+                  onClick={handleToggleTradingBan}
+                  disabled={busy}
+                >
+                  {detail.is_trading_banned ? "رفع ممنوعیت معامله" : "ممنوعیت معامله"}
+                </button>
                 <button
                   className={detail.is_blocked ? "user-detail__block-btn is-blocked" : "user-detail__block-btn"}
                   onClick={handleToggleBlock}
@@ -387,6 +414,8 @@ export default function AdminUsersTab() {
               {u.role && <span className="user-card__role">{u.role.name}</span>}
               <span className="user-card__phone" dir="ltr">{u.phone_number}</span>
               {u.is_blocked && <span className="user-row__blocked-tag">مسدود</span>}
+              {u.is_trading_banned && <span className="user-row__blocked-tag">ممنوع‌المعامله</span>}
+              {u.referrer && <span className="user-card__role">معرف: {u.referrer}</span>}
               <div className="user-row__balances">
                 <span className={`cash-status ${formatGoldStatus(u.gold_balance).className}`}>
                   {fa(u.gold_balance, { maximumFractionDigits: 3 })} گرم ۱۸

@@ -119,6 +119,8 @@ class User(Base):
     role_id = Column(UUID(as_uuid=False), ForeignKey("roles.id"), nullable=True)
 
     is_blocked = Column(Boolean, default=False, nullable=False)
+    is_trading_banned = Column(Boolean, default=False, nullable=False)  # can log in / view prices, but cannot submit orders
+    referrer = Column(String, nullable=True)  # معرف - freeform source/person who introduced this customer
 
     # Single-device lock: set the first time the user activates their
     # registration key. A random token generated and stored in the

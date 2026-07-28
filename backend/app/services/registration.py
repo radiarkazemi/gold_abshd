@@ -101,6 +101,7 @@ def create_user_with_key(
     role_id: str,
     national_id: str | None = None,
     notes: str | None = None,
+    referrer: str | None = None,
     key_ttl_days: int = KEY_DEFAULT_TTL_DAYS,
 ) -> tuple[User, RegistrationKey]:
     """
@@ -128,6 +129,7 @@ def create_user_with_key(
         role_id=role_id,
         national_id=national_id,
         notes=notes,
+        referrer=referrer,
     )
     db.add(user)
     db.commit()

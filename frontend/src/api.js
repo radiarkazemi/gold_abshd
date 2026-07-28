@@ -542,6 +542,16 @@ export async function setUserBlocked(userId, isBlocked) {
   return res.json();
 }
 
+export async function setUserTradingBanned(userId, isTradingBanned) {
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}/trading-ban`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({ is_trading_banned: isTradingBanned }),
+  });
+  if (!res.ok) throw new Error("Failed to update trading ban status");
+  return res.json();
+}
+
 export async function fetchNotice() {
   const res = await fetch(`${API_BASE}/api/notice`);
   if (!res.ok) throw new Error("Failed to fetch notice");
@@ -602,7 +612,7 @@ export async function updateRoleCommission(roleId, commissionType, commissionVal
   return res.json();
 }
 
-export async function createUserAdmin({ phoneNumber, fullName, roleId, nationalId, notes, keyTtlDays }) {
+export async function createUserAdmin({ phoneNumber, fullName, roleId, nationalId, notes, referrer, keyTtlDays }) {
   const res = await fetch(`${API_BASE}/api/admin/users`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
@@ -612,6 +622,7 @@ export async function createUserAdmin({ phoneNumber, fullName, roleId, nationalI
       role_id: roleId,
       national_id: nationalId || null,
       notes: notes || null,
+      referrer: referrer || null,
       key_ttl_days: keyTtlDays || 14,
     }),
   });
@@ -622,7 +633,7 @@ export async function createUserAdmin({ phoneNumber, fullName, roleId, nationalI
   return res.json();
 }
 
-export async function updateUserAdmin(userId, { fullName, roleId, nationalId, notes }) {
+export async function updateUserAdmin(userId, { fullName, roleId, nationalId, notes, referrer }) {
   const res = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
@@ -631,6 +642,7 @@ export async function updateUserAdmin(userId, { fullName, roleId, nationalId, no
       role_id: roleId,
       national_id: nationalId,
       notes: notes,
+      referrer: referrer,
     }),
   });
   if (!res.ok) {

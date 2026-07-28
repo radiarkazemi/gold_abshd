@@ -2,6 +2,14 @@ function fa(n, opts) {
   return Number(n).toLocaleString("fa-IR", opts);
 }
 
+function orderWeight(order) {
+  return order.amount_type === "weight" ? order.value : order.value / order.price_at_submit;
+}
+
+function orderMoney(order) {
+  return order.amount_type === "amount" ? order.value : order.value * order.price_at_submit;
+}
+
 function formatDate(iso) {
   return new Date(iso).toLocaleString("fa-IR", {
     year: "numeric",
@@ -22,8 +30,8 @@ const STATUS_LABEL = { pending: "در انتظار", accepted: "تایید شد�
 // font-embedding work, while the browser's own print engine handles
 // RTL Persian text perfectly since it's just normal HTML/CSS.
 export function downloadOrderReceipt(order) {
-  const weight = order.amount_type === "weight" ? order.value : order.value / order.price_at_submit;
-  const money = order.amount_type === "amount" ? order.value : order.value * order.price_at_submit;
+  const weight = orderWeight(order);
+  const money = orderMoney(order);
 
   const rows = [
     ["نوع سفارش", SIDE_LABEL[order.side] || order.side],
@@ -114,8 +122,8 @@ export function downloadOrderReceipt(order) {
 export function downloadOrdersReceipt(orders, { dateFrom, dateTo } = {}) {
   const rowsHtml = orders
     .map((order) => {
-      const weight = order.amount_type === "weight" ? order.value : order.value / order.price_at_submit;
-      const money = order.amount_type === "amount" ? order.value : order.value * order.price_at_submit;
+      const weight = orderWeight(order);
+      const money = orderMoney(order);
       return `<tr>
         <td>${formatDate(order.created_at)}</td>
         <td>${SIDE_LABEL[order.side] || order.side}</td>
@@ -132,10 +140,27 @@ export function downloadOrdersReceipt(orders, { dateFrom, dateTo } = {}) {
       ? `از ${dateFrom ? formatDate(dateFrom) : "ابتدا"} تا ${dateTo ? formatDate(dateTo) : "امروز"}`
       : "همه سفارش‌ها";
 
-  const totalMoney = orders.reduce((sum, o) => {
-    const money = o.amount_type === "amount" ? o.value : o.value * o.price_at_submit;
-    return sum + money;
-  }, 0);
+  const totals = orders.reduce((acc, order) => {
+    const weight = orderWeight(order);
+    const money = orderMoney(order);
+    if (order.side === "buy") {
+      acc.gold += weight;
+      acc.cash -= money;
+    } else if (order.side === "sell") {
+      acc.gold -= weight;
+      acc.cash += money;
+    }
+    return acc;
+  }, { gold: 0, cash: 0 });
+
+  const goldSummary =
+    totals.gold > 0 ? `${fa(totals.gold, { maximumFractionDigits: 3 })} گرم ۱۸ بستانکار`
+    : totals.gold < 0 ? `${fa(Math.abs(totals.gold), { maximumFractionDigits: 3 })} گرم ۱۸ بدهکار`
+    : "۰ گرم ۱۸ — تسویه";
+  const cashSummary =
+    totals.cash > 0 ? `${fa(Math.round(totals.cash))} تومان بستانکار`
+    : totals.cash < 0 ? `${fa(Math.abs(Math.round(totals.cash)))} تومان بدهکار`
+    : "۰ تومان — تسویه";
 
   const html = `
 <!DOCTYPE html>
@@ -174,7 +199,7 @@ export function downloadOrdersReceipt(orders, { dateFrom, dateTo } = {}) {
     </thead>
     <tbody>${rowsHtml}</tbody>
   </table>
-  <p class="summary">مجموع مبلغ: ${fa(Math.round(totalMoney))} تومان — تعداد سفارش‌ها: ${fa(orders.length)}</p>
+  <p class="summary">مجموع طلا: ${goldSummary} — مجموع نقدی: ${cashSummary} — تعداد سفارش‌ها: ${fa(orders.length)}</p>
   <p class="footer">این گزارش در تاریخ ${formatDate(new Date().toISOString())} صادر شده است.</p>
   <script>window.onload = () => setTimeout(() => window.print(), 300);</script>
 </body>

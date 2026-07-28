@@ -7,6 +7,7 @@ export function usePriceFeed() {
   const [prevCards, setPrevCards] = useState([]);   // previous tick's cards, for up/down flash comparisons
   const [connected, setConnected] = useState(false);
   const [priceLabelMode, setPriceLabelMode] = useState("mesghal_and_gram18");
+  const [tradingBanned, setTradingBanned] = useState(false);
   const wsRef = useRef(null);
   const retryRef = useRef(null);
   // Kept in a ref (not state) so the WS onmessage closure below always
@@ -44,6 +45,7 @@ export function usePriceFeed() {
           commission_value: limits.commission_value,
         };
         setPriceLabelMode(limits.price_label_mode || "mesghal_and_gram18");
+        setTradingBanned(!!limits.trading_banned);
         // Re-personalize whatever cards we already have, in case they
         // arrived before this resolved.
         setCards(personalizeAll(rawCardsRef.current));
@@ -79,5 +81,5 @@ export function usePriceFeed() {
     };
   }, []);
 
-  return { cards, prevCards, connected, priceLabelMode };
+  return { cards, prevCards, connected, priceLabelMode, tradingBanned };
 }

@@ -10,9 +10,10 @@ import NoticeModal from "../components/NoticeModal";
 import RecentOrdersTable from "../components/RecentOrdersTable";
 import BottomTabBar from "../components/BottomTabBar";
 import RefreshBar from "../components/RefreshBar";
+import BalanceStrip from "../components/BalanceStrip";
 
 export default function TraderPage() {
-  const { cards, prevCards, connected, priceLabelMode } = usePriceFeed();
+  const { cards, prevCards, connected, priceLabelMode, tradingBanned } = usePriceFeed();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [activeOrder, setActiveOrder] = useState(null); // { card, side } | null
@@ -45,7 +46,7 @@ export default function TraderPage() {
   }, []);
 
   function openModal(card, side) {
-    if (!tradingOnline) return;
+    if (!tradingOnline || tradingBanned) return;
     setResult(null);
     setError("");
     setActiveOrder({ card, side });
@@ -99,6 +100,11 @@ export default function TraderPage() {
             در حال حاضر امکان ثبت سفارش خرید و فروش وجود ندارد.
           </p>
         )}
+        {tradingBanned && (
+          <p className="trading-offline-note">
+            امکان خرید و فروش برای این حساب غیرفعال شده است. مشاهده قیمت‌ها همچنان فعال است.
+          </p>
+        )}
 
         {!primaryCard && otherCards.length === 0 ? (
           <p className="price-updated-note">در حال دریافت قیمت…</p>
@@ -131,6 +137,7 @@ export default function TraderPage() {
         )}
 
         <NoticeCard />
+        <BalanceStrip refreshSignal={refreshKey} />
         <RecentOrdersTable refreshSignal={refreshKey} limit={5} />
       </main>
 

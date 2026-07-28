@@ -60,8 +60,10 @@ def get_effective_limits(db: Session, user) -> dict:
     result["price_label_mode"] = "mesghal_and_gram18"
     result["commission_type"] = "fixed"
     result["commission_value"] = 0.0
+    result["trading_banned"] = False
 
     role = getattr(user, "role", None)
+    result["trading_banned"] = bool(getattr(user, "is_trading_banned", False))
     if role:
         for field in ("min_weight", "max_weight", "min_amount", "max_amount"):
             override = getattr(role, field, None)

@@ -58,6 +58,7 @@ class AdminCreateUserIn(BaseModel):
     role_id: str
     national_id: str
     notes: Optional[str] = None
+    referrer: Optional[str] = None
     key_ttl_days: int = 14
 
 
@@ -74,6 +75,7 @@ class AdminUpdateUserIn(BaseModel):
     role_id: Optional[str] = None
     national_id: Optional[str] = None
     notes: Optional[str] = None
+    referrer: Optional[str] = None
 
 
 class PhoneOrderCreateIn(BaseModel):
@@ -91,12 +93,14 @@ class UserSummaryOut(BaseModel):
     phone_number: str
     full_name: Optional[str] = None
     is_blocked: bool
+    is_trading_banned: bool = False
     created_at: datetime
     gold_balance: float
     cash_balance: float
     role: Optional[RoleOut] = None
     is_online: bool = False
     registration_status: Optional[str] = None  # pending | active | banned | None (no key issued)
+    referrer: Optional[str] = None
 
 
 class TransactionOut(BaseModel):
@@ -120,6 +124,8 @@ class UserDetailOut(BaseModel):
     national_id: Optional[str] = None
     notes: Optional[str] = None
     is_blocked: bool
+    is_trading_banned: bool = False
+    referrer: Optional[str] = None
     created_at: datetime
     gold_balance: float
     cash_balance: float
@@ -139,6 +145,10 @@ class BalanceAdjustIn(BaseModel):
 
 class BlockUserIn(BaseModel):
     is_blocked: bool
+
+
+class TradingBanUserIn(BaseModel):
+    is_trading_banned: bool
 
 
 class AdminLoginIn(BaseModel):

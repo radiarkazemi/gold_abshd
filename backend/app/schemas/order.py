@@ -65,6 +65,7 @@ class OrderLimitsOut(BaseModel):
     price_label_mode: str = "mesghal_and_gram18"  # "mesghal_and_gram18" | "gram18_only"
     commission_type: str = "fixed"   # "fixed" | "percentage" - this user's own commission
     commission_value: float = 0.0    # تومان اگر fixed, درصد اگر percentage
+    trading_banned: bool = False
 
 
 class OrderLimitsUpdateIn(BaseModel):
