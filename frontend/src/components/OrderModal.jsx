@@ -27,6 +27,7 @@ function formatWeight(n) {
 
 export default function OrderModal({ card, side, onClose, onSubmit, submitting, result, error }) {
   const isCoin = card?.unit === "count";
+  const modalRef = useRef(null);
   const [amountType, setAmountType] = useState(isCoin ? "count" : "weight");
   const [value, setValue] = useState("");
   const [description, setDescription] = useState("");
@@ -53,6 +54,32 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
 
   useEffect(() => {
     fetchOrderLimits().then(setLimits).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const root = modalRef.current;
+    if (!root) return;
+
+    function updateViewportHeight() {
+      const viewportHeight = window.visualViewport?.height || window.innerHeight;
+      root.style.setProperty("--modal-viewport-height", `${viewportHeight}px`);
+    }
+
+    function keepFocusedFieldVisible(event) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      requestAnimationFrame(() => {
+        target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+      });
+    }
+
+    updateViewportHeight();
+    window.visualViewport?.addEventListener("resize", updateViewportHeight);
+    root.addEventListener("focusin", keepFocusedFieldVisible);
+    return () => {
+      window.visualViewport?.removeEventListener("resize", updateViewportHeight);
+      root.removeEventListener("focusin", keepFocusedFieldVisible);
+    };
   }, []);
 
   useEffect(() => {
@@ -219,6 +246,7 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
+        ref={modalRef}
         className={`modal-sheet modal-sheet--${meta.accent}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"

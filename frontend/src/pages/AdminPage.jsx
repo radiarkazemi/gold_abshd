@@ -19,6 +19,7 @@ import { downloadOrderReceipt } from "../utils/printReceipt";
 import { playNotificationSound } from "../utils/notificationSound";
 import { orderGoldWeight, orderTotalMoney, summarizeOrders } from "../utils/orderCalc";
 import { formatCashStatus } from "../utils/balanceFormat";
+import { remainingFromOrder } from "../utils/orderCountdown";
 
 function fa(n, opts) {
   return Number(n).toLocaleString("fa-IR", opts);
@@ -57,6 +58,11 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function shouldShowInOrdersTable(order) {
+  if (order.status !== "pending") return true;
+  return remainingFromOrder(order) > 0;
+}
+
 function AdminPanel({ onLogout }) {
   const identity = getAdminIdentity();
   const [tab, setTab] = useState(
@@ -73,7 +79,8 @@ function AdminPanel({ onLogout }) {
   const [wsTick, setWsTick] = useState(0);
   const [dateFrom, setDateFrom] = useState(todayIso());
   const [dateTo, setDateTo] = useState(todayIso());
-  const dateFilteredOrders = orders.filter((o) => {
+  const visibleOrders = orders.filter(shouldShowInOrdersTable);
+  const dateFilteredOrders = visibleOrders.filter((o) => {
     const d = o.created_at.slice(0, 10);
     if (dateFrom && d < dateFrom) return false;
     if (dateTo && d > dateTo) return false;
@@ -88,8 +95,10 @@ function AdminPanel({ onLogout }) {
 
   const handlePendingExpire = useCallback((orderId) => {
     setOrders((list) => list.filter((o) => o.id !== orderId));
-    setPendingCount((c) => Math.max(0, c - 1));
-  }, []);
+    if (filter === "pending" || filter === null) {
+      setPendingCount((c) => Math.max(0, c - 1));
+    }
+  }, [filter]);
 
   async function reload(currentFilter = filter) {
     try {
@@ -254,33 +263,33 @@ function AdminPanel({ onLogout }) {
                 <tbody>
                   {dateFilteredOrders.map((order) => (
                     <tr key={order.id}>
-                      <td>
+                      <td data-label="نوع">
                         <span className={`order-card__badge order-card__badge--${order.side}`}>
                           {SIDE_LABEL[order.side]}
                         </span>
                         {order.is_manual && <span className="manual-order-tag">دستی</span>}
                       </td>
-                      <td>{fa(orderGoldWeight(order), { maximumFractionDigits: 3 })} گرم۱۸</td>
-                      <td>{fa(Math.round(orderTotalMoney(order)))} ت</td>
-                      <td>{order.mesghal17_price_at_submit ? fa(Math.round(order.mesghal17_price_at_submit)) : "—"}</td>
-                      <td dir="ltr" className="order-table__customer">
+                      <td data-label="وزن طلا">{fa(orderGoldWeight(order), { maximumFractionDigits: 3 })} گرم۱۸</td>
+                      <td data-label="مبلغ کل">{fa(Math.round(orderTotalMoney(order)))} ت</td>
+                      <td data-label="قیمت (مثقال ۱۷)">{order.mesghal17_price_at_submit ? fa(Math.round(order.mesghal17_price_at_submit)) : "—"}</td>
+                      <td data-label="مشتری" dir="ltr" className="order-table__customer">
                         {order.customer_name || "بدون نام"} #{order.customer_code}
                       </td>
-                      <td className="order-table__balance">
+                      <td data-label="موجودی مشتری" className="order-table__balance">
                         <span>{fa(order.customer_gold_balance, { maximumFractionDigits: 3 })} گرم۱۸</span>
                         <span className={formatCashStatus(order.customer_cash_balance).className}>
                           {formatCashStatus(order.customer_cash_balance).amount} ت
                         </span>
                       </td>
-                      <td>{formatTime(order.created_at)}</td>
-                      <td>
+                      <td data-label="زمان">{formatTime(order.created_at)}</td>
+                      <td data-label="مهلت">
                         {order.status === "pending" ? (
                           <PendingCountdown order={order} onExpire={handlePendingExpire} />
                         ) : (
                           <span className="order-card__countdown order-card__countdown--na">—</span>
                         )}
                       </td>
-                      <td>
+                      <td data-label="وضعیت">
                         {order.status === "pending" ? (
                           <span className="order-card__status order-card__status--pending">در انتظار</span>
                         ) : (
@@ -289,7 +298,7 @@ function AdminPanel({ onLogout }) {
                           </span>
                         )}
                       </td>
-                      <td>
+                      <td data-label="عملیات">
                         <div className="order-table__actions">
                           {order.status === "pending" && (
                             <>
