@@ -34,7 +34,10 @@ export default function SideMenu({ userPhone, onLogout }) {
         <div className="side-menu__backdrop" onClick={() => setOpen(false)}>
           <div className="side-menu__drawer" onClick={(e) => e.stopPropagation()}>
             <div className="side-menu__header">
-              <span className="side-menu__brand">آبشده قصر طلا</span>
+              <span className="side-menu__brand">
+                <img className="side-menu__logo" src="/logo.png" alt="" width="28" height="28" />
+                آبشده قصر طلا
+              </span>
               {userPhone && <span className="side-menu__phone">{userPhone}</span>}
             </div>
 

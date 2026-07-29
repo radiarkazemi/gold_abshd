@@ -80,6 +80,7 @@ export default function LoginPage() {
   return (
     <div className="login">
       <div className="login__card">
+        <img className="login__logo" src="/logo.png" alt="آبشده قصر طلا" width="96" height="96" />
         <h1 className="login__title">آبشده قصر طلا</h1>
         <p className="login__subtitle">
           {step === "phone"
