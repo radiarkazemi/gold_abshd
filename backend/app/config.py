@@ -128,10 +128,10 @@ class Settings:
     PRICE_API_KEY: str = os.getenv("GOLDAPP_PRICE_API_KEY", "")
     PRICE_API_BUY_PATH: str = os.getenv("GOLDAPP_PRICE_API_BUY_PATH", "buy")
     PRICE_API_SELL_PATH: str = os.getenv("GOLDAPP_PRICE_API_SELL_PATH", "sell")
-    # Keep this low (1–2s). goldbridge already polls the upstream source
-    # every ~1–2s; a slower consumer here is the main cause of visible lag
-    # vs the source site.
-    PRICE_API_POLL_SECONDS: int = int(os.getenv("GOLDAPP_PRICE_API_POLL_SECONDS", "1"))
+    # Local poll of goldbridge /prices. goldbridge itself talks to the
+    # upstream source; this interval only needs to be low enough to
+    # pick up bridge cache updates quickly (0.5–1s is plenty).
+    PRICE_API_POLL_SECONDS: float = float(os.getenv("GOLDAPP_PRICE_API_POLL_SECONDS", "0.5"))
 
     # goldbridge's "all items" endpoint - sibling of PRICE_API_URL
     # (which points at goldbridge's single-item /price). Only used for

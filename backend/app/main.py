@@ -153,9 +153,8 @@ async def _price_cards_broadcaster_loop():
             # pointing at why. Log it and keep the loop alive instead.
             logger.error(f"[price-broadcast] tick failed: {type(e).__name__}: {e}")
 
-        # Faster than the poll interval so a fresh goldbridge tick is
-        # pushed to clients within ~0.5s of landing in memory.
-        await asyncio.sleep(0.5)
+        # Push to clients ASAP after goldbridge lands a new tick.
+        await asyncio.sleep(0.25)
 
 
 async def _legacy_single_price_broadcaster_loop():
