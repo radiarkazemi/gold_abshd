@@ -22,6 +22,33 @@
   isolation: isolate;
 }
 
+@media (max-width: 1366px) {
+  .price-panel {
+    padding: 12px 10px 11px;
+  }
+
+  .price-panel__cta {
+    padding: 7px 18px;
+    font-size: 13px;
+  }
+}
+
+@media (max-height: 820px) {
+  .price-panel {
+    padding: 10px 10px 9px;
+    gap: 4px;
+  }
+
+  .price-card-row {
+    gap: 4px;
+    margin-top: 2px;
+  }
+
+  .secondary-cards-grid {
+    gap: 8px;
+  }
+}
+
 .price-panel--buy {
   background: linear-gradient(160deg, var(--panel-buy-bg-1) 0%, var(--panel-buy-bg-2) 70%);
 }

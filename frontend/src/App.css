@@ -227,6 +227,32 @@
   margin: 0 0 10px;
 }
 
+/* Compact layout for shorter old-laptop viewports (~768px tall). */
+@media (max-height: 820px) {
+  .app__header {
+    padding: 14px 16px 6px;
+  }
+
+  .app__title {
+    font-size: 17px;
+  }
+
+  .app__main {
+    padding: 10px 12px 52px;
+  }
+}
+
+@media (max-width: 1366px) {
+  .app__header,
+  .app__main {
+    box-sizing: border-box;
+  }
+
+  .app__main {
+    padding-inline: 12px;
+  }
+}
+
 .price-stage--disabled {
   opacity: 0.55;
   pointer-events: none;

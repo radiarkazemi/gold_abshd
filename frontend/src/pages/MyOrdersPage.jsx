@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchMyOrders, fetchMyBalance, fetchReceiptBlobUrl, uploadReceipt, cancelMyOrder, fetchOrderLimits } from "../api";
-import { downloadOrdersReceipt } from "../utils/printReceipt";
+import {
+  downloadOrderReceipt,
+  downloadOrdersReceipt,
+  buildOrderReceiptHtml,
+  buildOrdersReceiptHtml,
+} from "../utils/printReceipt";
 import { formatCashStatus, formatGoldStatus } from "../utils/balanceFormat";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import BottomTabBar from "../components/BottomTabBar";
 import JalaliDateInput from "../components/JalaliDateInput";
+import ReceiptPreviewModal from "../components/ReceiptPreviewModal";
 
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
 const AMOUNT_LABEL = { weight: "گرم ۱۸", amount: "تومان" };
@@ -63,6 +69,7 @@ export default function MyOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [uploadingId, setUploadingId] = useState(null);
   const [priceLabelMode, setPriceLabelMode] = useState("mesghal_and_gram18");
+  const [preview, setPreview] = useState(null); // { title, html, onDownload }
 
   function reload() {
     Promise.all([fetchMyOrders(), fetchMyBalance()])
@@ -211,14 +218,30 @@ export default function MyOrdersPage() {
           <JalaliDateInput label="از" value={dateFrom} onChange={setDateFrom} />
           <JalaliDateInput label="تا" value={dateTo} onChange={setDateTo} />
         </div>
-        <button
-          type="button"
-          className="date-filter__download-all"
-          disabled={visible.length === 0}
-          onClick={() => downloadOrdersReceipt(visible, { dateFrom, dateTo, priceLabelMode })}
-        >
-          دانلود همه ({fa(visible.length)}) — PDF
-        </button>
+        <div className="date-filter__pdf-actions">
+          <button
+            type="button"
+            className="date-filter__download-all"
+            disabled={visible.length === 0}
+            onClick={() => downloadOrdersReceipt(visible, { dateFrom, dateTo, priceLabelMode })}
+          >
+            دانلود همه ({fa(visible.length)}) — PDF
+          </button>
+          <button
+            type="button"
+            className="date-filter__download-all date-filter__download-all--ghost"
+            disabled={visible.length === 0}
+            onClick={() =>
+              setPreview({
+                title: `مشاهده گزارش (${fa(visible.length)})`,
+                html: buildOrdersReceiptHtml(visible, { dateFrom, dateTo, priceLabelMode }),
+                onDownload: () => downloadOrdersReceipt(visible, { dateFrom, dateTo, priceLabelMode }),
+              })
+            }
+          >
+            مشاهده در برنامه
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -315,9 +338,40 @@ export default function MyOrdersPage() {
                 </button>
               )}
 
+              <div className="history-card__pdf-actions">
+                <button
+                  type="button"
+                  className="history-card__pdf-btn"
+                  onClick={() => downloadOrderReceipt(order, { priceLabelMode })}
+                >
+                  دانلود رسید (PDF)
+                </button>
+                <button
+                  type="button"
+                  className="history-card__pdf-btn history-card__pdf-btn--ghost"
+                  onClick={() =>
+                    setPreview({
+                      title: "مشاهده رسید",
+                      html: buildOrderReceiptHtml(order, { priceLabelMode }),
+                      onDownload: () => downloadOrderReceipt(order, { priceLabelMode }),
+                    })
+                  }
+                >
+                  مشاهده در برنامه
+                </button>
+              </div>
+
             </div>
           ))}
         </div>
+      )}
+      {preview && (
+        <ReceiptPreviewModal
+          title={preview.title}
+          html={preview.html}
+          onDownload={preview.onDownload}
+          onClose={() => setPreview(null)}
+        />
       )}
       <BottomTabBar userPhone={user?.phone_number} onLogout={logout} />
     </div>

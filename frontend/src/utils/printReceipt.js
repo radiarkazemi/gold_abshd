@@ -76,8 +76,7 @@ function printHtml(html) {
   setTimeout(runPrint, 350);
 }
 
-// Opens a print-ready receipt for one order via a hidden iframe.
-export function downloadOrderReceipt(order, { priceLabelMode = "mesghal_and_gram18" } = {}) {
+export function buildOrderReceiptHtml(order, { priceLabelMode = "mesghal_and_gram18" } = {}) {
   const weight = orderWeight(order);
   const money = orderMoney(order);
   const unit = unitPriceForPrint(order, priceLabelMode);
@@ -101,7 +100,7 @@ export function downloadOrderReceipt(order, { priceLabelMode = "mesghal_and_gram
     .map(([label, value]) => `<tr><td class="label">${label}</td><td class="value">${value}</td></tr>`)
     .join("");
 
-  const html = `
+  return `
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
@@ -157,11 +156,9 @@ export function downloadOrderReceipt(order, { priceLabelMode = "mesghal_and_gram
   <p class="footer">این رسید در تاریخ ${formatDate(new Date().toISOString())} صادر شده است.</p>
 </body>
 </html>`;
-
-  printHtml(html);
 }
 
-export function downloadOrdersReceipt(orders, { dateFrom, dateTo, priceLabelMode = "mesghal_and_gram18" } = {}) {
+export function buildOrdersReceiptHtml(orders, { dateFrom, dateTo, priceLabelMode = "mesghal_and_gram18" } = {}) {
   const unitLabel = priceLabelMode === "gram18_only" ? "فی (گرم۱۸)" : "فی (مثقال۱۷)";
   const rowsHtml = orders
     .map((order) => {
@@ -206,7 +203,7 @@ export function downloadOrdersReceipt(orders, { dateFrom, dateTo, priceLabelMode
     : totals.cash < 0 ? `${fa(Math.abs(Math.round(totals.cash)))} تومان بدهکار`
     : "۰ تومان — تسویه";
 
-  const html = `
+  return `
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
@@ -247,6 +244,13 @@ export function downloadOrdersReceipt(orders, { dateFrom, dateTo, priceLabelMode
   <p class="footer">این گزارش در تاریخ ${formatDate(new Date().toISOString())} صادر شده است.</p>
 </body>
 </html>`;
+}
 
-  printHtml(html);
+// Opens a print-ready receipt for one order via a hidden iframe.
+export function downloadOrderReceipt(order, { priceLabelMode = "mesghal_and_gram18" } = {}) {
+  printHtml(buildOrderReceiptHtml(order, { priceLabelMode }));
+}
+
+export function downloadOrdersReceipt(orders, { dateFrom, dateTo, priceLabelMode = "mesghal_and_gram18" } = {}) {
+  printHtml(buildOrdersReceiptHtml(orders, { dateFrom, dateTo, priceLabelMode }));
 }

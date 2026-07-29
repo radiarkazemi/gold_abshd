@@ -372,9 +372,28 @@
   background: rgba(207, 100, 70, 0.08);
 }
 
+.date-filter__pdf-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.date-filter__download-all--ghost {
+  background: transparent;
+  color: var(--gold-bright);
+  border: 1px solid var(--gold-dim);
+}
+
+.history-card__pdf-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .history-card__pdf-btn {
   width: 100%;
-  margin-top: 8px;
+  margin-top: 0;
   padding: 9px 0;
   border: 1px solid var(--gold-dim);
   background: transparent;
@@ -385,6 +404,18 @@
   cursor: pointer;
 }
 
+.history-card__pdf-btn--ghost {
+  color: var(--text-muted);
+  border-color: var(--hairline);
+}
+
 .history-card__pdf-btn:hover {
   background: rgba(201, 162, 39, 0.08);
+}
+
+@media (max-width: 480px) {
+  .date-filter__pdf-actions,
+  .history-card__pdf-actions {
+    grid-template-columns: 1fr;
+  }
 }

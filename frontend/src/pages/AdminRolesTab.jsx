@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchRoles, createRole, updateRoleCommission, fetchPrice } from "../api";
+import { fetchRoles, createRole, updateRoleCommission, fetchPrice, openPriceSocket } from "../api";
 import { personalizePrice } from "../utils/priceCommission";
 
 function emptyLimits(role) {
@@ -175,9 +175,19 @@ export default function AdminRolesTab() {
 
   useEffect(() => {
     reload();
-    fetchPrice()
-      .then((payload) => setRawGoldCard(pickPrimaryGoldCard(payload)))
-      .catch(() => {});
+    function applyPrice(payload) {
+      setRawGoldCard(pickPrimaryGoldCard(payload));
+    }
+    fetchPrice().then(applyPrice).catch(() => {});
+    // Live feed so حداقل/حداکثر مبلغ stay in sync with گرم۱۸.
+    const ws = openPriceSocket(applyPrice);
+    return () => {
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+    };
   }, []);
 
   useEffect(() => {

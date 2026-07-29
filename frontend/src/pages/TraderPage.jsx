@@ -74,8 +74,8 @@ export default function TraderPage() {
   const primaryCard = cards.find((c) => c.is_primary);
   const otherCards = cards.filter((c) => !c.is_primary);
   const prevByItemId = Object.fromEntries((prevCards || []).map((c) => [c.goldbridge_item_id, c]));
-  // Keep the open modal on the LIVE card from the feed so the waiting
-  // "قیمت تغییر کرده" banner tracks market moves after submit.
+  // Keep the open modal on the LIVE card from the feed so form/confirm
+  // price-change tags track market moves before submit.
   const liveModalCard = activeOrder
     ? cards.find((c) => c.goldbridge_item_id === activeOrder.card.goldbridge_item_id) || activeOrder.card
     : null;

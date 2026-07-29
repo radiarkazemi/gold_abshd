@@ -191,6 +191,13 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
         </div>
         <div className="order-card__actions">
           <button
+            className="order-btn order-btn--accept"
+            disabled={busyId === order.id}
+            onClick={() => handleDecision(order.id, "accepted")}
+          >
+            تایید
+          </button>
+          <button
             className="order-btn order-btn--reject"
             disabled={busyId === order.id}
             onClick={() => handleDecision(order.id, "rejected")}
@@ -203,13 +210,6 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
             onClick={() => handleDecision(order.id, "rejected_price_change")}
           >
             رد به دلیل تغییر مظنه
-          </button>
-          <button
-            className="order-btn order-btn--accept"
-            disabled={busyId === order.id}
-            onClick={() => handleDecision(order.id, "accepted")}
-          >
-            تایید
           </button>
         </div>
       </div>

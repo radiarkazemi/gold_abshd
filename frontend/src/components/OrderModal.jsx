@@ -41,7 +41,17 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
   const pollRef = useRef(null);
   const tickRef = useRef(null);
   const localDeadlineRef = useRef(0);
+  // Snapshot prices when the modal opens so form/confirm can show a
+  // "قیمت تغییر کرد" tag if the live feed moves before submit.
+  const baselinePriceRef = useRef(null);
   const meta = SIDE_META[side];
+
+  if (baselinePriceRef.current == null && card) {
+    baselinePriceRef.current = {
+      gram18: side === "buy" ? card.gram18_buy_price : card.gram18_sell_price,
+      mesghal: side === "buy" ? card.buy_price : card.sell_price,
+    };
+  }
 
   function syncCountdownFromOrder(order) {
     if (!order || order.status !== "pending") {
@@ -293,8 +303,50 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
       ? STATUS_META[liveOrder.status]
       : STATUS_META.pending;
 
+  // Lock the waiting card while the admin-visibility countdown is running.
+  // After it expires (and the user has not retried), they may leave —
+  // the order is already soft-hidden from admin "در انتظار".
+  const waitingLocked = Boolean(result && liveOrder?.status === "pending" && secondsLeft > 0);
+
+  function requestClose() {
+    if (waitingLocked) return;
+    onClose();
+  }
+
+  // Form + confirm only: compare live feed to the price when the modal opened.
+  // Timer/waiting card intentionally does NOT show this tag.
+  const liveDisplayPrice = !isCoin && gram18OnlyDisplay ? unitPrice() : finalSidePrice();
+  const baselineDisplayPrice =
+    !isCoin && gram18OnlyDisplay
+      ? baselinePriceRef.current?.gram18
+      : baselinePriceRef.current?.mesghal;
+  const formPriceChanged =
+    !result &&
+    baselineDisplayPrice != null &&
+    liveDisplayPrice != null &&
+    Math.round(Number(baselineDisplayPrice)) !== Math.round(Number(liveDisplayPrice));
+
+  const priceChangeTag = formPriceChanged ? (
+    <p className="modal-result__price-change">
+      {!isCoin && gram18OnlyDisplay ? (
+        <>
+          مظنه از {toFarsiNumber(Math.round(baselineDisplayPrice))} به{" "}
+          {toFarsiNumber(Math.round(liveDisplayPrice))} تومان (گرم ۱۸) تغییر کرده
+        </>
+      ) : (
+        <>
+          مظنه از {toFarsiNumber(Math.round(baselineDisplayPrice))} به{" "}
+          {toFarsiNumber(Math.round(liveDisplayPrice))} تومان تغییر کرده
+        </>
+      )}
+    </p>
+  ) : null;
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className={`modal-backdrop${waitingLocked ? " modal-backdrop--locked" : ""}`}
+      onClick={requestClose}
+    >
       <div
         ref={modalRef}
         className={`modal-sheet modal-sheet--${meta.accent}`}
@@ -317,10 +369,15 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
             {liveOrder?.status === "pending" && (
               <div className="modal-result__timer">
                 {secondsLeft > 0 ? (
-                  <CircularCountdown
-                    order={liveOrder}
-                    totalSeconds={limits?.pending_seconds || DEFAULT_PENDING_SECONDS}
-                  />
+                  <>
+                    <CircularCountdown
+                      order={liveOrder}
+                      totalSeconds={limits?.pending_seconds || DEFAULT_PENDING_SECONDS}
+                    />
+                    <p className="modal-result__lock-hint">
+                      تا پایان شمارش معکوس نمی‌توانید این صفحه را ببندید.
+                    </p>
+                  </>
                 ) : retryCount < maxRetries ? (
                   <button
                     type="button"
@@ -372,13 +429,16 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
               «سفارش‌های من» ضمیمه کنید.
             </p>
             {shownError && <p className="field__error">{shownError}</p>}
-            <button type="button" className="modal-btn modal-btn--ghost" onClick={onClose}>
-              بستن
-            </button>
+            {!waitingLocked && (
+              <button type="button" className="modal-btn modal-btn--ghost" onClick={requestClose}>
+                بستن
+              </button>
+            )}
           </div>
         ) : confirming ? (
           <div className="modal-confirm">
             <p className="modal-confirm__text">لطفا اطلاعات سفارش را بررسی و تایید کنید:</p>
+            {priceChangeTag}
             <div className="modal-confirm__row">
               <span>{isCoin ? "قیمت (هر عدد)" : gram18OnlyDisplay ? "قیمت (گرم ۱۸)" : "قیمت (مثقال ۱۷)"}</span>
               <span>
@@ -423,6 +483,7 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
           </div>
         ) : (
           <form onSubmit={handleFormSubmit}>
+            {priceChangeTag}
             {!isCoin && (
               <div className="segmented">
                 <button
@@ -509,7 +570,7 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
             {shownError && <p className="field__error">{shownError}</p>}
 
             <div className="modal-actions">
-              <button type="button" className="modal-btn modal-btn--ghost" onClick={onClose}>
+              <button type="button" className="modal-btn modal-btn--ghost" onClick={requestClose}>
                 انصراف
               </button>
               <button

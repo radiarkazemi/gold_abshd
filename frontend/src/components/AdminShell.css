@@ -24,6 +24,23 @@
   }
 }
 
+/* Older / smaller laptop widths: keep sidebar usable without crowding content. */
+@media (min-width: 900px) and (max-width: 1200px) {
+  .admin-shell__sidebar {
+    width: 196px;
+    padding: 18px 12px;
+  }
+
+  .admin-shell__content {
+    padding: 18px 16px;
+  }
+
+  .admin-shell__nav-item {
+    font-size: 13px;
+    padding: 9px 10px;
+  }
+}
+
 .admin-shell__brand {
   margin-bottom: 26px;
   padding: 0 6px;
@@ -196,7 +213,9 @@
 
 .admin-shell__content {
   flex: 1;
+  min-width: 0;
   padding: 18px;
+  overflow-x: auto;
   overflow-y: auto;
   padding-bottom: calc(78px + env(safe-area-inset-bottom));
 }

@@ -180,20 +180,20 @@
 }
 
 .order-card__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 .order-btn {
-  flex: 1;
   border: none;
   border-radius: var(--radius-sm);
-  padding: 10px 0;
-  font-size: 14px;
+  padding: 10px 8px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   min-width: 0;
+  min-height: 40px;
 }
 
 .order-btn:disabled {
@@ -212,11 +212,11 @@
 }
 
 .order-btn--reject-price {
-  flex: 1 1 100%;
+  grid-column: 1 / -1;
   background: rgba(207, 100, 70, 0.18);
   color: var(--sell-bright);
   border: 1px solid var(--sell);
-  font-size: 12.5px;
+  font-size: 12px;
   padding: 9px 8px;
 }
 
@@ -364,7 +364,9 @@
   }
 }
 
-@media (max-width: 760px) {
+/* Card-style order rows for tablets and older laptop widths so the
+   action buttons (تایید / رد / رد به دلیل تغییر مظنه) stay visible. */
+@media (max-width: 1200px) {
   .order-table-wrap {
     overflow: visible;
     border: none;
@@ -439,6 +441,11 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
+    min-width: 0;
+  }
+
+  .order-table__actions .order-btn--reject-price {
+    grid-column: 1 / -1;
   }
 
   .order-table td[data-label="وضعیت"] .order-card__status,
@@ -1436,8 +1443,29 @@
 }
 
 .order-table__actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 6px;
+  min-width: 220px;
+  white-space: normal;
+}
+
+.order-table td[data-label="عملیات"] {
+  white-space: normal;
+  min-width: 220px;
+  vertical-align: middle;
+}
+
+.order-table__actions .order-btn {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.order-table__actions .order-btn--reject-price {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  padding: 7px 6px;
+  white-space: normal;
 }
 
 .order-table__receipt-btn {
