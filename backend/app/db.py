@@ -152,6 +152,9 @@ def _patch_orders_table():
         conn.execute(text(
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0"
         ))
+        conn.execute(text(
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS reject_reason VARCHAR"
+        ))
         # Existing pending rows with no deadline would be invisible to
         # the admin queue (filter requires deadline > now). Give them a
         # fresh window so a deploy mid-shift doesn't drop live orders.

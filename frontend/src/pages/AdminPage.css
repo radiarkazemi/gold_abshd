@@ -181,6 +181,7 @@
 
 .order-card__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -192,6 +193,7 @@
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
+  min-width: 0;
 }
 
 .order-btn:disabled {
@@ -207,6 +209,15 @@
 .order-btn--reject {
   background: var(--sell);
   color: #ffece5;
+}
+
+.order-btn--reject-price {
+  flex: 1 1 100%;
+  background: rgba(207, 100, 70, 0.18);
+  color: var(--sell-bright);
+  border: 1px solid var(--sell);
+  font-size: 12.5px;
+  padding: 9px 8px;
 }
 
 .order-card__status {

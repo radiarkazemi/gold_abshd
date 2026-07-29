@@ -235,7 +235,9 @@ export default function MyOrdersPage() {
                 </span>
                 {order.is_manual && <span className="manual-order-tag">دستی</span>}
                 <span className={`history-card__status history-card__status--${order.status}`}>
-                  {STATUS_LABEL[order.status]}
+                  {order.reject_reason === "price_change"
+                    ? "رد — تغییر مظنه"
+                    : STATUS_LABEL[order.status]}
                 </span>
               </div>
               <div className="history-card__rows">

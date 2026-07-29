@@ -250,6 +250,11 @@
   color: var(--text-muted);
 }
 
+.modal-btn--primary {
+  background: var(--gold);
+  color: #1a1508;
+}
+
 .modal-btn--buy {
   background: var(--buy);
   color: #eafff2;
@@ -452,6 +457,22 @@
   border-radius: var(--radius-sm);
   padding: 8px 12px;
   margin: 0 0 14px;
+}
+
+.modal-result__price-reject {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+.modal-result__reject-reason {
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--sell-bright);
 }
 
 .modal-result__cancel-btn {

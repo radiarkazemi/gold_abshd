@@ -236,6 +236,9 @@ class Order(Base):
     # How many times the customer has already bumped the waiting window
     # after the initial countdown. Capped by ORDER_MAX_RETRIES.
     retry_count = Column(Integer, nullable=False, default=0)
+    # Optional reject reason. Currently used for admin "رد به دلیل تغییر مظنه"
+    # which sets reject_reason="price_change" while status stays "rejected".
+    reject_reason = Column(String, nullable=True)
 
     @property
     def has_receipt(self) -> bool:

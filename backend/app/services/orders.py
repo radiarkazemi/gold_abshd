@@ -384,10 +384,21 @@ def decide_order(db: Session, order_id: str, status: str) -> Order:
         raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
     if order.status != OrderStatusEnum.pending:
         raise HTTPException(status_code=400, detail="این سفارش قبلا تصمیم‌گیری شده")
-    if status not in ("accepted", "rejected"):
+
+    # "rejected_price_change" is stored as status=rejected + reject_reason
+    # so existing rejected filters / reports keep working.
+    if status == "rejected_price_change":
+        order.status = OrderStatusEnum.rejected
+        order.reject_reason = "price_change"
+    elif status == "rejected":
+        order.status = OrderStatusEnum.rejected
+        order.reject_reason = None
+    elif status == "accepted":
+        order.status = OrderStatusEnum.accepted
+        order.reject_reason = None
+    else:
         raise HTTPException(status_code=400, detail="وضعیت نامعتبر است")
 
-    order.status = OrderStatusEnum(status)
     order.updated_at = datetime.utcnow()
 
     if status == "accepted" and order.user_id:
@@ -418,6 +429,52 @@ def decide_order(db: Session, order_id: str, status: str) -> Order:
         )
         db.add(txn)
 
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+def resubmit_order_at_new_price(db: Session, order_id: str, user: User) -> Order:
+    """
+    After an admin rejection for market-move (reject_reason=price_change),
+    the customer can re-open the same order at the CURRENT live quote.
+    Status goes back to pending with a fresh countdown; prices are
+    rewritten to match what the price card shows right now.
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
+    if order.user_id != user.id:
+        raise HTTPException(status_code=403, detail="این سفارش متعلق به شما نیست")
+    if order.status != OrderStatusEnum.rejected or order.reject_reason != "price_change":
+        raise HTTPException(
+            status_code=400,
+            detail="فقط سفارش‌های رد‌شده به‌دلیل تغییر مظنه را می‌توان با مظنه جدید ارسال کرد",
+        )
+    if not order.goldbridge_item_id:
+        raise HTTPException(status_code=400, detail="این سفارش قابل قیمت‌گذاری مجدد نیست")
+
+    raw_item = price_cards.get_raw_item(order.goldbridge_item_id)
+    if not raw_item or raw_item.get("buy") is None or raw_item.get("sell") is None:
+        raise HTTPException(status_code=503, detail="قیمت لحظه‌ای در دسترس نیست، لطفا کمی صبر کنید.")
+
+    side = order.side.value
+    is_coin = raw_item.get("type") == price_cards.COIN_ITEM_TYPE
+    mesghal17_raw_price = raw_item["buy"] if side == "buy" else raw_item["sell"]
+    final_price = apply_pricing_formula(raw_item["buy"], raw_item["sell"], side, user)
+    if is_coin:
+        price_at_submit = final_price
+    else:
+        price_at_submit = mesghal17_to_gram18(final_price)
+
+    order.price_at_submit = price_at_submit
+    order.mesghal17_price_at_submit = final_price
+    order.mesghal17_raw_price_at_submit = mesghal17_raw_price
+    order.status = OrderStatusEnum.pending
+    order.reject_reason = None
+    order.retry_count = 0
+    order.pending_deadline_at = _new_pending_deadline()
+    order.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(order)
     return order

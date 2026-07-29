@@ -271,6 +271,18 @@ export async function retryMyOrder(orderId) {
   return res.json();
 }
 
+export async function retryMyOrderAtNewPrice(orderId) {
+  const res = await fetch(`${API_BASE}/api/my/orders/${orderId}/retry-new-price`, {
+    method: "POST",
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "ارسال با مظنه جدید با خطا مواجه شد");
+  }
+  return res.json();
+}
+
 export async function fetchMyOrderDetail(orderId) {
   const res = await fetch(`${API_BASE}/api/my/orders/${orderId}`, {
     headers: { ...authHeaders() },

@@ -15,6 +15,7 @@ from app.services.orders import (
     order_to_customer_out,
     cancel_order as cancel_order_db,
     retry_pending_order as retry_pending_order_db,
+    resubmit_order_at_new_price as resubmit_order_at_new_price_db,
 )
 from app.services.trading_status import is_trading_online
 from app.services import price_cards
@@ -123,6 +124,31 @@ async def retry_my_order(
     alert/sound as a fresh submission - they need to notice it again.
     """
     order = retry_pending_order_db(db, order_id, current_user.id)
+    await manager.broadcast_to_admins({"type": "new_order", "order": order_to_dict(db, order)})
+    return order_to_customer_out(order)
+
+
+@router.post("/api/my/orders/{order_id}/retry-new-price", response_model=OrderOut)
+async def retry_my_order_at_new_price(
+    order_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    After admin rejected for market-move, customer re-submits the same
+    order at the live quote. Broadcast as new_order so admin is alerted.
+    """
+    if not is_trading_online(db):
+        raise HTTPException(
+            status_code=403,
+            detail="در حال حاضر امکان ثبت سفارش وجود ندارد. لطفا بعدا مراجعه کنید.",
+        )
+    if current_user.is_trading_banned:
+        raise HTTPException(
+            status_code=403,
+            detail="برای این حساب امکان خرید و فروش غیرفعال شده است.",
+        )
+    order = resubmit_order_at_new_price_db(db, order_id, current_user)
     await manager.broadcast_to_admins({"type": "new_order", "order": order_to_dict(db, order)})
     return order_to_customer_out(order)
 

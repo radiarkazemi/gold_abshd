@@ -314,6 +314,10 @@ function AdminPanel({ onLogout }) {
                       <td data-label="وضعیت">
                         {order.status === "pending" ? (
                           <span className="order-card__status order-card__status--pending">در انتظار</span>
+                        ) : order.reject_reason === "price_change" ? (
+                          <span className="order-card__status order-card__status--rejected">
+                            رد — تغییر مظنه
+                          </span>
                         ) : (
                           <span className={`order-card__status order-card__status--${order.status}`}>
                             {STATUS_LABEL[order.status]}
@@ -337,6 +341,13 @@ function AdminPanel({ onLogout }) {
                                 onClick={() => handleDecision(order.id, "rejected")}
                               >
                                 رد
+                              </button>
+                              <button
+                                className="order-btn order-btn--reject-price"
+                                disabled={busyId === order.id}
+                                onClick={() => handleDecision(order.id, "rejected_price_change")}
+                              >
+                                رد به دلیل تغییر مظنه
                               </button>
                             </>
                           )}

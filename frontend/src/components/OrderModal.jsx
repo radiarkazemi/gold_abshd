@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchOrderLimits, fetchMyOrderDetail, retryMyOrder } from "../api";
+import { fetchOrderLimits, fetchMyOrderDetail, retryMyOrder, retryMyOrderAtNewPrice } from "../api";
 import { localDeadlineMsFromOrder, DEFAULT_PENDING_SECONDS } from "../utils/orderCountdown";
 import { CircularCountdown } from "./PendingCountdown";
 import FormattedNumberInput from "./FormattedNumberInput";
@@ -155,6 +155,34 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
     }
   }
 
+  async function handleRetryNewPrice() {
+    if (!result || retrying) return;
+    setRetrying(true);
+    setLocalError("");
+    try {
+      const updated = await retryMyOrderAtNewPrice(result.id);
+      setLiveOrder(updated);
+      syncCountdownFromOrder(updated);
+      clearInterval(pollRef.current);
+      pollRef.current = setInterval(() => {
+        fetchMyOrderDetail(result.id)
+          .then((next) => {
+            setLiveOrder(next);
+            if (next.status === "pending") syncCountdownFromOrder(next);
+            else {
+              clearInterval(pollRef.current);
+              setSecondsLeft(0);
+            }
+          })
+          .catch(() => {});
+      }, 3000);
+    } catch (e) {
+      setLocalError(e.message || "ارسال با مظنه جدید با خطا مواجه شد");
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   function unitPrice() {
     return side === "buy" ? card?.gram18_buy_price : card?.gram18_sell_price;
   }
@@ -250,16 +278,20 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
 
   const shownError = localError || error;
   const total = computedTotal();
-  const statusMeta = liveOrder ? STATUS_META[liveOrder.status] : STATUS_META.pending;
   const gram18OnlyDisplay = !isCoin && limits?.price_label_mode === "gram18_only";
   const retryCount = liveOrder?.retry_count ?? 0;
   const maxRetries = liveOrder?.max_retries ?? FALLBACK_MAX_RETRIES;
-
-  const priceChanged =
-    liveOrder?.status === "pending" &&
+  const rejectedForPriceChange =
+    liveOrder?.status === "rejected" && liveOrder?.reject_reason === "price_change";
+  const showRejectedPriceChange =
+    rejectedForPriceChange &&
     submitFinalPrice() != null &&
-    currentFinalPrice() != null &&
-    Math.round(currentFinalPrice()) !== Math.round(submitFinalPrice());
+    currentFinalPrice() != null;
+  const statusMeta = rejectedForPriceChange
+    ? { label: "رد شد", className: "modal-result__status--rejected" }
+    : liveOrder
+      ? STATUS_META[liveOrder.status]
+      : STATUS_META.pending;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -306,20 +338,33 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
               </div>
             )}
 
-            {priceChanged && (
-              <p className="modal-result__price-change">
-                {gram18OnlyDisplay && !isCoin ? (
-                  <>
-                    مظنه از {toFarsiNumber(Math.round(submitFinalPrice()))} به{" "}
-                    {toFarsiNumber(Math.round(currentFinalPrice()))} تومان (گرم ۱۸) تغییر کرده
-                  </>
-                ) : (
-                  <>
-                    مظنه از {toFarsiNumber(Math.round(submitFinalPrice()))} به{" "}
-                    {toFarsiNumber(Math.round(currentFinalPrice()))} تومان تغییر کرده
-                  </>
+            {rejectedForPriceChange && (
+              <div className="modal-result__price-reject">
+                <p className="modal-result__reject-reason">رد به دلیل تغییر مظنه</p>
+                {showRejectedPriceChange && (
+                  <p className="modal-result__price-change">
+                    {gram18OnlyDisplay && !isCoin ? (
+                      <>
+                        مظنه از {toFarsiNumber(Math.round(submitFinalPrice()))} به{" "}
+                        {toFarsiNumber(Math.round(currentFinalPrice()))} تومان (گرم ۱۸) تغییر کرده
+                      </>
+                    ) : (
+                      <>
+                        مظنه از {toFarsiNumber(Math.round(submitFinalPrice()))} به{" "}
+                        {toFarsiNumber(Math.round(currentFinalPrice()))} تومان تغییر کرده
+                      </>
+                    )}
+                  </p>
                 )}
-              </p>
+                <button
+                  type="button"
+                  className="modal-btn modal-btn--primary"
+                  onClick={handleRetryNewPrice}
+                  disabled={retrying}
+                >
+                  {retrying ? "در حال ارسال…" : "تلاش با مظنه جدید"}
+                </button>
+              </div>
             )}
 
             <p className="modal-result__hint">

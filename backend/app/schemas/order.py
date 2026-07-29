@@ -23,6 +23,9 @@ class OrderOut(BaseModel):
     mesghal17_price_at_submit: Optional[float] = None
     mesghal17_raw_price_at_submit: Optional[float] = None
     goldbridge_item_id: Optional[int] = None
+    # "price_change" when admin rejected specifically because the market
+    # moved - drives the customer "تلاش با مظنه جدید" UX. Null otherwise.
+    reject_reason: Optional[str] = None
     is_manual: bool = False
     has_receipt: bool = False
     pending_deadline_at: Optional[datetime] = None
@@ -50,7 +53,8 @@ class OrderOut(BaseModel):
 
 
 class OrderDecisionIn(BaseModel):
-    status: str   # "accepted" | "rejected"
+    # "accepted" | "rejected" | "rejected_price_change"
+    status: str
 
 
 class BalanceOut(BaseModel):
