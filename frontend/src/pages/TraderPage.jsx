@@ -6,7 +6,6 @@ import { useTheme } from "../context/ThemeContext";
 import PriceCardRow from "../components/PriceCardRow";
 import OrderModal from "../components/OrderModal";
 import NoticeCard from "../components/NoticeCard";
-import NoticeModal from "../components/NoticeModal";
 import RecentOrdersTable from "../components/RecentOrdersTable";
 import BottomTabBar from "../components/BottomTabBar";
 import RefreshBar from "../components/RefreshBar";
@@ -82,7 +81,6 @@ export default function TraderPage() {
 
   return (
     <div className="app">
-      <NoticeModal />
       <header className="app__header">
         <span className={`app__status ${tradingOnline ? "is-live" : "is-offline"}`}>
           <span className="app__status-dot" />

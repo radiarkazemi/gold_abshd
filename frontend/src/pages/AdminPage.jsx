@@ -15,11 +15,18 @@ import AdminKycTab from "./AdminKycTab";
 import AdminTransfersTab from "./AdminTransfersTab";
 import AdminShell from "../components/AdminShell";
 import JalaliDateInput from "../components/JalaliDateInput";
+import AdminToast, { useAdminToasts } from "../components/AdminToast";
 import { playNotificationSound } from "../utils/notificationSound";
+import {
+  ensureNotificationPermission,
+  notifyNewOrder,
+  registerNotifyServiceWorker,
+} from "../utils/desktopNotify";
 import { orderGoldWeight, orderTotalMoney, summarizeOrders } from "../utils/orderCalc";
 import { formatCashStatus } from "../utils/balanceFormat";
 import { remainingFromOrder } from "../utils/orderCountdown";
 import { orderPriceChangeLabel } from "../utils/orderPriceChange";
+import "../components/AdminToast.css";
 
 function fa(n, opts) {
   return Number(n).toLocaleString("fa-IR", opts);
@@ -89,6 +96,7 @@ function AdminPanel({ onLogout }) {
   });
   const orderTotals = summarizeOrders(dateFilteredOrders);
   const wsRef = useRef(null);
+  const { toasts, pushToast, dismissToast } = useAdminToasts();
 
   function refreshPendingCount() {
     fetchOrders("pending").then((data) => setPendingCount(data.length)).catch(() => {});
@@ -121,6 +129,13 @@ function AdminPanel({ onLogout }) {
   }, [filter]);
 
   useEffect(() => {
+    // Request system notification permission + register SW so Windows
+    // toasts and mobile web notifications work for new orders.
+    registerNotifyServiceWorker();
+    ensureNotificationPermission();
+  }, []);
+
+  useEffect(() => {
     function loadPrices() {
       fetchPrice()
         .then((payload) => setLiveCards(payload.cards || []))
@@ -139,9 +154,22 @@ function AdminPanel({ onLogout }) {
       setWsTick((t) => t + 1);
 
       if (message?.type === "new_order") {
+        const order = message.order;
         playNotificationSound();
         setNewOrderFlash(true);
         setTimeout(() => setNewOrderFlash(false), 2500);
+
+        const side = order?.side === "buy" ? "خرید" : order?.side === "sell" ? "فروش" : "سفارش";
+        const who = order?.customer_name
+          ? `${order.customer_name}${order.customer_code != null ? ` #${order.customer_code}` : ""}`
+          : "مشتری";
+        pushToast({
+          title: "سفارش جدید",
+          message: `${side} — ${who}`,
+          tone: "success",
+          durationMs: 6000,
+        });
+        notifyNewOrder(order);
       }
     });
     ws.onopen = () => setConnected(true);
@@ -187,6 +215,7 @@ function AdminPanel({ onLogout }) {
       {newOrderFlash && (
         <div className="new-order-flash">🔔 سفارش جدید دریافت شد</div>
       )}
+      <AdminToast toasts={toasts} onDismiss={dismissToast} />
       {tab === "dashboard" ? (
         <AdminDashboardTab onGoToOrders={() => setTab("orders")} refreshSignal={wsTick} />
       ) : tab === "users" ? (

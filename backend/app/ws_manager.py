@@ -3,7 +3,7 @@
 و اطلاع‌رسانی به کلاینت مربوطه وقتی سفارشش accept/reject شد.
 """
 from fastapi import WebSocket
-from typing import Dict, List
+from typing import List
 import json
 
 from app.obfuscation import encode_payload
@@ -58,6 +58,22 @@ class ConnectionManager:
                 dead.append(conn)
         for d in dead:
             self.disconnect_admin(d)
+
+    async def broadcast_site_event(self, data: dict):
+        """
+        Non-price events for customer clients on /ws/price (e.g. notice
+        updates). Sent as clear JSON with a `type` field so the frontend
+        can distinguish them from obfuscated price frames.
+        """
+        payload = json.dumps(data, default=str)
+        dead = []
+        for conn in self.price_connections:
+            try:
+                await conn.send_text(payload)
+            except Exception:
+                dead.append(conn)
+        for d in dead:
+            self.disconnect_price(d)
 
 
 manager = ConnectionManager()

@@ -4,6 +4,8 @@ screen (e.g. minimum order amount, delivery cutoff times, etc - the
 same kind of thing the reference app showed as static text, except
 here the admin can actually change it without a code deploy).
 """
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
 from app.models_db import AppSetting
@@ -28,10 +30,13 @@ def get_notice_updated_at(db: Session) -> str | None:
 
 def set_notice(db: Session, text: str) -> str:
     row = db.query(AppSetting).filter(AppSetting.key == NOTICE_KEY).first()
+    now = datetime.utcnow()
     if row:
         row.value = text
+        row.updated_at = now
     else:
-        row = AppSetting(key=NOTICE_KEY, value=text)
+        row = AppSetting(key=NOTICE_KEY, value=text, updated_at=now)
         db.add(row)
     db.commit()
+    db.refresh(row)
     return text

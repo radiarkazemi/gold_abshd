@@ -11,6 +11,7 @@ import UploadReceiptPage from "./pages/UploadReceiptPage";
 import RegisterTransferPage from "./pages/RegisterTransferPage";
 import TermsPage from "./pages/TermsPage";
 import AboutPage from "./pages/AboutPage";
+import NoticeModal from "./components/NoticeModal";
 import "./components/PriceButton.css";
 import "./components/OrderModal.css";
 import "./components/SideMenu.css";
@@ -35,7 +36,13 @@ const ADMIN_PATH = "/admin-hs-panel";
 function Protected({ children }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="app-loading">در حال بارگذاری…</div>;
-  return user ? children : <LoginPage />;
+  if (!user) return <LoginPage />;
+  return (
+    <>
+      <NoticeModal />
+      {children}
+    </>
+  );
 }
 
 export default function App() {

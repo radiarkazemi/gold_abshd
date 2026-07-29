@@ -776,12 +776,27 @@ export function openAdminSocket(onMessage) {
   return ws;
 }
 
-export function openPriceSocket(onPrice) {
+/**
+ * Price socket. Price frames are `{ payload: <obfuscated> }`.
+ * Site events (e.g. notice_updated) are clear JSON with a `type` field.
+ */
+export function openPriceSocket(onPrice, onEvent) {
   const ws = new WebSocket(`${WS_BASE}/ws/price`);
   ws.onmessage = (event) => {
     try {
-      const { payload } = JSON.parse(event.data);
-      onPrice(decodePayload(payload));
+      const data = JSON.parse(event.data);
+      if (data && data.type) {
+        onEvent?.(data);
+        try {
+          window.dispatchEvent(new CustomEvent("goldapp:site-event", { detail: data }));
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      if (data?.payload != null) {
+        onPrice?.(decodePayload(data.payload));
+      }
     } catch (e) {
       console.error("Bad price payload", e);
     }
