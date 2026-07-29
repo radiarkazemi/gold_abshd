@@ -369,15 +369,10 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
             {liveOrder?.status === "pending" && (
               <div className="modal-result__timer">
                 {secondsLeft > 0 ? (
-                  <>
-                    <CircularCountdown
-                      order={liveOrder}
-                      totalSeconds={limits?.pending_seconds || DEFAULT_PENDING_SECONDS}
-                    />
-                    <p className="modal-result__lock-hint">
-                      تا پایان شمارش معکوس نمی‌توانید این صفحه را ببندید.
-                    </p>
-                  </>
+                  <CircularCountdown
+                    order={liveOrder}
+                    totalSeconds={limits?.pending_seconds || DEFAULT_PENDING_SECONDS}
+                  />
                 ) : retryCount < maxRetries ? (
                   <button
                     type="button"
