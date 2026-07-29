@@ -128,6 +128,32 @@
   font-weight: 500;
 }
 
+.order-price-changed-tag {
+  display: inline-block;
+  margin-inline-start: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sell-bright);
+  background: rgba(207, 100, 70, 0.12);
+  border: 1px solid var(--sell);
+  white-space: nowrap;
+}
+
+.order-price-changed-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sell-bright);
+}
+
+.order-card__row--price-change .order-card__value {
+  color: var(--sell-bright);
+  font-weight: 700;
+}
+
 .order-card__body {
   display: flex;
   flex-direction: column;

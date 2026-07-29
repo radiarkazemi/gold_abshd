@@ -23,23 +23,72 @@ function formatDate(iso) {
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
 const STATUS_LABEL = { pending: "در انتظار", accepted: "تایید شده", rejected: "رد شده", cancelled: "لغو شده" };
 
-// Opens a new tab with a print-ready receipt for one order, then
-// triggers the browser's native print dialog - the user picks "Save as
-// PDF" there. This is deliberately NOT a JS PDF-generation library:
-// those don't render Persian/Arabic script correctly without a lot of
-// font-embedding work, while the browser's own print engine handles
-// RTL Persian text perfectly since it's just normal HTML/CSS.
-export function downloadOrderReceipt(order) {
+function unitPriceForPrint(order, priceLabelMode = "mesghal_and_gram18") {
+  const gram18Only = priceLabelMode === "gram18_only";
+  if (gram18Only) {
+    return {
+      label: "فی (گرم ۱۸)",
+      value: order.price_at_submit,
+    };
+  }
+  return {
+    label: "فی (مثقال ۱۷)",
+    value: order.mesghal17_price_at_submit ?? order.price_at_submit,
+  };
+}
+
+/**
+ * Print via a hidden iframe so closing the print dialog does not
+ * dismiss the PWA / leave the user without an app window.
+ */
+function printHtml(html) {
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none;";
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument || iframe.contentWindow.document;
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  const cleanup = () => {
+    try {
+      iframe.remove();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const win = iframe.contentWindow;
+  const runPrint = () => {
+    try {
+      win.focus();
+      win.print();
+    } finally {
+      // afterprint fires on most browsers; fallback timeout otherwise
+      win.addEventListener("afterprint", cleanup, { once: true });
+      setTimeout(cleanup, 60_000);
+    }
+  };
+
+  // Give fonts a moment to load before printing
+  setTimeout(runPrint, 350);
+}
+
+// Opens a print-ready receipt for one order via a hidden iframe.
+export function downloadOrderReceipt(order, { priceLabelMode = "mesghal_and_gram18" } = {}) {
   const weight = orderWeight(order);
   const money = orderMoney(order);
+  const unit = unitPriceForPrint(order, priceLabelMode);
 
   const rows = [
     ["نوع سفارش", SIDE_LABEL[order.side] || order.side],
     ["وضعیت", STATUS_LABEL[order.status] || order.status],
     ["وزن طلا", `${fa(weight, { maximumFractionDigits: 3 })} گرم ۱۸`],
     ["مبلغ کل", `${fa(Math.round(money))} تومان`],
-    ...(order.mesghal17_price_at_submit
-      ? [["قیمت (مثقال ۱۷)", `${fa(Math.round(order.mesghal17_price_at_submit))} تومان`]]
+    ...(unit.value != null
+      ? [[unit.label, `${fa(Math.round(unit.value))} تومان`]]
       : []),
     ...(order.customer_name ? [["مشتری", `${order.customer_name} #${order.customer_code}`]] : []),
     ["شماره سفارش", order.id],
@@ -106,30 +155,25 @@ export function downloadOrderReceipt(order) {
   <p class="sub">رسید سفارش</p>
   <table>${rowsHtml}</table>
   <p class="footer">این رسید در تاریخ ${formatDate(new Date().toISOString())} صادر شده است.</p>
-  <script>window.onload = () => setTimeout(() => window.print(), 300);</script>
 </body>
 </html>`;
 
-  const win = window.open("", "_blank");
-  win.document.write(html);
-  win.document.close();
+  printHtml(html);
 }
 
-// Same print-dialog approach as downloadOrderReceipt, but lists many
-// orders in one table instead of opening a separate document per
-// order - built for "download all orders in this date range" instead
-// of a per-card button.
-export function downloadOrdersReceipt(orders, { dateFrom, dateTo } = {}) {
+export function downloadOrdersReceipt(orders, { dateFrom, dateTo, priceLabelMode = "mesghal_and_gram18" } = {}) {
+  const unitLabel = priceLabelMode === "gram18_only" ? "فی (گرم۱۸)" : "فی (مثقال۱۷)";
   const rowsHtml = orders
     .map((order) => {
       const weight = orderWeight(order);
       const money = orderMoney(order);
+      const unit = unitPriceForPrint(order, priceLabelMode);
       return `<tr>
         <td>${formatDate(order.created_at)}</td>
         <td>${SIDE_LABEL[order.side] || order.side}</td>
         <td>${STATUS_LABEL[order.status] || order.status}</td>
         <td>${fa(weight, { maximumFractionDigits: 3 })}</td>
-        <td>${fa(Math.round(order.price_at_submit))}</td>
+        <td>${unit.value != null ? fa(Math.round(unit.value)) : "—"}</td>
         <td>${fa(Math.round(money))}</td>
       </tr>`;
     })
@@ -194,18 +238,15 @@ export function downloadOrdersReceipt(orders, { dateFrom, dateTo } = {}) {
   <table>
     <thead>
       <tr>
-        <th>تاریخ</th><th>نوع</th><th>وضعیت</th><th>وزن (گرم۱۸)</th><th>فی</th><th>مبلغ کل</th>
+        <th>تاریخ</th><th>نوع</th><th>وضعیت</th><th>وزن (گرم۱۸)</th><th>${unitLabel}</th><th>مبلغ کل</th>
       </tr>
     </thead>
     <tbody>${rowsHtml}</tbody>
   </table>
   <p class="summary">مجموع طلا: ${goldSummary} — مجموع نقدی: ${cashSummary} — تعداد سفارش‌ها: ${fa(orders.length)}</p>
   <p class="footer">این گزارش در تاریخ ${formatDate(new Date().toISOString())} صادر شده است.</p>
-  <script>window.onload = () => setTimeout(() => window.print(), 300);</script>
 </body>
 </html>`;
 
-  const win = window.open("", "_blank");
-  win.document.write(html);
-  win.document.close();
+  printHtml(html);
 }

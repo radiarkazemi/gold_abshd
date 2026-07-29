@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchMyOrders, fetchMyBalance, fetchReceiptBlobUrl, uploadReceipt, cancelMyOrder } from "../api";
+import { fetchMyOrders, fetchMyBalance, fetchReceiptBlobUrl, uploadReceipt, cancelMyOrder, fetchOrderLimits } from "../api";
 import { downloadOrdersReceipt } from "../utils/printReceipt";
 import { formatCashStatus, formatGoldStatus } from "../utils/balanceFormat";
 import { useAuth } from "../context/AuthContext";
@@ -33,6 +33,16 @@ function formatValue(order) {
   return `${fa(order.value, opts)} ${AMOUNT_LABEL[order.amount_type]}`;
 }
 
+function unitPriceForOrder(order, priceLabelMode) {
+  if (priceLabelMode === "gram18_only") {
+    return { label: "فی (گرم ۱۸)", value: order.price_at_submit };
+  }
+  return {
+    label: "فی (مثقال ۱۷)",
+    value: order.mesghal17_price_at_submit ?? order.price_at_submit,
+  };
+}
+
 function formatDate(iso) {
   return new Date(iso).toLocaleString("fa-IR", {
     month: "2-digit",
@@ -52,6 +62,7 @@ export default function MyOrdersPage() {
   const [dateTo, setDateTo] = useState("");
   const [loading, setLoading] = useState(true);
   const [uploadingId, setUploadingId] = useState(null);
+  const [priceLabelMode, setPriceLabelMode] = useState("mesghal_and_gram18");
 
   function reload() {
     Promise.all([fetchMyOrders(), fetchMyBalance()])
@@ -65,6 +76,9 @@ export default function MyOrdersPage() {
 
   useEffect(() => {
     reload();
+    fetchOrderLimits()
+      .then((limits) => setPriceLabelMode(limits.price_label_mode || "mesghal_and_gram18"))
+      .catch(() => {});
     const interval = setInterval(reload, 6000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -201,7 +215,7 @@ export default function MyOrdersPage() {
           type="button"
           className="date-filter__download-all"
           disabled={visible.length === 0}
-          onClick={() => downloadOrdersReceipt(visible, { dateFrom, dateTo })}
+          onClick={() => downloadOrdersReceipt(visible, { dateFrom, dateTo, priceLabelMode })}
         >
           دانلود همه ({fa(visible.length)}) — PDF
         </button>
@@ -230,9 +244,9 @@ export default function MyOrdersPage() {
                   <span className="history-card__row-value">{formatValue(order)}</span>
                 </div>
                 <div className="history-card__row">
-                  <span className="history-card__row-label">فی</span>
+                  <span className="history-card__row-label">{unitPriceForOrder(order, priceLabelMode).label}</span>
                   <span className="history-card__row-value">
-                    {fa(Math.round(order.price_at_submit))} تومان
+                    {fa(Math.round(unitPriceForOrder(order, priceLabelMode).value))} تومان
                   </span>
                 </div>
                 <div className="history-card__row">

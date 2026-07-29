@@ -22,6 +22,7 @@ class OrderOut(BaseModel):
     price_at_submit: float
     mesghal17_price_at_submit: Optional[float] = None
     mesghal17_raw_price_at_submit: Optional[float] = None
+    goldbridge_item_id: Optional[int] = None
     is_manual: bool = False
     has_receipt: bool = False
     pending_deadline_at: Optional[datetime] = None
@@ -66,6 +67,7 @@ class OrderLimitsOut(BaseModel):
     commission_type: str = "fixed"   # "fixed" | "percentage" - this user's own commission
     commission_value: float = 0.0    # تومان اگر fixed, درصد اگر percentage
     trading_banned: bool = False
+    pending_seconds: int = 60
 
 
 class OrderLimitsUpdateIn(BaseModel):

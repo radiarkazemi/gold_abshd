@@ -74,6 +74,11 @@ export default function TraderPage() {
   const primaryCard = cards.find((c) => c.is_primary);
   const otherCards = cards.filter((c) => !c.is_primary);
   const prevByItemId = Object.fromEntries((prevCards || []).map((c) => [c.goldbridge_item_id, c]));
+  // Keep the open modal on the LIVE card from the feed so the waiting
+  // "قیمت تغییر کرده" banner tracks market moves after submit.
+  const liveModalCard = activeOrder
+    ? cards.find((c) => c.goldbridge_item_id === activeOrder.card.goldbridge_item_id) || activeOrder.card
+    : null;
 
   return (
     <div className="app">
@@ -139,9 +144,9 @@ export default function TraderPage() {
         <RecentOrdersTable refreshSignal={refreshKey} limit={5} />
       </main>
 
-      {activeOrder && (
+      {activeOrder && liveModalCard && (
         <OrderModal
-          card={activeOrder.card}
+          card={liveModalCard}
           side={activeOrder.side}
           onClose={closeModal}
           onSubmit={handleSubmit}

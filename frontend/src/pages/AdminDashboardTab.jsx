@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
-import { fetchOrders, decideOrder, fetchAdminUsers, fetchTradingStatus, updateTradingStatus, fetchOrderLimits, updateOrderLimits } from "../api";
+import { fetchOrders, decideOrder, fetchAdminUsers, fetchTradingStatus, updateTradingStatus, fetchOrderLimits, updateOrderLimits, fetchPrice } from "../api";
 import { orderGoldWeight, orderTotalMoney } from "../utils/orderCalc";
 import PendingCountdown from "../components/PendingCountdown";
+import { orderPriceChangeLabel } from "../utils/orderPriceChange";
 
 const SIDE_LABEL = { buy: "خرید مشتری از ما", sell: "فروش مشتری به ما" };
 
@@ -22,6 +23,7 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
   const [pending, setPending] = useState([]);
   const [tradingOnline, setTradingOnline] = useState(true);
   const [statusBusy, setStatusBusy] = useState(false);
+  const [liveCards, setLiveCards] = useState([]);
 
   async function handleStatusToggle(online) {
     setStatusBusy(true);
@@ -93,6 +95,17 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    function loadPrices() {
+      fetchPrice()
+        .then((payload) => setLiveCards(payload.cards || []))
+        .catch(() => {});
+    }
+    loadPrices();
+    const interval = setInterval(loadPrices, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Also refresh the instant the parent's admin websocket sees any
   // new_order/order_updated event - this is what makes it feel instant
   // instead of waiting for the next poll tick.
@@ -126,6 +139,7 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
   const pendingSell = pending.filter((o) => o.side === "sell");
 
   function renderPendingCard(order) {
+    const priceMove = orderPriceChangeLabel(order, liveCards);
     return (
       <div key={order.id} className={`order-card order-card--${order.side}`}>
         <div className="order-card__top">
@@ -133,6 +147,7 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
             {SIDE_LABEL[order.side]}
           </span>
           {order.is_manual && <span className="manual-order-tag">دستی</span>}
+          {priceMove && <span className="order-price-changed-tag">قیمت تغییر کرد</span>}
           <div className="order-card__top-meta">
             <PendingCountdown order={order} onExpire={handlePendingExpire} />
             <span className="order-card__time">{formatTime(order.created_at)}</span>
@@ -159,6 +174,14 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
               {order.mesghal17_price_at_submit ? fa(Math.round(order.mesghal17_price_at_submit)) : "—"} تومان
             </span>
           </div>
+          {priceMove && (
+            <div className="order-card__row order-card__row--price-change">
+              <span className="order-card__label">مظنه فعلی</span>
+              <span className="order-card__value">
+                از {fa(priceMove.from)} به {fa(priceMove.to)} تومان
+              </span>
+            </div>
+          )}
           {(order.retry_count || 0) > 0 && (
             <div className="order-card__row">
               <span className="order-card__label">تلاش مجدد</span>

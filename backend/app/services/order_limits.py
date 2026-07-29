@@ -64,6 +64,7 @@ def get_effective_limits(db: Session, user) -> dict:
 
     role = getattr(user, "role", None)
     result["trading_banned"] = bool(getattr(user, "is_trading_banned", False))
+    result["pending_seconds"] = int(settings.ORDER_PENDING_SECONDS)
     if role:
         for field in ("min_weight", "max_weight", "min_amount", "max_amount"):
             override = getattr(role, field, None)

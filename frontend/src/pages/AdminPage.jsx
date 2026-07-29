@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { fetchOrders, decideOrder, openAdminSocket, getAdminToken, clearAdminToken, fetchReceiptBlobUrlAsAdmin, getAdminIdentity } from "../api";
+import { fetchOrders, decideOrder, openAdminSocket, getAdminToken, clearAdminToken, fetchReceiptBlobUrlAsAdmin, getAdminIdentity, fetchPrice } from "../api";
 import PendingCountdown from "../components/PendingCountdown";
 import AdminUsersTab from "./AdminUsersTab";
 import AdminLoginPage from "./AdminLoginPage";
@@ -19,6 +19,7 @@ import { playNotificationSound } from "../utils/notificationSound";
 import { orderGoldWeight, orderTotalMoney, summarizeOrders } from "../utils/orderCalc";
 import { formatCashStatus } from "../utils/balanceFormat";
 import { remainingFromOrder } from "../utils/orderCountdown";
+import { orderPriceChangeLabel } from "../utils/orderPriceChange";
 
 function fa(n, opts) {
   return Number(n).toLocaleString("fa-IR", opts);
@@ -78,6 +79,7 @@ function AdminPanel({ onLogout }) {
   const [wsTick, setWsTick] = useState(0);
   const [dateFrom, setDateFrom] = useState(todayIso());
   const [dateTo, setDateTo] = useState(todayIso());
+  const [liveCards, setLiveCards] = useState([]);
   const visibleOrders = orders.filter(shouldShowInOrdersTable);
   const dateFilteredOrders = visibleOrders.filter((o) => {
     const d = o.created_at.slice(0, 10);
@@ -117,6 +119,17 @@ function AdminPanel({ onLogout }) {
     refreshPendingCount();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
+
+  useEffect(() => {
+    function loadPrices() {
+      fetchPrice()
+        .then((payload) => setLiveCards(payload.cards || []))
+        .catch(() => {});
+    }
+    loadPrices();
+    const interval = setInterval(loadPrices, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const ws = openAdminSocket((message) => {
@@ -260,17 +273,27 @@ function AdminPanel({ onLogout }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {dateFilteredOrders.map((order) => (
+                  {dateFilteredOrders.map((order) => {
+                    const priceMove = orderPriceChangeLabel(order, liveCards);
+                    return (
                     <tr key={order.id}>
                       <td data-label="نوع">
                         <span className={`order-card__badge order-card__badge--${order.side}`}>
                           {SIDE_LABEL[order.side]}
                         </span>
                         {order.is_manual && <span className="manual-order-tag">دستی</span>}
+                        {priceMove && <span className="order-price-changed-tag">قیمت تغییر کرد</span>}
                       </td>
                       <td data-label="وزن طلا">{fa(orderGoldWeight(order), { maximumFractionDigits: 3 })} گرم۱۸</td>
                       <td data-label="مبلغ کل">{fa(Math.round(orderTotalMoney(order)))} ت</td>
-                      <td data-label="قیمت (مثقال ۱۷)">{order.mesghal17_price_at_submit ? fa(Math.round(order.mesghal17_price_at_submit)) : "—"}</td>
+                      <td data-label="قیمت (مثقال ۱۷)">
+                        {order.mesghal17_price_at_submit ? fa(Math.round(order.mesghal17_price_at_submit)) : "—"}
+                        {priceMove && (
+                          <span className="order-price-changed-note">
+                            {" "}الان: {fa(priceMove.to)}
+                          </span>
+                        )}
+                      </td>
                       <td data-label="مشتری" dir="ltr" className="order-table__customer">
                         {order.customer_name || "بدون نام"} #{order.customer_code}
                       </td>
@@ -328,7 +351,8 @@ function AdminPanel({ onLogout }) {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

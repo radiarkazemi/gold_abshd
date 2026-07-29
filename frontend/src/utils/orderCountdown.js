@@ -8,26 +8,46 @@ export function formatMMSS(totalSeconds) {
 }
 
 /**
- * Prefer server-computed seconds_remaining so naive ISO deadlines
- * don't desync against the browser's local timezone interpretation.
- * Falls back to pending_deadline_at when seconds_remaining is absent.
+ * Parse a server deadline as UTC milliseconds.
+ * Naive ISO timestamps (no Z / offset) are treated as UTC so every
+ * admin/client surface shares the same absolute end time.
  */
-export function remainingFromOrder(order, nowMs = Date.now()) {
-  if (!order || order.status !== "pending") return 0;
-  if (order.seconds_remaining != null) {
-    return Math.max(0, Math.floor(Number(order.seconds_remaining)));
-  }
-  if (!order.pending_deadline_at) return 0;
-  const deadlineMs = Date.parse(order.pending_deadline_at);
-  if (Number.isNaN(deadlineMs)) return 0;
-  return Math.max(0, Math.floor((deadlineMs - nowMs) / 1000));
+export function deadlineMsFromIso(iso) {
+  if (!iso) return null;
+  let s = String(iso).trim();
+  if (!s) return null;
+  if (s.includes(" ") && !s.includes("T")) s = s.replace(" ", "T");
+  if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) s = `${s}Z`;
+  const ms = Date.parse(s);
+  return Number.isNaN(ms) ? null : ms;
 }
 
 /**
- * Anchor a local end-time from a freshly fetched order so a 1s UI tick
- * stays smooth between polls without depending on absolute clock sync.
+ * Absolute remaining seconds from pending_deadline_at so dashboard and
+ * Orders tab stay in sync. seconds_remaining is only a fallback.
+ */
+export function remainingFromOrder(order, nowMs = Date.now()) {
+  if (!order || order.status !== "pending") return 0;
+  const deadlineMs = deadlineMsFromIso(order.pending_deadline_at);
+  if (deadlineMs != null) {
+    return Math.max(0, Math.floor((deadlineMs - nowMs) / 1000));
+  }
+  if (order.seconds_remaining != null) {
+    return Math.max(0, Math.floor(Number(order.seconds_remaining)));
+  }
+  return 0;
+}
+
+/**
+ * Anchor a local end-time from the absolute server deadline so a 1s UI
+ * tick stays smooth without re-anchoring on every poll of seconds_remaining.
  */
 export function localDeadlineMsFromOrder(order, nowMs = Date.now()) {
+  const deadlineMs = deadlineMsFromIso(order?.pending_deadline_at);
+  if (deadlineMs != null) return deadlineMs;
   const remaining = remainingFromOrder(order, nowMs);
   return nowMs + remaining * 1000;
 }
+
+/** Default pending window length for circular progress (matches server default). */
+export const DEFAULT_PENDING_SECONDS = 60;

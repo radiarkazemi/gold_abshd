@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchOrderLimits, fetchMyOrderDetail, retryMyOrder } from "../api";
-import { formatMMSS, localDeadlineMsFromOrder } from "../utils/orderCountdown";
+import { localDeadlineMsFromOrder, DEFAULT_PENDING_SECONDS } from "../utils/orderCountdown";
+import { CircularCountdown } from "./PendingCountdown";
 import FormattedNumberInput from "./FormattedNumberInput";
 
 const SIDE_META = {
-  buy: { title: "درخواست خرید", cta: "ثبت درخواست خرید", accent: "buy" },
-  sell: { title: "درخواست فروش", cta: "ثبت درخواست فروش", accent: "sell" },
+  buy: { title: "درخواست خرید", cta: "ثبت و ادامه", accent: "buy" },
+  sell: { title: "درخواست فروش", cta: "ثبت و ادامه", accent: "sell" },
 };
 
 const STATUS_META = {
@@ -126,6 +127,7 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
       clearInterval(tickRef.current);
       return;
     }
+    // Keep secondsLeft in sync for retry UI; circular countdown has its own tick.
     tickRef.current = setInterval(() => {
       const left = Math.max(0, Math.ceil((localDeadlineRef.current - Date.now()) / 1000));
       setSecondsLeft(left);
@@ -283,7 +285,10 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
             {liveOrder?.status === "pending" && (
               <div className="modal-result__timer">
                 {secondsLeft > 0 ? (
-                  <span className="modal-result__countdown">{formatMMSS(secondsLeft)}</span>
+                  <CircularCountdown
+                    order={liveOrder}
+                    totalSeconds={limits?.pending_seconds || DEFAULT_PENDING_SECONDS}
+                  />
                 ) : retryCount < maxRetries ? (
                   <button
                     type="button"
@@ -359,7 +364,7 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
             {shownError && <p className="field__error">{shownError}</p>}
             <div className="modal-actions">
               <button type="button" className="modal-btn modal-btn--ghost" onClick={() => setConfirming(false)} disabled={submitting}>
-                ویرایش
+                بازگشت
               </button>
               <button
                 type="button"

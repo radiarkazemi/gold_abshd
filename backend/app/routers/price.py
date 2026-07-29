@@ -71,7 +71,9 @@ async def update_order_limits(
     db: Session = Depends(get_db),
     _admin=Depends(require_permission("dashboard")),
 ):
-    return OrderLimitsOut(**set_order_limits(db, **payload.model_dump()))
+    limits = set_order_limits(db, **payload.model_dump())
+    limits["pending_seconds"] = int(settings.ORDER_PENDING_SECONDS)
+    return OrderLimitsOut(**limits)
 
 
 @router.websocket("/ws/price")

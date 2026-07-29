@@ -52,12 +52,15 @@ def _current_role_amount_limits(
         commission_type,
         commission_value,
     )
-    gram18_buy_price = mesghal17_to_gram18(final_buy_mesghal)
+    # Round the unit price the same way the client price card displays
+    # گرم۱۸ (Math.round), then multiply by weight — so حداقل/حداکثر مبلغ
+    # match the exact number the customer sees on the card.
+    displayed_gram18 = round(mesghal17_to_gram18(final_buy_mesghal))
 
     if min_amount is None and min_weight is not None:
-        min_amount = round(min_weight * gram18_buy_price)
+        min_amount = round(min_weight * displayed_gram18)
     if max_amount is None and max_weight is not None:
-        max_amount = round(max_weight * gram18_buy_price)
+        max_amount = round(max_weight * displayed_gram18)
     return min_amount, max_amount
 
 

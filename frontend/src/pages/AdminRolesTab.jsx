@@ -34,7 +34,10 @@ function autoAmountFromWeight(weight, commissionType, commissionValue, rawGoldCa
   const personalized = personalizePrice(rawGoldCard, commissionType, Number(commissionValue) || 0);
   const gram18 = personalized?.gram18_buy_price;
   if (!gram18) return "";
-  return String(Math.round(numericWeight * gram18));
+  // Match the exact گرم۱۸ figure shown on the client price card
+  // (PriceButton uses Math.round), then scale by weight.
+  const displayedUnit = Math.round(gram18);
+  return String(Math.round(numericWeight * displayedUnit));
 }
 
 function RoleRow({ role, onUpdated, rawGoldCard }) {
