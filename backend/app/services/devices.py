@@ -4,7 +4,9 @@ Per-user device registry.
 After first activation with a registration key, the customer may log in
 from up to User.max_devices distinct browser installs (localStorage
 device ids). Known devices are refreshed on each successful OTP verify;
-new devices are added until the limit is reached.
+when a new device logs in and the limit is already reached, the oldest
+device (by last_seen_at) is evicted so the new one can take its slot.
+All device history is kept in the admin view even after eviction.
 """
 from datetime import datetime
 
@@ -44,30 +46,11 @@ def user_is_activated(db: Session, user: User) -> bool:
 
 def ensure_device_allowed(db: Session, user: User, device_id: str):
     """
-    Pre-OTP gate for already-activated users:
-      - known device -> ok
-      - new device under max_devices -> ok (will be registered on verify)
-      - at/over limit with unknown device -> 403
+    Pre-OTP gate for already-activated users. Always allows login;
+    actual eviction of the oldest device (if over the limit) happens
+    in register_or_touch_device after OTP succeeds.
     """
-    if find_user_device(db, user, device_id):
-        return
-    # Legacy single-device rows may not be backfilled yet.
-    if user.device_id and user.device_id == device_id:
-        return
-
-    max_allowed = max(1, int(user.max_devices or 1))
-    current = count_user_devices(db, user)
-    if current == 0 and user.device_id:
-        current = 1  # legacy slot counts toward the limit until backfilled
-
-    if current >= max_allowed:
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                f"حداکثر تعداد دستگاه مجاز برای این حساب {max_allowed} است. "
-                "برای ورود با دستگاه جدید با مدیریت هماهنگ کنید."
-            ),
-        )
+    pass
 
 
 def register_or_touch_device(
@@ -115,14 +98,20 @@ def register_or_touch_device(
 
     max_allowed = max(1, int(user.max_devices or 1))
     current = count_user_devices(db, user)
+
+    # Evict oldest devices until there's room for the new one.
     if current >= max_allowed:
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                f"حداکثر تعداد دستگاه مجاز برای این حساب {max_allowed} است. "
-                "برای ورود با دستگاه جدید با مدیریت هماهنگ کنید."
-            ),
+        excess = current - max_allowed + 1
+        oldest = (
+            db.query(UserDevice)
+            .filter(UserDevice.user_id == user.id)
+            .order_by(UserDevice.last_seen_at.asc().nullsfirst(), UserDevice.created_at.asc())
+            .limit(excess)
+            .all()
         )
+        for old_dev in oldest:
+            db.delete(old_dev)
+        db.flush()
 
     row = UserDevice(
         user_id=user.id,

@@ -152,10 +152,11 @@ def verify_otp_and_get_user(
     return user
 
 
-def create_access_token(user: User) -> str:
+def create_access_token(user: User, device_id: str = "") -> str:
     payload = {
         "sub": user.id,
         "phone_number": user.phone_number,
+        "device_id": device_id,
         "exp": datetime.utcnow() + timedelta(minutes=settings.JWT_EXPIRE_MINUTES),
     }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm="HS256")
@@ -185,5 +186,15 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="کاربر پیدا نشد")
     if user.is_blocked:
         raise HTTPException(status_code=403, detail="حساب کاربری شما مسدود شده است")
+
+    token_device = payload.get("device_id", "")
+    if token_device:
+        from app.services.devices import find_user_device
+        if not find_user_device(db, user, token_device):
+            if not (user.device_id and user.device_id == token_device):
+                raise HTTPException(
+                    status_code=401,
+                    detail="این نشست منقضی شده است. لطفا دوباره وارد شوید.",
+                )
 
     return user

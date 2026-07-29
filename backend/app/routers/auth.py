@@ -42,7 +42,7 @@ async def verify_otp(request: Request, payload: VerifyOtpIn, db: Session = Depen
         payload.registration_key,
         payload.device_info or "",
     )
-    token = create_access_token(user)
+    token = create_access_token(user, device_id=payload.device_id or "")
     return VerifyOtpOut(token=token, user=UserOut.model_validate(user))
 
 
