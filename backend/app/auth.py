@@ -173,6 +173,7 @@ def decode_access_token(token: str) -> dict:
 
 def get_current_user(
     authorization: str | None = Header(default=None),
+    x_device_id: str | None = Header(default=None, alias="X-Device-Id"),
     db: Session = Depends(get_db),
 ) -> User:
     if not authorization or not authorization.startswith("Bearer "):
@@ -187,11 +188,11 @@ def get_current_user(
     if user.is_blocked:
         raise HTTPException(status_code=403, detail="حساب کاربری شما مسدود شده است")
 
-    token_device = payload.get("device_id", "")
-    if token_device:
+    device_id = x_device_id or payload.get("device_id", "")
+    if device_id:
         from app.services.devices import find_user_device
-        if not find_user_device(db, user, token_device):
-            if not (user.device_id and user.device_id == token_device):
+        if not find_user_device(db, user, device_id):
+            if not (user.device_id and user.device_id == device_id):
                 raise HTTPException(
                     status_code=401,
                     detail="این نشست منقضی شده است. لطفا دوباره وارد شوید.",

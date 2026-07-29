@@ -176,7 +176,8 @@ export async function fetchTransferReceiptBlobUrlAsAdmin(transferId) {
 
 function authHeaders() {
   const token = getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}`, "X-Device-Id": getDeviceId() };
 }
 
 export async function requestOtp(phoneNumber, registrationKey) {
