@@ -1,7 +1,10 @@
 /**
- * System notifications for the admin panel.
- * - Windows: shows as a native toast / Action Center notification
- * - Mobile web / installed PWA: shows as a device notification banner
+ * OS-level notifications for the admin panel (not in-app toasts).
+ *
+ * - Windows / desktop: Action Center notification — especially useful
+ *   when the browser window is minimized or in the background.
+ * - Mobile web / installed PWA: native device notification banner.
+ *
  * Requires Notification permission (requested after admin login).
  */
 
@@ -14,6 +17,13 @@ export function notificationsSupported() {
 export function notificationPermission() {
   if (!notificationsSupported()) return "unsupported";
   return Notification.permission;
+}
+
+function isMobileClient() {
+  if (typeof navigator === "undefined") return false;
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "")) return true;
+  // iPadOS desktop UA still has touch
+  return navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent || "");
 }
 
 /** Ask once after a user gesture (login). Safe to call repeatedly. */
@@ -54,12 +64,19 @@ function orderSummary(order) {
 }
 
 /**
- * Show a system notification for a new order.
- * Falls back silently if permission is missing or the API is blocked.
+ * Fire an OS notification for a new order.
+ * - Desktop: only when the tab/window is not visible (browser minimized
+ *   or another app focused) — while looking at the panel, sound/flash is enough.
+ * - Mobile: always, as a native device notification.
  */
 export function notifyNewOrder(order) {
   if (!notificationsSupported()) return false;
   if (Notification.permission !== "granted") return false;
+
+  const mobile = isMobileClient();
+  if (!mobile && typeof document !== "undefined" && !document.hidden) {
+    return false;
+  }
 
   const title = "سفارش جدید — آبشده قصر طلا";
   const body = orderSummary(order);
@@ -71,16 +88,15 @@ export function notifyNewOrder(order) {
     renotify: true,
     requireInteraction: false,
     silent: false,
-    icon: "/favicon.svg",
-    badge: "/favicon.svg",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
     data: { orderId: order?.id, type: "new_order" },
   };
 
   try {
-    // Prefer service-worker showNotification when available (better on
-    // mobile PWAs while backgrounded); otherwise use the page API
-    // which still produces a Windows toast when the tab is open.
-    if (navigator.serviceWorker?.controller) {
+    // Service worker path is more reliable on mobile PWAs and when the
+    // page is backgrounded on desktop.
+    if (navigator.serviceWorker) {
       navigator.serviceWorker.ready
         .then((reg) => reg.showNotification(title, options))
         .catch(() => {
@@ -98,7 +114,7 @@ export function notifyNewOrder(order) {
   }
 }
 
-/** Register a tiny SW used only to display notifications while backgrounded. */
+/** Register a tiny SW used to display notifications while backgrounded. */
 export async function registerNotifyServiceWorker() {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
     return null;
