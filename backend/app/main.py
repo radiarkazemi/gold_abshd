@@ -98,7 +98,15 @@ async def startup_event():
     finally:
         db.close()
 
-    asyncio.create_task(price_service.run_simulation())
+    # In api+cards mode, price_cards.poll_all_items() already owns the
+    # goldbridge fetch (/prices). Starting the legacy single-item
+    # ApiPriceSource too doubles the hit rate on goldbridge (and
+    # indirectly on sekefarshad) for no UI benefit - the WS broadcaster
+    # only reads from price_cards in this mode.
+    if settings.PRICE_SOURCE.lower() == "api" and settings.PRICE_API_ALL_URL:
+        logger.info("[price] api+cards mode - skipping legacy single-price poller")
+    else:
+        asyncio.create_task(price_service.run_simulation())
     asyncio.create_task(price_cards.poll_all_items())
     asyncio.create_task(price_broadcaster())
 
