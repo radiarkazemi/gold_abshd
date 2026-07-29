@@ -18,6 +18,7 @@ from sqlalchemy import (
     Enum,
     Boolean,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -122,14 +123,12 @@ class User(Base):
     is_trading_banned = Column(Boolean, default=False, nullable=False)  # can log in / view prices, but cannot submit orders
     referrer = Column(String, nullable=True)  # معرف - freeform source/person who introduced this customer
 
-    # Single-device lock: set the first time the user activates their
-    # registration key. A random token generated and stored in the
-    # browser's localStorage - not a real hardware fingerprint (not
-    # possible from a web app), but functionally equivalent: if it's
-    # lost (cache cleared, different browser), the account is locked
-    # until an admin issues a new registration key.
+    # Legacy single-device fields kept for older installs / display.
+    # Authoritative device list is user_devices; max_devices caps how
+    # many distinct browser/app installs may log in after activation.
     device_id = Column(String, nullable=True)
     device_info = Column(String, nullable=True)  # user-agent string, informational only
+    max_devices = Column(Integer, nullable=False, default=1)
 
     last_seen_at = Column(DateTime, nullable=True)
 
@@ -153,14 +152,37 @@ class User(Base):
     orders = relationship("Order", back_populates="user")
     transactions = relationship("BalanceTransaction", back_populates="user")
     registration_key = relationship("RegistrationKey", back_populates="user", uselist=False)
+    devices = relationship("UserDevice", back_populates="user", cascade="all, delete-orphan")
+
+
+class UserDevice(Base):
+    """
+    One row per browser/app install that has successfully logged in for
+    this user. After first activation (registration key), additional
+    devices may log in until count reaches User.max_devices.
+    """
+
+    __tablename__ = "user_devices"
+    __table_args__ = (
+        UniqueConstraint("user_id", "device_id", name="uq_user_devices_user_device"),
+    )
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False, index=True)
+    device_id = Column(String, nullable=False, index=True)
+    device_info = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="devices")
 
 
 class RegistrationKey(Base):
     """
     Issued once by the admin when creating a new user. The user needs
     this key (plus their phone number) to activate their account the
-    first time - after that, the key is bound to whichever device
-    completed activation and can't be reused elsewhere.
+    first time - after that the key is spent. Further logins may use
+    any device up to the user's max_devices limit.
     """
 
     __tablename__ = "registration_keys"

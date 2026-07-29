@@ -1,19 +1,20 @@
 """
-Phone + OTP authentication - invite-only, single-device.
+Phone + OTP authentication - invite-only, multi-device (capped).
 
 Flow for a BRAND NEW user (never activated):
   1. POST /api/auth/request-otp {phone_number, device_id, registration_key}
      -> validates the registration key belongs to this phone's user
         and hasn't been used/expired/banned, then sends an OTP
   2. POST /api/auth/verify-otp {phone_number, code, device_id, registration_key}
-     -> on success, binds device_id to both the user and the key
-        (first activation only), returns a JWT token
+     -> on success, activates the key and registers this device,
+        returns a JWT token
 
 Flow for an ALREADY-ACTIVATED user:
   1. POST /api/auth/request-otp {phone_number, device_id}
-     -> only proceeds if device_id matches the one bound at activation
+     -> allowed if device is already registered OR the user still has
+        an open device slot (count < max_devices)
   2. POST /api/auth/verify-otp {phone_number, code, device_id}
-     -> same device check, then issues a token
+     -> registers/touches the device (enforcing max_devices), issues token
 
 There is NO self-signup: request-otp/verify-otp both 404 if no user
 with that phone number was created by an admin first.
@@ -30,6 +31,11 @@ from app.config import settings
 from app.db import get_db
 from app.models_db import User, OtpCode
 from app.services.registration import validate_key_for_activation, activate_key
+from app.services.devices import (
+    user_is_activated,
+    ensure_device_allowed,
+    register_or_touch_device,
+)
 
 OTP_LENGTH = 6
 OTP_TTL_MINUTES = 5
@@ -70,15 +76,14 @@ def get_user_for_login(db: Session, phone_number: str) -> User:
 
 def check_device_or_require_key(user: User, device_id: str, registration_key: str | None, db: Session):
     """
-    If the user has never activated (no device_id bound yet), a valid
-    registration_key must be supplied - this just VALIDATES the key
-    without binding it (binding happens only after OTP is verified).
-    If the user is already activated, device_id must match exactly.
+    If the user has never activated, a valid registration_key must be
+    supplied (validated here, bound only after OTP succeeds).
+    If already activated, the device must be known or under max_devices.
     """
     if not device_id:
         raise HTTPException(status_code=400, detail="شناسه دستگاه ارسال نشده است")
 
-    if user.device_id is None:
+    if not user_is_activated(db, user):
         if not registration_key:
             raise HTTPException(
                 status_code=400,
@@ -86,11 +91,7 @@ def check_device_or_require_key(user: User, device_id: str, registration_key: st
             )
         validate_key_for_activation(db, user, registration_key)
     else:
-        if user.device_id != device_id:
-            raise HTTPException(
-                status_code=403,
-                detail="این حساب فقط روی دستگاهی که با آن فعال شده قابل استفاده است",
-            )
+        ensure_device_allowed(db, user, device_id)
 
 
 def create_otp_for_phone(db: Session, phone_number: str) -> str:
@@ -138,16 +139,12 @@ def verify_otp_and_get_user(
 
     user = get_user_for_login(db, phone_number)
 
-    if user.device_id is None:
-        # first-time activation
+    if not user_is_activated(db, user):
         reg_key = validate_key_for_activation(db, user, registration_key)
         activate_key(db, reg_key, device_id, device_info)
+        register_or_touch_device(db, user, device_id, device_info, allow_new=True)
     else:
-        if user.device_id != device_id:
-            raise HTTPException(
-                status_code=403,
-                detail="این حساب فقط روی دستگاهی که با آن فعال شده قابل استفاده است",
-            )
+        register_or_touch_device(db, user, device_id, device_info, allow_new=True)
 
     user.last_seen_at = datetime.utcnow()
     db.commit()

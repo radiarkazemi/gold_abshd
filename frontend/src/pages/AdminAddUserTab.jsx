@@ -11,6 +11,7 @@ export default function AdminAddUserTab() {
   const [notes, setNotes] = useState("");
   const [referrer, setReferrer] = useState("");
   const [keyTtlDays, setKeyTtlDays] = useState(14);
+  const [maxDevices, setMaxDevices] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
@@ -43,6 +44,7 @@ export default function AdminAddUserTab() {
         notes,
         referrer,
         keyTtlDays: Number(keyTtlDays),
+        maxDevices: Number(maxDevices) || 1,
       });
       setResult(res);
     } catch (err) {
@@ -70,6 +72,7 @@ export default function AdminAddUserTab() {
     setNationalId("");
     setNotes("");
     setReferrer("");
+    setMaxDevices(1);
     setCopied(false);
     setCopyError("");
   }
@@ -176,6 +179,18 @@ export default function AdminAddUserTab() {
           rows={2}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
+        />
+      </label>
+
+      <label className="field">
+        <span className="field__label">تعداد دستگاه مجاز</span>
+        <input
+          type="number"
+          className="field__input"
+          value={maxDevices}
+          onChange={(e) => setMaxDevices(e.target.value)}
+          min={1}
+          max={20}
         />
       </label>
 

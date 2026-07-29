@@ -465,12 +465,15 @@ def list_users_with_balance(db: Session, search: str | None = None) -> list[dict
             "is_online": user.is_online,
             "registration_status": reg_key.status.value if reg_key else None,
             "referrer": user.referrer,
+            "max_devices": user.max_devices or 1,
+            "device_count": len(user.devices) if user.devices is not None else 0,
         })
     return results
 
 
 def update_user(db: Session, user_id: str, full_name: str | None, role_id: str | None,
-                 national_id: str | None, notes: str | None, referrer: str | None = None) -> User:
+                 national_id: str | None, notes: str | None, referrer: str | None = None,
+                 max_devices: int | None = None) -> User:
     user = get_user_or_404(db, user_id)
 
     if full_name is not None:
@@ -486,6 +489,13 @@ def update_user(db: Session, user_id: str, full_name: str | None, role_id: str |
         user.notes = notes
     if referrer is not None:
         user.referrer = referrer
+    if max_devices is not None:
+        max_devices = int(max_devices)
+        if max_devices < 1:
+            raise HTTPException(status_code=400, detail="تعداد دستگاه باید حداقل ۱ باشد")
+        if max_devices > 20:
+            raise HTTPException(status_code=400, detail="تعداد دستگاه نمی‌تواند بیشتر از ۲۰ باشد")
+        user.max_devices = max_devices
 
     db.commit()
     db.refresh(user)

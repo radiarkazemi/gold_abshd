@@ -60,6 +60,7 @@ class AdminCreateUserIn(BaseModel):
     notes: Optional[str] = None
     referrer: Optional[str] = None
     key_ttl_days: int = 14
+    max_devices: int = 1
 
 
 class AdminCreateUserOut(BaseModel):
@@ -68,6 +69,7 @@ class AdminCreateUserOut(BaseModel):
     phone_number: str
     registration_key: str  # shown ONCE at creation time - hand this to the user
     expires_at: datetime
+    max_devices: int = 1
 
 
 class AdminUpdateUserIn(BaseModel):
@@ -76,6 +78,7 @@ class AdminUpdateUserIn(BaseModel):
     national_id: Optional[str] = None
     notes: Optional[str] = None
     referrer: Optional[str] = None
+    max_devices: Optional[int] = None
 
 
 class PhoneOrderCreateIn(BaseModel):
@@ -101,6 +104,8 @@ class UserSummaryOut(BaseModel):
     is_online: bool = False
     registration_status: Optional[str] = None  # pending | active | banned | None (no key issued)
     referrer: Optional[str] = None
+    max_devices: int = 1
+    device_count: int = 0
 
 
 class TransactionOut(BaseModel):
@@ -111,6 +116,17 @@ class TransactionOut(BaseModel):
     note: str
     related_order_id: Optional[str] = None
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class UserDeviceOut(BaseModel):
+    id: str
+    device_id: str
+    device_info: Optional[str] = None
+    created_at: datetime
+    last_seen_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -132,6 +148,8 @@ class UserDetailOut(BaseModel):
     role: Optional[RoleOut] = None
     is_online: bool = False
     device_info: Optional[str] = None
+    max_devices: int = 1
+    devices: list[UserDeviceOut] = []
     registration_key: Optional[RegistrationKeyOut] = None
     orders: list[OrderOut]
     transactions: list[TransactionOut]

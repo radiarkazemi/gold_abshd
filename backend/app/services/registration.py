@@ -63,6 +63,8 @@ def validate_key_for_activation(db: Session, user: User, key_str: str) -> Regist
 
 
 def activate_key(db: Session, reg_key: RegistrationKey, device_id: str, device_info: str = ""):
+    """Mark the registration key as used. Device registration itself is
+    handled by services.devices.register_or_touch_device."""
     reg_key.status = RegistrationKeyStatusEnum.active
     reg_key.activated_at = datetime.utcnow()
     reg_key.device_id = device_id
@@ -103,6 +105,7 @@ def create_user_with_key(
     notes: str | None = None,
     referrer: str | None = None,
     key_ttl_days: int = KEY_DEFAULT_TTL_DAYS,
+    max_devices: int = 1,
 ) -> tuple[User, RegistrationKey]:
     """
     Admin-only user provisioning: creates the account and issues its
@@ -113,6 +116,12 @@ def create_user_with_key(
 
     if not national_id or not national_id.strip():
         raise HTTPException(status_code=400, detail="کد ملی الزامی است")
+
+    max_devices = int(max_devices or 1)
+    if max_devices < 1:
+        raise HTTPException(status_code=400, detail="تعداد دستگاه باید حداقل ۱ باشد")
+    if max_devices > 20:
+        raise HTTPException(status_code=400, detail="تعداد دستگاه نمی‌تواند بیشتر از ۲۰ باشد")
 
     existing = db.query(User).filter(User.phone_number == phone_number).first()
     if existing:
@@ -130,6 +139,7 @@ def create_user_with_key(
         national_id=national_id,
         notes=notes,
         referrer=referrer,
+        max_devices=max_devices,
     )
     db.add(user)
     db.commit()
@@ -137,3 +147,58 @@ def create_user_with_key(
 
     reg_key = issue_registration_key(db, user, key_ttl_days)
     return user, reg_key
+
+
+def delete_user(db: Session, user_id: str) -> None:
+    """
+    Hard-delete a customer and related rows/files. Prefer this only when
+    the admin intentionally wants the phone number reusable.
+    """
+    import os
+    from app.config import settings
+    from app.models_db import (
+        Order, BalanceTransaction, TransferRequest, RegistrationKey,
+        UserDevice, OtpCode,
+    )
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="کاربر پیدا نشد")
+
+    def _unlink(path: str | None):
+        if not path:
+            return
+        # Paths are stored relative to their upload dir or as relative paths
+        candidates = [path]
+        for base in (
+            settings.UPLOAD_DIR,
+            getattr(settings, "KYC_UPLOAD_DIR", "uploads/kyc"),
+            getattr(settings, "TRANSFER_UPLOAD_DIR", "uploads/transfers"),
+        ):
+            candidates.append(os.path.join(base, path))
+        for candidate in candidates:
+            try:
+                if os.path.isfile(candidate):
+                    os.remove(candidate)
+            except OSError:
+                pass
+
+    _unlink(user.kyc_document_path)
+
+    orders = db.query(Order).filter(Order.user_id == user_id).all()
+    for order in orders:
+        _unlink(order.receipt_path)
+
+    transfers = db.query(TransferRequest).filter(TransferRequest.user_id == user_id).all()
+    for tr in transfers:
+        _unlink(tr.receipt_path)
+
+    # Transactions reference orders - remove first.
+    db.query(BalanceTransaction).filter(BalanceTransaction.user_id == user_id).delete(synchronize_session=False)
+    db.query(TransferRequest).filter(TransferRequest.user_id == user_id).delete(synchronize_session=False)
+    db.query(Order).filter(Order.user_id == user_id).delete(synchronize_session=False)
+    db.query(UserDevice).filter(UserDevice.user_id == user_id).delete(synchronize_session=False)
+    db.query(RegistrationKey).filter(RegistrationKey.user_id == user_id).delete(synchronize_session=False)
+    db.query(OtpCode).filter(OtpCode.phone_number == user.phone_number).delete(synchronize_session=False)
+    db.delete(user)
+    db.commit()

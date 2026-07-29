@@ -612,7 +612,7 @@ export async function updateRoleCommission(roleId, commissionType, commissionVal
   return res.json();
 }
 
-export async function createUserAdmin({ phoneNumber, fullName, roleId, nationalId, notes, referrer, keyTtlDays }) {
+export async function createUserAdmin({ phoneNumber, fullName, roleId, nationalId, notes, referrer, keyTtlDays, maxDevices }) {
   const res = await fetch(`${API_BASE}/api/admin/users`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
@@ -624,6 +624,7 @@ export async function createUserAdmin({ phoneNumber, fullName, roleId, nationalI
       notes: notes || null,
       referrer: referrer || null,
       key_ttl_days: keyTtlDays || 14,
+      max_devices: Number(maxDevices) || 1,
     }),
   });
   if (!res.ok) {
@@ -633,7 +634,7 @@ export async function createUserAdmin({ phoneNumber, fullName, roleId, nationalI
   return res.json();
 }
 
-export async function updateUserAdmin(userId, { fullName, roleId, nationalId, notes, referrer }) {
+export async function updateUserAdmin(userId, { fullName, roleId, nationalId, notes, referrer, maxDevices }) {
   const res = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
@@ -643,11 +644,36 @@ export async function updateUserAdmin(userId, { fullName, roleId, nationalId, no
       national_id: nationalId,
       notes: notes,
       referrer: referrer,
+      max_devices: maxDevices == null || maxDevices === "" ? null : Number(maxDevices),
     }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "Failed to update user");
+  }
+  return res.json();
+}
+
+export async function deleteUserAdmin(userId) {
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+    method: "DELETE",
+    headers: { ...adminAuthHeaders() },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to delete user");
+  }
+  return res.json();
+}
+
+export async function revokeUserDeviceAdmin(userId, deviceRowId) {
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}/devices/${deviceRowId}`, {
+    method: "DELETE",
+    headers: { ...adminAuthHeaders() },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to revoke device");
   }
   return res.json();
 }

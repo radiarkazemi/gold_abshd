@@ -93,11 +93,47 @@ def _patch_users_table():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_reject_reason VARCHAR",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_trading_banned BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer VARCHAR",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS max_devices INTEGER NOT NULL DEFAULT 1",
     ]
     with engine.connect() as conn:
         for stmt in statements:
             conn.execute(text(stmt))
         conn.commit()
+
+
+def _backfill_user_devices():
+    """
+    Promote legacy users.device_id into user_devices once, so upgraded
+    installs keep working under the multi-device rules.
+    """
+    from app.models_db import User, UserDevice, gen_uuid
+
+    db = SessionLocal()
+    try:
+        users = db.query(User).filter(User.device_id.isnot(None), User.device_id != "").all()
+        added = 0
+        for user in users:
+            exists = (
+                db.query(UserDevice)
+                .filter(UserDevice.user_id == user.id, UserDevice.device_id == user.device_id)
+                .first()
+            )
+            if exists:
+                continue
+            db.add(UserDevice(
+                id=gen_uuid(),
+                user_id=user.id,
+                device_id=user.device_id,
+                device_info=user.device_info,
+                created_at=user.created_at,
+                last_seen_at=user.last_seen_at,
+            ))
+            added += 1
+        if added:
+            db.commit()
+            print(f"[db] Backfilled {added} legacy device row(s)")
+    finally:
+        db.close()
 
 
 def _patch_orders_table():
@@ -220,6 +256,7 @@ def init_db():
     _patch_balance_transactions_table()
     _patch_price_cards_table()
     _patch_amount_type_enum()
+    _backfill_user_devices()
     print("[db] Tables ready")
 
 

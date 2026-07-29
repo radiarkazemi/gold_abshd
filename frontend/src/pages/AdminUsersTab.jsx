@@ -6,6 +6,8 @@ import {
   setUserBlocked,
   setUserTradingBanned,
   updateUserAdmin,
+  deleteUserAdmin,
+  revokeUserDeviceAdmin,
   fetchRoles,
 } from "../api";
 import { formatCashStatus, formatGoldStatus } from "../utils/balanceFormat";
@@ -45,6 +47,7 @@ function EditUserForm({ detail, roles, onSaved, onCancel }) {
   const [nationalId, setNationalId] = useState(detail.national_id || "");
   const [notes, setNotes] = useState(detail.notes || "");
   const [referrer, setReferrer] = useState(detail.referrer || "");
+  const [maxDevices, setMaxDevices] = useState(detail.max_devices || 1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -53,7 +56,14 @@ function EditUserForm({ detail, roles, onSaved, onCancel }) {
     setError("");
     setSaving(true);
     try {
-      await updateUserAdmin(detail.id, { fullName, roleId, nationalId, notes, referrer });
+      await updateUserAdmin(detail.id, {
+        fullName,
+        roleId,
+        nationalId,
+        notes,
+        referrer,
+        maxDevices: Number(maxDevices) || 1,
+      });
       onSaved();
     } catch (err) {
       setError(err.message || "خطا در ذخیره تغییرات");
@@ -88,6 +98,17 @@ function EditUserForm({ detail, roles, onSaved, onCancel }) {
       <label className="field">
         <span className="field__label">معرف</span>
         <input className="field__input" value={referrer} onChange={(e) => setReferrer(e.target.value)} />
+      </label>
+      <label className="field">
+        <span className="field__label">تعداد دستگاه مجاز</span>
+        <input
+          type="number"
+          className="field__input"
+          value={maxDevices}
+          onChange={(e) => setMaxDevices(e.target.value)}
+          min={1}
+          max={20}
+        />
       </label>
       {error && <p className="field__error">{error}</p>}
       <div className="modal-actions">
@@ -175,6 +196,38 @@ function UserDetail({ userId, onClose, onChanged }) {
     }
   }
 
+  async function handleRevokeDevice(deviceRowId) {
+    if (!window.confirm("این دستگاه از لیست مجاز حذف شود؟")) return;
+    setBusy(true);
+    setError("");
+    try {
+      await revokeUserDeviceAdmin(userId, deviceRowId);
+      reload();
+      onChanged?.();
+    } catch (err) {
+      setError(err.message || "خطا در حذف دستگاه");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteUser() {
+    const ok = window.confirm(
+      `کاربر «${detail.full_name || detail.phone_number}» و تمام سفارش‌ها/تراکنش‌هایش حذف شوند؟ این عمل برگشت‌ناپذیر است.`
+    );
+    if (!ok) return;
+    setBusy(true);
+    setError("");
+    try {
+      await deleteUserAdmin(userId);
+      onChanged?.();
+      onClose();
+    } catch (err) {
+      setError(err.message || "خطا در حذف کاربر");
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="user-detail" onClick={(e) => e.stopPropagation()}>
@@ -219,6 +272,13 @@ function UserDetail({ userId, onClose, onChanged }) {
                   disabled={busy}
                 >
                   {detail.is_blocked ? "رفع مسدودیت" : "مسدود کردن"}
+                </button>
+                <button
+                  className="user-detail__delete-btn"
+                  onClick={handleDeleteUser}
+                  disabled={busy}
+                >
+                  حذف کاربر
                 </button>
               </div>
             </div>
@@ -277,12 +337,40 @@ function UserDetail({ userId, onClose, onChanged }) {
                     {detail.registration_key.activated_at &&
                       ` — فعال‌شده: ${formatDateOnly(detail.registration_key.activated_at)}`}
                   </span>
-                  {detail.device_info && (
-                    <span className="reg-key-box__meta">دستگاه: {detail.device_info}</span>
-                  )}
                 </>
               ) : (
                 <p className="myorders__empty">کدی صادر نشده</p>
+              )}
+            </div>
+
+            <div className="reg-key-box">
+              <h3 className="adjust-form__title">
+                دستگاه‌ها ({(detail.devices || []).length} از {detail.max_devices || 1})
+              </h3>
+              {(detail.devices || []).length === 0 ? (
+                <p className="myorders__empty">هنوز دستگاهی فعال نشده</p>
+              ) : (
+                <div className="device-list">
+                  {(detail.devices || []).map((d) => (
+                    <div key={d.id} className="device-row">
+                      <div className="device-row__info">
+                        <span className="device-row__ua">{d.device_info || "دستگاه ناشناس"}</span>
+                        <span className="reg-key-box__meta">
+                          ثبت: {formatDate(d.created_at)}
+                          {d.last_seen_at ? ` — آخرین ورود: ${formatDate(d.last_seen_at)}` : ""}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="user-detail__delete-btn"
+                        onClick={() => handleRevokeDevice(d.id)}
+                        disabled={busy}
+                      >
+                        حذف دستگاه
+                      </button>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 
@@ -416,6 +504,9 @@ export default function AdminUsersTab() {
               {u.is_blocked && <span className="user-row__blocked-tag">مسدود</span>}
               {u.is_trading_banned && <span className="user-row__blocked-tag">ممنوع‌المعامله</span>}
               {u.referrer && <span className="user-card__role">معرف: {u.referrer}</span>}
+              <span className="user-card__role">
+                دستگاه: {fa(u.device_count || 0)}/{fa(u.max_devices || 1)}
+              </span>
               <div className="user-row__balances">
                 <span className={`cash-status ${formatGoldStatus(u.gold_balance).className}`}>
                   {fa(u.gold_balance, { maximumFractionDigits: 3 })} گرم ۱۸
