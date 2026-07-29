@@ -86,7 +86,10 @@ export default function TraderPage() {
           <span className="app__status-dot" />
           {tradingOnline ? "مدیر آنلاین" : "مدیر آفلاین"}
         </span>
-        <h1 className="app__title">آبشده قصر طلا</h1>
+        <h1 className="app__title">
+          <img className="app__logo" src="/logo.png" alt="" width="36" height="36" />
+          آبشده قصر طلا
+        </h1>
         <button className="theme-toggle-btn" onClick={toggleTheme} aria-label="تغییر پوسته">
           {theme === "dark" ? "☀" : "☾"}
         </button>

@@ -73,8 +73,11 @@ export default function AdminShell({ activeTab, onTabChange, pendingCount, conne
     <div className="admin-shell">
       <aside className="admin-shell__sidebar">
         <div className="admin-shell__brand">
-          <span className="admin-shell__brand-title">آبشده قصر طلا</span>
-          <span className="admin-shell__brand-sub">پنل مدیریت</span>
+          <img className="admin-shell__logo" src="/logo.png" alt="" width="40" height="40" />
+          <div className="admin-shell__brand-text">
+            <span className="admin-shell__brand-title">آبشده قصر طلا</span>
+            <span className="admin-shell__brand-sub">پنل مدیریت</span>
+          </div>
         </div>
 
         <nav className="admin-nav">
@@ -119,8 +122,11 @@ export default function AdminShell({ activeTab, onTabChange, pendingCount, conne
         <div className="side-menu__backdrop" onClick={() => setDrawerOpen(false)}>
           <div className="admin-shell__drawer" onClick={(e) => e.stopPropagation()}>
             <div className="admin-shell__brand" style={{ marginBottom: 22, paddingBottom: 16, borderBottom: "1px solid var(--hairline)" }}>
-              <span className="admin-shell__brand-title">آبشده قصر طلا</span>
-              <span className="admin-shell__brand-sub">پنل مدیریت</span>
+              <img className="admin-shell__logo" src="/logo.png" alt="" width="40" height="40" />
+              <div className="admin-shell__brand-text">
+                <span className="admin-shell__brand-title">آبشده قصر طلا</span>
+                <span className="admin-shell__brand-sub">پنل مدیریت</span>
+              </div>
             </div>
             <nav className="admin-nav" style={{ flex: 1, overflowY: "auto" }}>
               {navItems.map((item) => renderNavButton(item, "-drawer"))}

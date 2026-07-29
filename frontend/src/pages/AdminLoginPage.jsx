@@ -63,6 +63,7 @@ export default function AdminLoginPage({ onLoggedIn }) {
     return (
       <div className="login">
         <div className="login__card">
+          <img className="login__logo" src="/logo.png" alt="آبشده قصر طلا" width="96" height="96" />
           <h1 className="login__title">تایید ورود</h1>
           <p className="login__subtitle">
             {pending.display_name} — کد پیامک‌شده به شماره موبایل ثبت‌شده را وارد کنید
@@ -112,6 +113,7 @@ export default function AdminLoginPage({ onLoggedIn }) {
   return (
     <div className="login">
       <div className="login__card">
+        <img className="login__logo" src="/logo.png" alt="آبشده قصر طلا" width="96" height="96" />
         <h1 className="login__title">ورود ادمین</h1>
         <p className="login__subtitle">آبشده قصر طلا — پنل مدیریت</p>
 
