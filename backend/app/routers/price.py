@@ -71,7 +71,7 @@ async def update_order_limits(
     db: Session = Depends(get_db),
     _admin=Depends(require_permission("dashboard")),
 ):
-  limits = set_order_limits(db, **payload.model_dump())
+    limits = set_order_limits(db, **payload.model_dump())
     limits["pending_seconds"] = int(settings.ORDER_PENDING_SECONDS)
     limits["card_commissions"] = []
     return OrderLimitsOut(**limits)
