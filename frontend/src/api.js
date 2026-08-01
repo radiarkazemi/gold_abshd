@@ -452,6 +452,40 @@ export async function setPriceCardOrderable(goldbridgeItemId, orderableBuy, orde
   return res.json();
 }
 
+export async function setPriceCardManualPrice(goldbridgeItemId, { useManualPrice, manualBuy, manualSell }) {
+  const res = await fetch(`${API_BASE}/api/admin/price-cards/${goldbridgeItemId}/manual-price`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({
+      use_manual_price: !!useManualPrice,
+      manual_buy: manualBuy == null || manualBuy === "" ? null : Number(manualBuy),
+      manual_sell: manualSell == null || manualSell === "" ? null : Number(manualSell),
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to update manual price");
+  }
+  return res.json();
+}
+
+export async function setPriceCardRoleCommission(goldbridgeItemId, { roleId, commissionType, commissionValue }) {
+  const res = await fetch(`${API_BASE}/api/admin/price-cards/${goldbridgeItemId}/role-commission`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({
+      role_id: roleId,
+      commission_type: commissionType,
+      commission_value: Number(commissionValue),
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to update card commission");
+  }
+  return res.json();
+}
+
 export async function fetchAllPrices() {
   const res = await fetch(`${API_BASE}/api/admin/all-prices`, {
     headers: { ...adminAuthHeaders() },

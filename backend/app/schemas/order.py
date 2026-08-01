@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 from datetime import datetime
 from typing import Optional
 
@@ -51,6 +51,17 @@ class OrderOut(BaseModel):
     class Config:
         from_attributes = True
 
+    @field_serializer("pending_deadline_at", "created_at", "updated_at")
+    def serialize_dt_utc(self, value: datetime | None) -> str | None:
+        """Always emit UTC with a trailing Z so every client parses the
+        same absolute instant (avoids admin/client countdown drift)."""
+        if value is None:
+            return None
+        text = value.isoformat()
+        if value.tzinfo is None and not text.endswith("Z") and "+" not in text[-6:]:
+            return f"{text}Z"
+        return text
+
 
 class OrderDecisionIn(BaseModel):
     # "accepted" | "rejected" | "rejected_price_change"
@@ -62,6 +73,12 @@ class BalanceOut(BaseModel):
     cash_balance: float   # تومان
 
 
+class CardCommissionOut(BaseModel):
+    goldbridge_item_id: int
+    commission_type: str = "fixed"
+    commission_value: float = 0.0
+
+
 class OrderLimitsOut(BaseModel):
     min_weight: float   # گرم ۱۸
     max_weight: float   # گرم ۱۸
@@ -71,7 +88,9 @@ class OrderLimitsOut(BaseModel):
     commission_type: str = "fixed"   # "fixed" | "percentage" - this user's own commission
     commission_value: float = 0.0    # تومان اگر fixed, درصد اگر percentage
     trading_banned: bool = False
-    pending_seconds: int = 60
+    pending_seconds: int = 120
+    # Per-card commission overrides for this user's role (fallback = role default above).
+    card_commissions: list[CardCommissionOut] = []
 
 
 class OrderLimitsUpdateIn(BaseModel):

@@ -44,15 +44,19 @@ async def submit_order(
     if not card or not card.is_enabled:
         raise HTTPException(status_code=404, detail="این کارت قیمت در دسترس نیست.")
 
-    raw_item = price_cards.get_raw_item(order_in.goldbridge_item_id)
+    # Prefer live goldbridge quote; fall back to admin manual prices when
+    # the feed is down / card is on manual mode (see resolve_effective_item).
+    raw_item = price_cards.resolve_effective_item(
+        card, price_cards.get_raw_item(order_in.goldbridge_item_id)
+    )
     if not raw_item or raw_item.get("buy") is None or raw_item.get("sell") is None:
         raise HTTPException(status_code=503, detail="قیمت لحظه‌ای در دسترس نیست، لطفا کمی صبر کنید.")
 
     # Two independent layers, combined via effective_orderable: this
     # app's own per-side admin toggle, AND (unless the admin has set
     # override_source_restriction) goldbridge's own allow_buy/allow_sell
-    # for the item. Same function used for the customer-facing
-    # broadcast, so this can never disagree with what's displayed.
+    # for the item. Manual prices skip the goldbridge allow flags.
+    # Same function used for the customer-facing broadcast.
     buy_ok, sell_ok = price_cards.effective_orderable(card, raw_item)
     if order_in.side == "buy" and not buy_ok:
         raise HTTPException(status_code=403, detail="خرید این کارت در حال حاضر مجاز نیست.")

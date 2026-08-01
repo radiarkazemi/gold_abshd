@@ -127,22 +127,19 @@ def apply_role_pricing_formula(raw_side_price: float, side: str, commission_type
     return raw_side_price + commission if side == "buy" else raw_side_price - commission
 
 
-def apply_pricing_formula(mesghal17_buy: float, mesghal17_sell: float, side: str, user: User) -> float:
+def apply_pricing_formula(mesghal17_buy: float, mesghal17_sell: float, side: str, user: User,
+                          commission_type: str | None = None, commission_value: float | None = None) -> float:
     """
     The final مثقال۱۷ price for a specific order side and a specific
     user: the raw price from the source, plus (buy) or minus (sell)
-    this user's own commission. No spread widening beyond the source's
-    own buy/sell numbers - commission is the only markup applied.
+    this user's own commission (role default or per-card override).
 
         final_buy  = raw_buy  + commission
         final_sell = raw_sell - commission
-
-    Commission is per-user (from their role), not global - two users
-    with different roles placing the same-side order right now get
-    different final prices.
     """
-    commission_type = user.role.commission_type.value if user.role else "fixed"
-    commission_value = user.role.commission_value if user.role else 0.0
+    if commission_type is None or commission_value is None:
+        commission_type = user.role.commission_type.value if user.role else "fixed"
+        commission_value = user.role.commission_value if user.role else 0.0
     if side == "buy":
         return apply_role_pricing_formula(mesghal17_buy, "buy", commission_type, commission_value)
     return apply_role_pricing_formula(mesghal17_sell, "sell", commission_type, commission_value)
@@ -151,6 +148,9 @@ def apply_pricing_formula(mesghal17_buy: float, mesghal17_sell: float, side: str
 def create_order(db: Session, user: User, side: str, amount_type: str, value: float,
                   description: str, goldbridge_item_id: int, raw_item: dict) -> Order:
     is_coin = raw_item.get("type") == price_cards.COIN_ITEM_TYPE
+    commission_type, commission_value = price_cards.resolve_commission_for_user(
+        db, user, goldbridge_item_id
+    )
 
     if is_coin:
         if amount_type != "count":
@@ -159,7 +159,9 @@ def create_order(db: Session, user: User, side: str, amount_type: str, value: fl
             raise HTTPException(status_code=400, detail="تعداد باید عددی صحیح و بزرگتر از صفر باشد")
 
         mesghal17_raw_price = raw_item["buy"] if side == "buy" else raw_item["sell"]
-        final_price = apply_pricing_formula(raw_item["buy"], raw_item["sell"], side, user)
+        final_price = apply_pricing_formula(
+            raw_item["buy"], raw_item["sell"], side, user, commission_type, commission_value
+        )
         price_at_submit = final_price  # coins: no گرم۱۸ conversion, this IS the final per-coin price
 
         # No min/max quantity enforcement for coins yet (the existing
@@ -173,7 +175,9 @@ def create_order(db: Session, user: User, side: str, amount_type: str, value: fl
             raise HTTPException(status_code=400, detail="این کارت بر اساس وزن یا مبلغ سفارش داده می‌شود، نه تعداد")
 
         mesghal17_raw_price = raw_item["buy"] if side == "buy" else raw_item["sell"]
-        mesghal17_price = apply_pricing_formula(raw_item["buy"], raw_item["sell"], side, user)
+        mesghal17_price = apply_pricing_formula(
+            raw_item["buy"], raw_item["sell"], side, user, commission_type, commission_value
+        )
         price_at_submit = mesghal17_to_gram18(mesghal17_price)
         final_price = mesghal17_price
 
@@ -454,14 +458,22 @@ def resubmit_order_at_new_price(db: Session, order_id: str, user: User) -> Order
     if not order.goldbridge_item_id:
         raise HTTPException(status_code=400, detail="این سفارش قابل قیمت‌گذاری مجدد نیست")
 
-    raw_item = price_cards.get_raw_item(order.goldbridge_item_id)
+    card = price_cards.get_card_state(db, order.goldbridge_item_id)
+    raw_item = price_cards.resolve_effective_item(
+        card, price_cards.get_raw_item(order.goldbridge_item_id)
+    )
     if not raw_item or raw_item.get("buy") is None or raw_item.get("sell") is None:
         raise HTTPException(status_code=503, detail="قیمت لحظه‌ای در دسترس نیست، لطفا کمی صبر کنید.")
 
     side = order.side.value
     is_coin = raw_item.get("type") == price_cards.COIN_ITEM_TYPE
+    commission_type, commission_value = price_cards.resolve_commission_for_user(
+        db, user, order.goldbridge_item_id
+    )
     mesghal17_raw_price = raw_item["buy"] if side == "buy" else raw_item["sell"]
-    final_price = apply_pricing_formula(raw_item["buy"], raw_item["sell"], side, user)
+    final_price = apply_pricing_formula(
+        raw_item["buy"], raw_item["sell"], side, user, commission_type, commission_value
+    )
     if is_coin:
         price_at_submit = final_price
     else:
