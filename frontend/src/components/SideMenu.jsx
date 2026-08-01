@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
+import { logoUrl } from "../brandAssets";
 
 export default function SideMenu({ userPhone, onLogout }) {
   const [open, setOpen] = useState(false);
@@ -34,7 +35,10 @@ export default function SideMenu({ userPhone, onLogout }) {
         <div className="side-menu__backdrop" onClick={() => setOpen(false)}>
           <div className="side-menu__drawer" onClick={(e) => e.stopPropagation()}>
             <div className="side-menu__header">
-              <span className="side-menu__brand">آبشده قصر طلا</span>
+              <span className="side-menu__brand">
+                <img className="side-menu__logo" src={logoUrl} alt="" width="28" height="28" />
+                آبشده قصر طلا
+              </span>
               {userPhone && <span className="side-menu__phone">{userPhone}</span>}
             </div>
 

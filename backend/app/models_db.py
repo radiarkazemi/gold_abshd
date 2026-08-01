@@ -398,7 +398,38 @@ class PriceCard(Base):
     # order (see services/price_cards.get_enabled_cards_for_broadcast).
     override_source_restriction = Column(Boolean, default=False, nullable=False)
     sort_order = Column(Integer, default=0, nullable=False)
+    # When True (or when live goldbridge prices are missing), customers
+    # see and trade against manual_buy / manual_sell instead of the feed.
+    use_manual_price = Column(Boolean, default=False, nullable=False)
+    manual_buy = Column(Float, nullable=True)   # مثقال۱۷ تومان
+    manual_sell = Column(Float, nullable=True)  # مثقال۱۷ تومان
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PriceCardCommission(Base):
+    """
+    Per-card × per-role commission override. When missing, the role's
+    default commission_type/value applies. Lets admin set e.g. 20000
+    Toman on one card for «عمده» today and 10000 tomorrow without
+    changing the role-wide default.
+    """
+
+    __tablename__ = "price_card_commissions"
+    __table_args__ = (
+        UniqueConstraint("goldbridge_item_id", "role_id", name="uq_card_role_commission"),
+    )
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    goldbridge_item_id = Column(Integer, nullable=False, index=True)
+    role_id = Column(UUID(as_uuid=False), ForeignKey("roles.id"), nullable=False)
+    commission_type = Column(Enum(CommissionTypeEnum), nullable=False, default=CommissionTypeEnum.fixed)
+    commission_value = Column(Float, nullable=False, default=0)
+    # When the card is on manual prices, admin can deny specific roles
+    # from placing orders against that manual quote. Ignored for live feed.
+    can_order = Column(Boolean, nullable=False, default=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    role = relationship("Role")
 
 
 class AdminUser(Base):

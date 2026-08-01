@@ -50,4 +50,4 @@ export function localDeadlineMsFromOrder(order, nowMs = Date.now()) {
 }
 
 /** Default pending window length for circular progress (matches server default). */
-export const DEFAULT_PENDING_SECONDS = 60;
+export const DEFAULT_PENDING_SECONDS = 120;
