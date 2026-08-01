@@ -56,11 +56,14 @@ def get_effective_limits(db: Session, user) -> dict:
     show the ACTUAL price this user would get - not the raw source
     price - on the main trading screen, not just at order-submit time.
     """
+    from app.services import price_cards as price_cards_service
+
     result = get_order_limits(db)
     result["price_label_mode"] = "mesghal_and_gram18"
     result["commission_type"] = "fixed"
     result["commission_value"] = 0.0
     result["trading_banned"] = False
+    result["card_commissions"] = []
 
     role = getattr(user, "role", None)
     result["trading_banned"] = bool(getattr(user, "is_trading_banned", False))
@@ -74,4 +77,5 @@ def get_effective_limits(db: Session, user) -> dict:
         result["commission_type"] = role.commission_type.value if hasattr(role.commission_type, "value") else role.commission_type
         result["commission_value"] = role.commission_value
 
+    result["card_commissions"] = price_cards_service.card_commissions_for_user(db, user)
     return result

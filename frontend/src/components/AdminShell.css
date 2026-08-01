@@ -44,6 +44,23 @@
 .admin-shell__brand {
   margin-bottom: 26px;
   padding: 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-shell__logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.admin-shell__brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .admin-shell__brand-title {

@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useTheme } from "../context/ThemeContext";
+import { logoUrl } from "../brandAssets";
 
 const NAV_ITEMS = [
   { key: "dashboard", label: "داشبورد", icon: "◆" },
+  { key: "expert", label: "میز کارشناس", icon: "▣", badgeKey: "pending" },
   { key: "orders", label: "سفارش‌ها", icon: "▤", badgeKey: "pending" },
   { key: "phone-order", label: "حواله تلفنی", icon: "☎" },
   { key: "users", label: "کاربران", icon: "◈" },
@@ -21,6 +23,7 @@ const SUPER_ONLY_NAV_ITEM = { key: "admins", label: "مدیران", icon: "🛡"
 
 const TITLES = {
   dashboard: "داشبورد",
+  expert: "میز کارشناس",
   orders: "سفارش‌ها",
   "phone-order": "حواله تلفنی",
   users: "کاربران",
@@ -34,7 +37,7 @@ const TITLES = {
   admins: "مدیران",
 };
 
-const MOBILE_PRIMARY = ["dashboard", "orders", "users"];
+const MOBILE_PRIMARY = ["dashboard", "expert", "orders"];
 
 export default function AdminShell({ activeTab, onTabChange, pendingCount, connected, onLogout, children, identity }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -73,8 +76,11 @@ export default function AdminShell({ activeTab, onTabChange, pendingCount, conne
     <div className="admin-shell">
       <aside className="admin-shell__sidebar">
         <div className="admin-shell__brand">
-          <span className="admin-shell__brand-title">آبشده قصر طلا</span>
-          <span className="admin-shell__brand-sub">پنل مدیریت</span>
+          <img className="admin-shell__logo" src={logoUrl} alt="" width="40" height="40" />
+          <div className="admin-shell__brand-text">
+            <span className="admin-shell__brand-title">آبشده قصر طلا</span>
+            <span className="admin-shell__brand-sub">پنل مدیریت</span>
+          </div>
         </div>
 
         <nav className="admin-nav">
@@ -119,8 +125,11 @@ export default function AdminShell({ activeTab, onTabChange, pendingCount, conne
         <div className="side-menu__backdrop" onClick={() => setDrawerOpen(false)}>
           <div className="admin-shell__drawer" onClick={(e) => e.stopPropagation()}>
             <div className="admin-shell__brand" style={{ marginBottom: 22, paddingBottom: 16, borderBottom: "1px solid var(--hairline)" }}>
-              <span className="admin-shell__brand-title">آبشده قصر طلا</span>
-              <span className="admin-shell__brand-sub">پنل مدیریت</span>
+              <img className="admin-shell__logo" src={logoUrl} alt="" width="40" height="40" />
+              <div className="admin-shell__brand-text">
+                <span className="admin-shell__brand-title">آبشده قصر طلا</span>
+                <span className="admin-shell__brand-sub">پنل مدیریت</span>
+              </div>
             </div>
             <nav className="admin-nav" style={{ flex: 1, overflowY: "auto" }}>
               {navItems.map((item) => renderNavButton(item, "-drawer"))}

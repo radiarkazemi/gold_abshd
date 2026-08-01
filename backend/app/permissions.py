@@ -9,6 +9,7 @@ and never needs to be granted anything explicitly.
 
 PERMISSION_SCOPES = {
     "dashboard": "داشبورد",
+    "expert": "میز کارشناس",
     "orders": "سفارش‌ها",
     "phone-order": "حواله تلفنی",
     "users": "کاربران",

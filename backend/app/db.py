@@ -162,7 +162,7 @@ def _patch_orders_table():
         # enum or a plain varchar (both exist across install ages).
         conn.execute(text("""
             UPDATE orders
-            SET pending_deadline_at = NOW() + INTERVAL '60 seconds'
+            SET pending_deadline_at = NOW() + INTERVAL '120 seconds'
             WHERE status::text = 'pending'
               AND pending_deadline_at IS NULL
         """))
@@ -212,6 +212,18 @@ def _patch_price_cards_table():
         ))
         conn.execute(text(
             "ALTER TABLE price_cards ADD COLUMN IF NOT EXISTS override_source_restriction BOOLEAN NOT NULL DEFAULT false"
+        ))
+        conn.execute(text(
+            "ALTER TABLE price_cards ADD COLUMN IF NOT EXISTS use_manual_price BOOLEAN NOT NULL DEFAULT false"
+        ))
+        conn.execute(text(
+            "ALTER TABLE price_cards ADD COLUMN IF NOT EXISTS manual_buy DOUBLE PRECISION"
+        ))
+        conn.execute(text(
+            "ALTER TABLE price_cards ADD COLUMN IF NOT EXISTS manual_sell DOUBLE PRECISION"
+        ))
+        conn.execute(text(
+            "ALTER TABLE price_card_commissions ADD COLUMN IF NOT EXISTS can_order BOOLEAN NOT NULL DEFAULT true"
         ))
         # Carry over whatever the old single-flag value was, if that
         # column still exists, before dropping it.

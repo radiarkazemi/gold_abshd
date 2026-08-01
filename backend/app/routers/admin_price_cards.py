@@ -3,7 +3,14 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.admin_auth import require_permission
-from app.schemas.price_cards import AdminPriceCardOut, SetCardEnabledIn, SetCardOrderableIn, SetCardOverrideIn
+from app.schemas.price_cards import (
+    AdminPriceCardOut,
+    SetCardEnabledIn,
+    SetCardOrderableIn,
+    SetCardOverrideIn,
+    SetCardManualPriceIn,
+    SetCardRoleCommissionIn,
+)
 from app.services import price_cards
 
 router = APIRouter(prefix="/api/admin/price-cards", tags=["admin-price-cards"])
@@ -21,8 +28,6 @@ async def set_enabled(
     db: Session = Depends(get_db),
     _admin=Depends(require_permission("prices")),
 ):
-    if goldbridge_item_id not in price_cards.get_raw_items():
-        raise HTTPException(status_code=404, detail="این آیتم شناخته‌شده نیست")
     price_cards.set_card_enabled(
         db, goldbridge_item_id, payload.is_enabled, payload.display_name, payload.sort_order
     )
@@ -52,6 +57,47 @@ async def set_override(
 ):
     try:
         price_cards.set_card_override(db, goldbridge_item_id, payload.override_source_restriction)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return price_cards.list_admin_cards(db)
+
+
+@router.put("/{goldbridge_item_id}/manual-price", response_model=list[AdminPriceCardOut])
+async def set_manual_price(
+    goldbridge_item_id: int,
+    payload: SetCardManualPriceIn,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_permission("prices")),
+):
+    try:
+        price_cards.set_card_manual_price(
+            db,
+            goldbridge_item_id,
+            payload.use_manual_price,
+            payload.manual_buy,
+            payload.manual_sell,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return price_cards.list_admin_cards(db)
+
+
+@router.put("/{goldbridge_item_id}/role-commission", response_model=list[AdminPriceCardOut])
+async def set_role_commission(
+    goldbridge_item_id: int,
+    payload: SetCardRoleCommissionIn,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_permission("prices")),
+):
+    try:
+        price_cards.set_card_role_commission(
+            db,
+            goldbridge_item_id,
+            payload.role_id,
+            payload.commission_type,
+            payload.commission_value,
+            payload.can_order,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return price_cards.list_admin_cards(db)

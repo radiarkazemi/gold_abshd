@@ -1934,3 +1934,112 @@
   margin: 0;
   line-height: 1.6;
 }
+
+.price-cards-admin__manual,
+.price-cards-admin__commissions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--hairline);
+}
+
+.price-cards-admin__manual-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.price-cards-admin__manual-inputs label,
+.price-cards-admin__commission-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.price-cards-admin__manual-inputs input,
+.price-cards-admin__commission-fields input,
+.price-cards-admin__commission-fields select {
+  width: 100%;
+  border: 1px solid var(--hairline);
+  background: var(--surface-raised);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 7px 8px;
+  font-size: 12px;
+}
+
+.price-cards-admin__save-btn {
+  align-self: flex-start;
+  border: 1px solid var(--gold-dim);
+  background: var(--gold-dim);
+  color: #1a1508;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.price-cards-admin__save-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.price-cards-admin__manual-note {
+  margin: 0;
+  font-size: 10.5px;
+  color: var(--gold-bright);
+}
+
+.price-cards-admin__commissions-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.price-cards-admin__commission-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.price-cards-admin__commission-role {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.price-cards-admin__commission-role em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+.price-cards-admin__commission-role em.is-override {
+  color: var(--gold-bright);
+}
+
+.price-cards-admin__commission-fields {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+@media (max-width: 520px) {
+  .price-cards-admin__manual-inputs,
+  .price-cards-admin__commission-fields {
+    grid-template-columns: 1fr;
+  }
+}
