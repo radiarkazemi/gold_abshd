@@ -28,11 +28,19 @@ export function usePriceFeed() {
       const { commission_type, commission_value, by_card } = commissionRef.current;
       return (rawCards || []).map((c) => {
         const override = c.goldbridge_item_id != null ? by_card[c.goldbridge_item_id] : null;
-        return personalizePrice(
+        const personalized = personalizePrice(
           c,
           override?.commission_type ?? commission_type,
           override?.commission_value ?? commission_value,
         );
+        // Manual-price role denylist: keep the card visible but block order buttons.
+        const canOrder = override?.can_order !== false;
+        if (canOrder) return personalized;
+        return {
+          ...personalized,
+          orderable_buy: false,
+          orderable_sell: false,
+        };
       });
     }
 
@@ -56,6 +64,7 @@ export function usePriceFeed() {
         byCard[row.goldbridge_item_id] = {
           commission_type: row.commission_type,
           commission_value: row.commission_value,
+          can_order: row.can_order !== false,
         };
       }
       commissionRef.current = {

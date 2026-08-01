@@ -96,6 +96,7 @@ async def set_role_commission(
             payload.role_id,
             payload.commission_type,
             payload.commission_value,
+            payload.can_order,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

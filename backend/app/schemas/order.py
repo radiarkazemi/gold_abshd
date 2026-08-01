@@ -77,6 +77,8 @@ class CardCommissionOut(BaseModel):
     goldbridge_item_id: int
     commission_type: str = "fixed"
     commission_value: float = 0.0
+    # False when card is on manual prices and this user's role is denied.
+    can_order: bool = True
 
 
 class OrderLimitsOut(BaseModel):

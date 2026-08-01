@@ -469,7 +469,7 @@ export async function setPriceCardManualPrice(goldbridgeItemId, { useManualPrice
   return res.json();
 }
 
-export async function setPriceCardRoleCommission(goldbridgeItemId, { roleId, commissionType, commissionValue }) {
+export async function setPriceCardRoleCommission(goldbridgeItemId, { roleId, commissionType, commissionValue, canOrder = true }) {
   const res = await fetch(`${API_BASE}/api/admin/price-cards/${goldbridgeItemId}/role-commission`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
@@ -477,6 +477,7 @@ export async function setPriceCardRoleCommission(goldbridgeItemId, { roleId, com
       role_id: roleId,
       commission_type: commissionType,
       commission_value: Number(commissionValue),
+      can_order: !!canOrder,
     }),
   });
   if (!res.ok) {

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTheme } from "../context/ThemeContext";
+import { logoUrl } from "../brandAssets";
 
 const NAV_ITEMS = [
   { key: "dashboard", label: "داشبورد", icon: "◆" },
@@ -73,7 +74,7 @@ export default function AdminShell({ activeTab, onTabChange, pendingCount, conne
     <div className="admin-shell">
       <aside className="admin-shell__sidebar">
         <div className="admin-shell__brand">
-          <img className="admin-shell__logo" src="/logo.png" alt="" width="40" height="40" />
+          <img className="admin-shell__logo" src={logoUrl} alt="" width="40" height="40" />
           <div className="admin-shell__brand-text">
             <span className="admin-shell__brand-title">آبشده قصر طلا</span>
             <span className="admin-shell__brand-sub">پنل مدیریت</span>
@@ -122,7 +123,7 @@ export default function AdminShell({ activeTab, onTabChange, pendingCount, conne
         <div className="side-menu__backdrop" onClick={() => setDrawerOpen(false)}>
           <div className="admin-shell__drawer" onClick={(e) => e.stopPropagation()}>
             <div className="admin-shell__brand" style={{ marginBottom: 22, paddingBottom: 16, borderBottom: "1px solid var(--hairline)" }}>
-              <img className="admin-shell__logo" src="/logo.png" alt="" width="40" height="40" />
+              <img className="admin-shell__logo" src={logoUrl} alt="" width="40" height="40" />
               <div className="admin-shell__brand-text">
                 <span className="admin-shell__brand-title">آبشده قصر طلا</span>
                 <span className="admin-shell__brand-sub">پنل مدیریت</span>

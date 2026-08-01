@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { requestOtp, verifyOtp } from "../api";
 import { useAuth } from "../context/AuthContext";
+import { logoUrl } from "../brandAssets";
 
 function normalizePhone(value) {
   return value.replace(/[^\d]/g, "");
@@ -80,7 +81,7 @@ export default function LoginPage() {
   return (
     <div className="login">
       <div className="login__card">
-        <img className="login__logo" src="/logo.png" alt="آبشده قصر طلا" width="96" height="96" />
+        <img className="login__logo" src={logoUrl} alt="آبشده قصر طلا" width="96" height="96" />
         <h1 className="login__title">آبشده قصر طلا</h1>
         <p className="login__subtitle">
           {step === "phone"

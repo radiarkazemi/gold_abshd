@@ -52,6 +52,12 @@ async def submit_order(
     if not raw_item or raw_item.get("buy") is None or raw_item.get("sell") is None:
         raise HTTPException(status_code=503, detail="قیمت لحظه‌ای در دسترس نیست، لطفا کمی صبر کنید.")
 
+    if not price_cards.resolve_can_order_for_user(db, current_user, card, raw_item):
+        raise HTTPException(
+            status_code=403,
+            detail="دسته‌بندی شما مجاز به ثبت سفارش روی قیمت دستی این کارت نیست.",
+        )
+
     # Two independent layers, combined via effective_orderable: this
     # app's own per-side admin toggle, AND (unless the admin has set
     # override_source_restriction) goldbridge's own allow_buy/allow_sell

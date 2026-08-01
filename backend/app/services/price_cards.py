@@ -164,21 +164,29 @@ def item_price_with_commission(item: dict, side: str, commission_type: str, comm
 def resolve_effective_item(card, item: dict | None) -> dict | None:
     """
     Pick live goldbridge prices or admin manual prices for a card.
-    Manual wins when use_manual_price is on, or when the live feed is
-    missing/inactive but manuals are filled in.
+
+    Live quotes are used whenever buy/sell exist - goldbridge's own
+    `active` flag is informational only (shown in admin UI) and must
+    NOT hide priced items from customers (most coins sit at active=False
+    while still carrying valid buy/sell).
+
+    Manual wins when the admin explicitly enables use_manual_price, or
+    as a fallback when the live feed has no buy/sell at all but manuals
+    are filled in.
     """
-    live_ok = bool(
+    has_live_prices = bool(
         item
         and item.get("buy") is not None
         and item.get("sell") is not None
-        and item.get("active", True)
     )
     manuals_ok = bool(
         card
         and card.manual_buy is not None
         and card.manual_sell is not None
     )
-    use_manual = bool(card and card.use_manual_price and manuals_ok) or (not live_ok and manuals_ok)
+    use_manual = bool(card and card.use_manual_price and manuals_ok) or (
+        not has_live_prices and manuals_ok
+    )
     if use_manual:
         base = dict(item) if item else {
             "goldbridge_item_id": card.goldbridge_item_id,
@@ -195,7 +203,7 @@ def resolve_effective_item(card, item: dict | None) -> dict | None:
         base["price_source"] = "manual"
         base["active"] = True
         return base
-    if live_ok:
+    if has_live_prices:
         out = dict(item)
         out["price_source"] = "live"
         return out
@@ -237,6 +245,7 @@ def _role_commissions_for_card(db: Session, goldbridge_item_id: int, roles: list
             "role_name": role.name,
             "commission_type": ctype.value if hasattr(ctype, "value") else ctype,
             "commission_value": float(ov.commission_value if ov else role.commission_value),
+            "can_order": bool(ov.can_order) if ov else True,
             "is_override": ov is not None,
         })
     return result
@@ -381,6 +390,7 @@ def set_card_role_commission(
     role_id: str,
     commission_type: str,
     commission_value: float,
+    can_order: bool = True,
 ):
     from app.models_db import PriceCardCommission, Role, CommissionTypeEnum
 
@@ -404,6 +414,7 @@ def set_card_role_commission(
         db.add(row)
     row.commission_type = CommissionTypeEnum(commission_type)
     row.commission_value = float(commission_value)
+    row.can_order = bool(can_order)
     db.commit()
 
 
@@ -425,6 +436,31 @@ def resolve_commission_for_user(db: Session, user, goldbridge_item_id: int) -> t
     return user.role.commission_type.value, float(user.role.commission_value)
 
 
+def resolve_can_order_for_user(db: Session, user, card, effective_item: dict | None) -> bool:
+    """
+    When a card is on manual prices, admin can allow/deny each role
+    (دسته بندی) from placing orders. Live-feed cards ignore this and
+    use the normal orderable_buy/sell toggles for everyone.
+    """
+    from app.models_db import PriceCardCommission
+
+    if not effective_item or effective_item.get("price_source") != "manual":
+        return True
+    if not user or not getattr(user, "role_id", None):
+        return False
+    ov = (
+        db.query(PriceCardCommission)
+        .filter(
+            PriceCardCommission.goldbridge_item_id == card.goldbridge_item_id,
+            PriceCardCommission.role_id == user.role_id,
+        )
+        .first()
+    )
+    if ov is None:
+        return True
+    return bool(ov.can_order)
+
+
 def card_commissions_for_user(db: Session, user) -> list[dict]:
     from app.models_db import PriceCard, PriceCardCommission
 
@@ -442,10 +478,16 @@ def card_commissions_for_user(db: Session, user) -> list[dict]:
     result = []
     for card in cards:
         ov = overrides.get(card.goldbridge_item_id)
+        effective = resolve_effective_item(card, _latest_items.get(card.goldbridge_item_id))
+        is_manual = bool(effective and effective.get("price_source") == "manual")
+        can_order = True
+        if is_manual:
+            can_order = bool(ov.can_order) if ov is not None else True
         result.append({
             "goldbridge_item_id": card.goldbridge_item_id,
             "commission_type": ov.commission_type.value if ov else default_type,
             "commission_value": float(ov.commission_value) if ov else default_value,
+            "can_order": can_order,
         })
     return result
 

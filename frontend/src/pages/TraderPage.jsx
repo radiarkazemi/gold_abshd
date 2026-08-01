@@ -3,6 +3,7 @@ import { usePriceFeed } from "../hooks/usePriceFeed";
 import { submitOrder, fetchSettlementLabel, fetchTradingStatus } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
+import { logoUrl } from "../brandAssets";
 import PriceCardRow from "../components/PriceCardRow";
 import OrderModal from "../components/OrderModal";
 import NoticeCard from "../components/NoticeCard";
@@ -87,7 +88,7 @@ export default function TraderPage() {
           {tradingOnline ? "مدیر آنلاین" : "مدیر آفلاین"}
         </span>
         <h1 className="app__title">
-          <img className="app__logo" src="/logo.png" alt="" width="36" height="36" />
+          <img className="app__logo" src={logoUrl} alt="" width="36" height="36" />
           آبشده قصر طلا
         </h1>
         <button className="theme-toggle-btn" onClick={toggleTheme} aria-label="تغییر پوسته">

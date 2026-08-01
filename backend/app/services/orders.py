@@ -465,6 +465,12 @@ def resubmit_order_at_new_price(db: Session, order_id: str, user: User) -> Order
     if not raw_item or raw_item.get("buy") is None or raw_item.get("sell") is None:
         raise HTTPException(status_code=503, detail="قیمت لحظه‌ای در دسترس نیست، لطفا کمی صبر کنید.")
 
+    if card and not price_cards.resolve_can_order_for_user(db, user, card, raw_item):
+        raise HTTPException(
+            status_code=403,
+            detail="دسته‌بندی شما مجاز به ثبت سفارش روی قیمت دستی این کارت نیست.",
+        )
+
     side = order.side.value
     is_coin = raw_item.get("type") == price_cards.COIN_ITEM_TYPE
     commission_type, commission_value = price_cards.resolve_commission_for_user(

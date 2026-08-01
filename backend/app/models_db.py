@@ -424,6 +424,9 @@ class PriceCardCommission(Base):
     role_id = Column(UUID(as_uuid=False), ForeignKey("roles.id"), nullable=False)
     commission_type = Column(Enum(CommissionTypeEnum), nullable=False, default=CommissionTypeEnum.fixed)
     commission_value = Column(Float, nullable=False, default=0)
+    # When the card is on manual prices, admin can deny specific roles
+    # from placing orders against that manual quote. Ignored for live feed.
+    can_order = Column(Boolean, nullable=False, default=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     role = relationship("Role")

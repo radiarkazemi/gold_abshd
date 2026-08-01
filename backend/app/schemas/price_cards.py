@@ -53,6 +53,8 @@ class SetCardRoleCommissionIn(BaseModel):
     role_id: str
     commission_type: str  # "fixed" | "percentage"
     commission_value: float
+    # When the card uses manual prices, False blocks this role from ordering.
+    can_order: bool = True
 
 
 class CustomerPriceCardOut(BaseModel):

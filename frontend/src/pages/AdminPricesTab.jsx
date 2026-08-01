@@ -85,6 +85,7 @@ function ManualPriceEditor({ card, busy, onSave }) {
 function RoleCommissionEditor({ card, busy, onSave }) {
   const rows = card.role_commissions || [];
   const [drafts, setDrafts] = useState({});
+  const manualMode = !!card.use_manual_price || card.price_source === "manual";
 
   useEffect(() => {
     const next = {};
@@ -92,6 +93,7 @@ function RoleCommissionEditor({ card, busy, onSave }) {
       next[r.role_id] = {
         commission_type: r.commission_type || "fixed",
         commission_value: String(r.commission_value ?? 0),
+        can_order: r.can_order !== false,
       };
     }
     setDrafts(next);
@@ -104,11 +106,17 @@ function RoleCommissionEditor({ card, busy, onSave }) {
 
   return (
     <div className="price-cards-admin__commissions">
-      <div className="price-cards-admin__commissions-title">کمیسیون هر دسته‌بندی برای این کارت</div>
+      <div className="price-cards-admin__commissions-title">کمیسیون و دسترسی هر دسته‌بندی برای این کارت</div>
+      {manualMode && (
+        <p className="price-cards-admin__manual-note">
+          حالت قیمت دستی فعال است — با سوییچ «مجاز به سفارش» مشخص کنید کدام دسته‌بندی می‌تواند با این قیمت سفارش بدهد.
+        </p>
+      )}
       {rows.map((r) => {
         const draft = drafts[r.role_id] || {
           commission_type: r.commission_type,
           commission_value: String(r.commission_value ?? 0),
+          can_order: r.can_order !== false,
         };
         return (
           <div key={r.role_id} className="price-cards-admin__commission-row">
@@ -120,6 +128,20 @@ function RoleCommissionEditor({ card, busy, onSave }) {
                 <em>پیش‌فرض نقش</em>
               )}
             </div>
+            <label className="price-cards-admin__toggle">
+              <input
+                type="checkbox"
+                checked={draft.can_order !== false}
+                disabled={busy}
+                onChange={(e) =>
+                  setDrafts((prev) => ({
+                    ...prev,
+                    [r.role_id]: { ...draft, can_order: e.target.checked },
+                  }))
+                }
+              />
+              مجاز به سفارش{manualMode ? " با قیمت دستی" : ""}
+            </label>
             <div className="price-cards-admin__commission-fields">
               <select
                 value={draft.commission_type}
@@ -155,6 +177,7 @@ function RoleCommissionEditor({ card, busy, onSave }) {
                     roleId: r.role_id,
                     commissionType: draft.commission_type,
                     commissionValue: Number(draft.commission_value || 0),
+                    canOrder: draft.can_order !== false,
                   })
                 }
               >
