@@ -181,79 +181,12 @@ function CompactOrderCard({ order, dealers, busyId, onDecide, onExpire, onAssign
   );
 }
 
-function AcceptedOrdersTable({ orders, dealers, busyId, onAssign, filterSide, query }) {
-  const rows = useMemo(() => {
-    let list = orders || [];
-    if (filterSide === "buy" || filterSide === "sell") {
-      list = list.filter((o) => o.side === filterSide);
-    }
-    const q = (query || "").trim();
-    if (q) {
-      list = list.filter((o) => {
-        const hay = `${o.customer_name || ""} ${o.customer_code || ""} ${o.id || ""}`;
-        return hay.includes(q);
-      });
-    }
-    return list;
-  }, [orders, filterSide, query]);
-
-  if (!rows.length) {
-    return <p className="expert-col__empty">سفارش تاییدشده‌ای در میز نیست</p>;
-  }
-
-  return (
-    <div className="expert-accepted__wrap">
-      <table className="expert-accepted__table">
-        <thead>
-          <tr>
-            <th>زمان</th>
-            <th>نوع</th>
-            <th>مشتری</th>
-            <th>وزن</th>
-            <th>مانده پوشش</th>
-            <th>مبلغ</th>
-            <th>آبشده تهران</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((o) => (
-            <tr key={o.id} className={o.is_fully_hedged ? "is-hedged" : ""}>
-              <td>{formatDateTime(o.updated_at || o.created_at)}</td>
-              <td>
-                <span className={`expert-card__badge expert-card__badge--${o.side}`}>
-                  {SIDE_LABEL[o.side]}
-                </span>
-              </td>
-              <td>
-                {o.customer_name || "بدون نام"} #{o.customer_code}
-              </td>
-              <td>{fa(orderGoldWeight(o), { maximumFractionDigits: 3 })}</td>
-              <td>{fa(o.open_hedge_weight ?? 0, { maximumFractionDigits: 3 })}</td>
-              <td>{fa(Math.round(orderTotalMoney(o)))}</td>
-              <td>
-                <DealerAssignInline
-                  order={o}
-                  dealers={dealers}
-                  busy={busyId === o.id}
-                  onAssign={onAssign}
-                />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 export default function AdminExpertTab({ refreshSignal }) {
   const [desk, setDesk] = useState(null);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [dealerForm, setDealerForm] = useState({ name: "", phone: "", notes: "" });
   const [dealerBusy, setDealerBusy] = useState(false);
-  const [acceptedFilter, setAcceptedFilter] = useState("all");
-  const [acceptedQuery, setAcceptedQuery] = useState("");
   const [freeHedge, setFreeHedge] = useState({
     dealerId: "",
     side: "sell_to_dealer",
@@ -402,9 +335,6 @@ export default function AdminExpertTab({ refreshSignal }) {
 
   const buy = desk.buy_orders || [];
   const sell = desk.sell_orders || [];
-  const acceptedAll = [...(desk.accepted_buy_orders || []), ...(desk.accepted_sell_orders || [])].sort(
-    (a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at)
-  );
   const dealers = desk.dealers || [];
   const activeDealers = dealers.filter((d) => d.is_active);
 
@@ -413,9 +343,8 @@ export default function AdminExpertTab({ refreshSignal }) {
       <div className="expert__intro">
         <h3 className="dashboard__section-title">میز کارشناس</h3>
         <p className="expert__hint">
-          جمع بالا از سفارش‌های <b>در انتظار + تاییدشده</b> ساخته می‌شود و با تایید صفر نمی‌شود.
-          مثال: ۴۰ گرم فروش مشتری و ۳۰ گرم خرید مشتری ← بعد از تایید ۳۰ گرم خرید، ۱۰ گرم مانده برای فروش به تهران.
-          نشست فعلی حدود {fa(desk.session_hours || 36)} ساعت است.
+          فقط سفارش‌های <b>در انتظار</b> روی میز دیده می‌شوند. جمع بالا با تایید صفر نمی‌شود
+          (تهاتر خرید/فروش تا مانده برای تهران مشخص شود).
         </p>
       </div>
 
@@ -426,8 +355,7 @@ export default function AdminExpertTab({ refreshSignal }) {
             {fa(totals.buy.weight, { maximumFractionDigits: 3 })} گرم۱۸
           </strong>
           <span className="expert-totals__sub">
-            {fa(totals.buy.count)} سفارش · باز {fa(totals.buy.pending_count || 0)} · تایید{" "}
-            {fa(totals.buy.accepted_count || 0)}
+            {fa(totals.buy.count)} سفارش · در انتظار {fa(totals.buy.pending_count || 0)}
           </span>
         </div>
         <div className="expert-totals__cell expert-totals__cell--sell">
@@ -436,8 +364,7 @@ export default function AdminExpertTab({ refreshSignal }) {
             {fa(totals.sell.weight, { maximumFractionDigits: 3 })} گرم۱۸
           </strong>
           <span className="expert-totals__sub">
-            {fa(totals.sell.count)} سفارش · باز {fa(totals.sell.pending_count || 0)} · تایید{" "}
-            {fa(totals.sell.accepted_count || 0)}
+            {fa(totals.sell.count)} سفارش · در انتظار {fa(totals.sell.pending_count || 0)}
           </span>
         </div>
         <div className={`expert-totals__balance expert-totals__balance--${totals.net_direction}`}>
@@ -502,33 +429,6 @@ export default function AdminExpertTab({ refreshSignal }) {
             )}
           </div>
         </div>
-      </section>
-
-      <section className="expert-accepted">
-        <div className="expert-accepted__toolbar">
-          <h3 className="dashboard__section-title">سفارش‌های تاییدشده (میز)</h3>
-          <div className="expert-accepted__filters">
-            <input
-              value={acceptedQuery}
-              onChange={(e) => setAcceptedQuery(e.target.value)}
-              placeholder="جستجوی مشتری / کد…"
-            />
-            <select value={acceptedFilter} onChange={(e) => setAcceptedFilter(e.target.value)}>
-              <option value="all">همه</option>
-              <option value="buy">فقط خرید مشتری</option>
-              <option value="sell">فقط فروش مشتری</option>
-            </select>
-            <span className="expert-accepted__count">{fa(acceptedAll.length)} ردیف</span>
-          </div>
-        </div>
-        <AcceptedOrdersTable
-          orders={acceptedAll}
-          dealers={dealers}
-          busyId={busyId}
-          onAssign={handleAssign}
-          filterSide={acceptedFilter}
-          query={acceptedQuery}
-        />
       </section>
 
       <section className="expert-dealers">
