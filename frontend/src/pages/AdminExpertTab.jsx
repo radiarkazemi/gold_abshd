@@ -9,6 +9,7 @@ import {
 } from "../api";
 import { orderGoldWeight, orderTotalMoney } from "../utils/orderCalc";
 import PendingCountdown from "../components/PendingCountdown";
+import ExpertGoldChart from "../components/ExpertGoldChart";
 import "./AdminExpertTab.css";
 
 const SIDE_LABEL = { buy: "خرید مشتری از ما", sell: "فروش مشتری به ما" };
@@ -380,6 +381,8 @@ export default function AdminExpertTab({ refreshSignal }) {
           </span>
         </div>
       </section>
+
+      <ExpertGoldChart />
 
       <section className="expert-board" aria-label="سفارش‌های در انتظار">
         <div className="expert-col expert-col--buy">

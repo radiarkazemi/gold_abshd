@@ -124,6 +124,49 @@
   padding-bottom: 2px;
 }
 
+.expert-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface);
+  min-height: 280px;
+}
+
+.expert-chart__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--surface-raised);
+}
+
+.expert-chart__head h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.expert-chart__head span {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.expert-chart__frame {
+  width: 100%;
+  height: min(42vh, 480px);
+  min-height: 280px;
+}
+
+.expert-chart__host {
+  width: 100%;
+  height: 100%;
+}
+
 .expert-pill {
   display: inline-block;
   font-size: 10px;
