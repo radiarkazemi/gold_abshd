@@ -4,6 +4,7 @@ import { logoUrl } from "../brandAssets";
 
 const NAV_ITEMS = [
   { key: "dashboard", label: "داشبورد", icon: "◆" },
+  { key: "expert", label: "میز کارشناس", icon: "▣", badgeKey: "pending" },
   { key: "orders", label: "سفارش‌ها", icon: "▤", badgeKey: "pending" },
   { key: "phone-order", label: "حواله تلفنی", icon: "☎" },
   { key: "users", label: "کاربران", icon: "◈" },
@@ -22,6 +23,7 @@ const SUPER_ONLY_NAV_ITEM = { key: "admins", label: "مدیران", icon: "🛡"
 
 const TITLES = {
   dashboard: "داشبورد",
+  expert: "میز کارشناس",
   orders: "سفارش‌ها",
   "phone-order": "حواله تلفنی",
   users: "کاربران",
@@ -35,7 +37,7 @@ const TITLES = {
   admins: "مدیران",
 };
 
-const MOBILE_PRIMARY = ["dashboard", "orders", "users"];
+const MOBILE_PRIMARY = ["dashboard", "expert", "orders"];
 
 export default function AdminShell({ activeTab, onTabChange, pendingCount, connected, onLogout, children, identity }) {
   const [drawerOpen, setDrawerOpen] = useState(false);

@@ -1,0 +1,79 @@
+from pydantic import BaseModel
+from datetime import datetime
+from typing import Optional
+
+
+class TehranDealerOut(BaseModel):
+    id: str
+    name: str
+    phone: Optional[str] = None
+    notes: Optional[str] = None
+    is_active: bool = True
+    sort_order: int = 0
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TehranDealerCreateIn(BaseModel):
+    name: str
+    phone: Optional[str] = None
+    notes: Optional[str] = None
+    sort_order: int = 0
+
+
+class TehranDealerUpdateIn(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    notes: Optional[str] = None
+    is_active: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+class ExpertHedgeOut(BaseModel):
+    id: str
+    dealer_id: str
+    dealer_name: str
+    side: str  # buy_from_dealer | sell_to_dealer
+    weight_gram18: float
+    related_order_id: Optional[str] = None
+    note: Optional[str] = None
+    created_by: Optional[str] = None
+    created_at: datetime
+
+
+class ExpertHedgeCreateIn(BaseModel):
+    dealer_id: str
+    # Optional: if set, side is inferred from the order (sell→sell_to_dealer, buy→buy_from_dealer)
+    related_order_id: Optional[str] = None
+    # Required when related_order_id is null; ignored (overridden) when order is set unless provided as override
+    side: Optional[str] = None  # buy_from_dealer | sell_to_dealer
+    weight_gram18: Optional[float] = None  # defaults to full order weight when order-linked
+    note: Optional[str] = None
+
+
+class ExpertSideTotals(BaseModel):
+    count: int = 0
+    weight: float = 0.0
+    money: float = 0.0
+
+
+class ExpertDeskTotals(BaseModel):
+    buy: ExpertSideTotals  # خرید مشتری از ما
+    sell: ExpertSideTotals  # فروش مشتری به ما
+    # sell.weight - buy.weight: >0 excess gold → sell to Tehran; <0 short → buy from Tehran
+    net_weight: float = 0.0
+    net_direction: str = "balanced"  # balanced | sell_to_tehran | buy_from_tehran
+    hedged_buy_weight: float = 0.0
+    hedged_sell_weight: float = 0.0
+    open_buy_weight: float = 0.0   # buy.weight - hedged_buy
+    open_sell_weight: float = 0.0  # sell.weight - hedged_sell
+
+
+class ExpertDeskOut(BaseModel):
+    buy_orders: list[dict]
+    sell_orders: list[dict]
+    totals: ExpertDeskTotals
+    dealers: list[TehranDealerOut]
+    hedges: list[ExpertHedgeOut]

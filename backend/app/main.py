@@ -51,6 +51,7 @@ from app.routers import (
     kyc,
     transfers,
     admin_price_cards,
+    admin_expert,
 )
 
 app = FastAPI(title="آبشده قصر طلا - Gold Trading Server")
@@ -213,3 +214,4 @@ app.include_router(admin_accounts.router)
 app.include_router(kyc.router)
 app.include_router(transfers.router)
 app.include_router(admin_price_cards.router)
+app.include_router(admin_expert.router)

@@ -496,3 +496,47 @@ class AdminActivityLog(Base):
     action = Column(String, nullable=False)
     detail = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class TehranDealer(Base):
+    """
+    آبشده‌فروش‌های تهران - counterparties the expert desk hedges
+    unmatched customer buy/sell weight with (e.g. فرشاد گلد، منیری).
+    """
+
+    __tablename__ = "tehran_dealers"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    name = Column(String, unique=True, nullable=False)
+    phone = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    sort_order = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ExpertHedgeSideEnum(str, enum.Enum):
+    # Our action with the Tehran dealer:
+    buy_from_dealer = "buy_from_dealer"    # خرید از آبشده تهران (cover customer buys)
+    sell_to_dealer = "sell_to_dealer"      # فروش به آبشده تهران (cover customer sells)
+
+
+class ExpertHedge(Base):
+    """
+    A hedge / assignment of customer-order weight (or a free-standing
+    desk trade) against a Tehran melted-gold dealer.
+    """
+
+    __tablename__ = "expert_hedges"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    dealer_id = Column(UUID(as_uuid=False), ForeignKey("tehran_dealers.id"), nullable=False, index=True)
+    side = Column(Enum(ExpertHedgeSideEnum), nullable=False)
+    weight_gram18 = Column(Float, nullable=False)
+    related_order_id = Column(UUID(as_uuid=False), ForeignKey("orders.id"), nullable=True, index=True)
+    note = Column(Text, nullable=True)
+    created_by = Column(String, nullable=True)  # admin username
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    dealer = relationship("TehranDealer")
+    order = relationship("Order")

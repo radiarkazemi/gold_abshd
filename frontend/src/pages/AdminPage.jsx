@@ -8,6 +8,7 @@ import AdminAddUserTab from "./AdminAddUserTab";
 import AdminRolesTab from "./AdminRolesTab";
 import AdminCalendarTab from "./AdminCalendarTab";
 import AdminDashboardTab from "./AdminDashboardTab";
+import AdminExpertTab from "./AdminExpertTab";
 import AdminPhoneOrderTab from "./AdminPhoneOrderTab";
 import AdminPricesTab from "./AdminPricesTab";
 import AdminAccountsTab from "./AdminAccountsTab";
@@ -203,6 +204,8 @@ function AdminPanel({ onLogout }) {
       )}
       {tab === "dashboard" ? (
         <AdminDashboardTab onGoToOrders={() => setTab("orders")} refreshSignal={wsTick} />
+      ) : tab === "expert" ? (
+        <AdminExpertTab refreshSignal={wsTick} />
       ) : tab === "users" ? (
         <AdminUsersTab />
       ) : tab === "notice" ? (

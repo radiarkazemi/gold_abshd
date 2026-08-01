@@ -395,6 +395,76 @@ export async function decideOrder(orderId, status) {
   return res.json();
 }
 
+export async function fetchExpertDesk() {
+  const res = await fetch(`${API_BASE}/api/admin/expert/desk`, { headers: { ...adminAuthHeaders() } });
+  if (res.status === 401 || res.status === 403) {
+    clearAdminToken();
+    throw new Error("ADMIN_SESSION_EXPIRED");
+  }
+  if (!res.ok) throw new Error("Failed to fetch expert desk");
+  return res.json();
+}
+
+export async function createTehranDealer({ name, phone, notes, sortOrder = 0 }) {
+  const res = await fetch(`${API_BASE}/api/admin/expert/dealers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({ name, phone: phone || null, notes: notes || null, sort_order: sortOrder }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to create dealer");
+  }
+  return res.json();
+}
+
+export async function updateTehranDealer(dealerId, payload) {
+  const res = await fetch(`${API_BASE}/api/admin/expert/dealers/${dealerId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({
+      name: payload.name,
+      phone: payload.phone,
+      notes: payload.notes,
+      is_active: payload.isActive,
+      sort_order: payload.sortOrder,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to update dealer");
+  }
+  return res.json();
+}
+
+export async function createExpertHedge({ dealerId, relatedOrderId, side, weightGram18, note }) {
+  const res = await fetch(`${API_BASE}/api/admin/expert/hedges`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({
+      dealer_id: dealerId,
+      related_order_id: relatedOrderId || null,
+      side: side || null,
+      weight_gram18: weightGram18 == null || weightGram18 === "" ? null : Number(weightGram18),
+      note: note || null,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to create hedge");
+  }
+  return res.json();
+}
+
+export async function deleteExpertHedge(hedgeId) {
+  const res = await fetch(`${API_BASE}/api/admin/expert/hedges/${hedgeId}`, {
+    method: "DELETE",
+    headers: { ...adminAuthHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to delete hedge");
+  return res.json();
+}
+
 export async function fetchAdminUsers(search) {
   const url = new URL(`${API_BASE}/api/admin/users`);
   if (search) url.searchParams.set("search", search);
