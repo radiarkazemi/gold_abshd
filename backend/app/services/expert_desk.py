@@ -223,6 +223,23 @@ def get_desk(db: Session) -> dict:
     hedged_buy = sum(float(h.weight_gram18) for h in hedges if h.side == ExpertHedgeSideEnum.buy_from_dealer)
     hedged_sell = sum(float(h.weight_gram18) for h in hedges if h.side == ExpertHedgeSideEnum.sell_to_dealer)
 
+    suggested_cover = None
+    if direction == "sell_to_tehran":
+        suggested_cover = {
+            "side": "sell_to_dealer",
+            "weight_gram18": abs(net),
+            "net_direction": direction,
+        }
+    elif direction == "buy_from_tehran":
+        suggested_cover = {
+            "side": "buy_from_dealer",
+            "weight_gram18": abs(net),
+            "net_direction": direction,
+        }
+
+    uncovered_buy = [o for o in pending_buy if float(o.get("open_hedge_weight") or 0) > 1e-6]
+    uncovered_sell = [o for o in pending_sell if float(o.get("open_hedge_weight") or 0) > 1e-6]
+
     return {
         "buy_orders": pending_buy,
         "sell_orders": pending_sell,
@@ -252,6 +269,13 @@ def get_desk(db: Session) -> dict:
             "open_buy_weight": open_buy,
             "open_sell_weight": open_sell,
             "matched_weight": min(buy_bucket["weight"], sell_bucket["weight"]),
+            "suggested_cover": suggested_cover,
+            "uncovered_pending": {
+                "buy_weight": sum(float(o.get("open_hedge_weight") or 0) for o in uncovered_buy),
+                "sell_weight": sum(float(o.get("open_hedge_weight") or 0) for o in uncovered_sell),
+                "buy_count": len(uncovered_buy),
+                "sell_count": len(uncovered_sell),
+            },
         },
         "dealers": list_dealers(db, active_only=False),
         "hedges": [_hedge_out(h) for h in hedges],

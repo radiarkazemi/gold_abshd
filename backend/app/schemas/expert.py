@@ -61,6 +61,19 @@ class ExpertSideTotals(BaseModel):
     accepted_count: int = 0
 
 
+class ExpertSuggestedCover(BaseModel):
+    side: str  # buy_from_dealer | sell_to_dealer
+    weight_gram18: float
+    net_direction: str  # sell_to_tehran | buy_from_tehran
+
+
+class ExpertUncoveredPending(BaseModel):
+    buy_weight: float = 0.0
+    sell_weight: float = 0.0
+    buy_count: int = 0
+    sell_count: int = 0
+
+
 class ExpertDeskTotals(BaseModel):
     buy: ExpertSideTotals  # خرید مشتری از ما (pending + accepted session)
     sell: ExpertSideTotals  # فروش مشتری به ما (pending + accepted session)
@@ -75,6 +88,8 @@ class ExpertDeskTotals(BaseModel):
     open_buy_weight: float = 0.0
     open_sell_weight: float = 0.0
     matched_weight: float = 0.0  # min(buy, sell) already offsetting each other
+    suggested_cover: Optional[ExpertSuggestedCover] = None
+    uncovered_pending: ExpertUncoveredPending = ExpertUncoveredPending()
 
 
 class ExpertDeskOut(BaseModel):

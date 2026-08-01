@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchExpertDesk,
+  fetchPrice,
   decideOrder,
   createTehranDealer,
   updateTehranDealer,
@@ -10,6 +11,11 @@ import {
 import { orderGoldWeight, orderTotalMoney } from "../utils/orderCalc";
 import PendingCountdown from "../components/PendingCountdown";
 import "./AdminExpertTab.css";
+
+function pickPrimaryGoldCard(cards) {
+  const list = cards || [];
+  return list.find((c) => c.type === 1 && c.is_primary) || list.find((c) => c.type === 1) || null;
+}
 
 const SIDE_LABEL = { buy: "خرید مشتری از ما", sell: "فروش مشتری به ما" };
 const HEDGE_LABEL = {
@@ -108,8 +114,12 @@ function DealerAssignInline({ order, dealers, busy, onAssign }) {
 }
 
 function CompactOrderCard({ order, dealers, busyId, onDecide, onExpire, onAssign }) {
+  const openHedge = Math.max(0, Number(order.open_hedge_weight ?? orderGoldWeight(order)));
+  const uncovered = openHedge > 1e-6;
   return (
-    <article className={`expert-card expert-card--${order.side}`}>
+    <article
+      className={`expert-card expert-card--${order.side}${uncovered ? " expert-card--uncovered" : ""}`}
+    >
       <header className="expert-card__head">
         <span className={`expert-card__badge expert-card__badge--${order.side}`}>
           {SIDE_LABEL[order.side]}
@@ -144,6 +154,12 @@ function CompactOrderCard({ order, dealers, busyId, onDecide, onExpire, onAssign
           </strong>
         </div>
       </div>
+
+      {uncovered && (
+        <p className="expert-card__hedged">
+          بدون پوشش: {fa(openHedge, { maximumFractionDigits: 3 })} g
+        </p>
+      )}
 
       <div className="expert-card__actions">
         <button
@@ -185,6 +201,7 @@ export default function AdminExpertTab({ refreshSignal }) {
   const [desk, setDesk] = useState(null);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
+  const [liveCard, setLiveCard] = useState(null);
   const [dealerForm, setDealerForm] = useState({ name: "", phone: "", notes: "" });
   const [dealerBusy, setDealerBusy] = useState(false);
   const [freeHedge, setFreeHedge] = useState({
@@ -193,6 +210,7 @@ export default function AdminExpertTab({ refreshSignal }) {
     weight: "",
     note: "",
   });
+  const freeHedgeRef = useRef(null);
 
   const reload = useCallback(() => {
     fetchExpertDesk()
@@ -215,6 +233,17 @@ export default function AdminExpertTab({ refreshSignal }) {
   useEffect(() => {
     if (refreshSignal !== undefined) reload();
   }, [refreshSignal, reload]);
+
+  useEffect(() => {
+    function loadPrices() {
+      fetchPrice()
+        .then((payload) => setLiveCard(pickPrimaryGoldCard(payload.cards)))
+        .catch(() => {});
+    }
+    loadPrices();
+    const id = setInterval(loadPrices, 2000);
+    return () => clearInterval(id);
+  }, []);
 
   const handleExpire = useCallback(
     (orderId) => {
@@ -326,6 +355,58 @@ export default function AdminExpertTab({ refreshSignal }) {
     return "بالانس برقرار است";
   }, [totals]);
 
+  const suggestedCover = useMemo(() => {
+    if (!totals) return null;
+    if (totals.suggested_cover?.weight_gram18 > 1e-6) return totals.suggested_cover;
+    const abs = Math.abs(Number(totals.net_weight) || 0);
+    if (abs < 1e-6) return null;
+    if (totals.net_direction === "sell_to_tehran") {
+      return { side: "sell_to_dealer", weight_gram18: abs, net_direction: "sell_to_tehran" };
+    }
+    if (totals.net_direction === "buy_from_tehran") {
+      return { side: "buy_from_dealer", weight_gram18: abs, net_direction: "buy_from_tehran" };
+    }
+    return null;
+  }, [totals]);
+
+  const uncovered = useMemo(() => {
+    if (!desk) return null;
+    const fromApi = totals?.uncovered_pending;
+    if (fromApi) return fromApi;
+    const buyOrders = desk.buy_orders || [];
+    const sellOrders = desk.sell_orders || [];
+    const ub = buyOrders.filter((o) => Number(o.open_hedge_weight ?? 0) > 1e-6);
+    const us = sellOrders.filter((o) => Number(o.open_hedge_weight ?? 0) > 1e-6);
+    return {
+      buy_weight: ub.reduce((s, o) => s + Number(o.open_hedge_weight || 0), 0),
+      sell_weight: us.reduce((s, o) => s + Number(o.open_hedge_weight || 0), 0),
+      buy_count: ub.length,
+      sell_count: us.length,
+    };
+  }, [desk, totals]);
+
+  const showUncoveredAlert = Boolean(
+    uncovered &&
+      (uncovered.buy_count > 0 ||
+        uncovered.sell_count > 0 ||
+        (suggestedCover && suggestedCover.weight_gram18 > 1e-6))
+  );
+
+  function applySuggestedCover() {
+    if (!suggestedCover) return;
+    const dealers = (desk?.dealers || []).filter((d) => d.is_active);
+    setFreeHedge((f) => ({
+      ...f,
+      side: suggestedCover.side,
+      weight: String(Number(suggestedCover.weight_gram18.toFixed(3))),
+      dealerId: f.dealerId || dealers[0]?.id || "",
+      note: f.note || "پوشش مانده میز",
+    }));
+    requestAnimationFrame(() => {
+      freeHedgeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
+
   if (error && !desk) {
     return <p className="myorders__empty">{error}</p>;
   }
@@ -337,6 +418,8 @@ export default function AdminExpertTab({ refreshSignal }) {
   const sell = desk.sell_orders || [];
   const dealers = desk.dealers || [];
   const activeDealers = dealers.filter((d) => d.is_active);
+  const coverSideLabel =
+    suggestedCover?.side === "buy_from_dealer" ? "خرید از آبشده تهران" : "فروش به آبشده تهران";
 
   return (
     <div className="expert">
@@ -347,6 +430,27 @@ export default function AdminExpertTab({ refreshSignal }) {
           (تهاتر خرید/فروش تا مانده برای تهران مشخص شود).
         </p>
       </div>
+
+      <section className="expert-spot" aria-label="فی لحظه‌ای">
+        <div className="expert-spot__title">
+          <strong>فی لحظه‌ای</strong>
+          <span>{liveCard?.name || "آبشده"} · مثقال ۱۷</span>
+        </div>
+        <div className="expert-spot__prices">
+          <div className="expert-spot__cell expert-spot__cell--buy">
+            <span>خرید</span>
+            <strong>
+              {liveCard?.buy_price != null ? fa(Math.round(liveCard.buy_price)) : "—"}
+            </strong>
+          </div>
+          <div className="expert-spot__cell expert-spot__cell--sell">
+            <span>فروش</span>
+            <strong>
+              {liveCard?.sell_price != null ? fa(Math.round(liveCard.sell_price)) : "—"}
+            </strong>
+          </div>
+        </div>
+      </section>
 
       <section className="expert-totals expert-totals--sticky" aria-label="جمع میز">
         <div className="expert-totals__cell expert-totals__cell--buy">
@@ -370,7 +474,7 @@ export default function AdminExpertTab({ refreshSignal }) {
         <div className={`expert-totals__balance expert-totals__balance--${totals.net_direction}`}>
           <span className="expert-totals__label">مانده برای تهران</span>
           <strong className="expert-totals__value">
-            {fa(totals.net_weight, { maximumFractionDigits: 3 })} گرم۱۸
+            {fa(Math.abs(totals.net_weight), { maximumFractionDigits: 3 })} گرم۱۸
           </strong>
           <span className="expert-totals__sub">
             {netDirLabel}
@@ -378,8 +482,52 @@ export default function AdminExpertTab({ refreshSignal }) {
               <> · تهاتر داخلی {fa(totals.matched_weight, { maximumFractionDigits: 3 })} g</>
             )}
           </span>
+          {suggestedCover && (
+            <button type="button" className="expert-btn expert-btn--cover" onClick={applySuggestedCover}>
+              پوشش مانده · {fa(suggestedCover.weight_gram18, { maximumFractionDigits: 3 })} g
+            </button>
+          )}
         </div>
       </section>
+
+      {showUncoveredAlert && (
+        <div className="expert-alert" role="status">
+          <strong>هشدار پوشش</strong>
+          <p>
+            {(uncovered.buy_count > 0 || uncovered.sell_count > 0) && (
+              <>
+                سفارش‌های در انتظار بدون پوشش کامل:
+                {uncovered.buy_count > 0 && (
+                  <>
+                    {" "}
+                    خرید {fa(uncovered.buy_count)} سفارش ({fa(uncovered.buy_weight, { maximumFractionDigits: 3 })} g)
+                  </>
+                )}
+                {uncovered.buy_count > 0 && uncovered.sell_count > 0 && " · "}
+                {uncovered.sell_count > 0 && (
+                  <>
+                    فروش {fa(uncovered.sell_count)} سفارش ({fa(uncovered.sell_weight, { maximumFractionDigits: 3 })} g)
+                  </>
+                )}
+                .{" "}
+              </>
+            )}
+            {suggestedCover ? (
+              <>
+                مانده خالص برای تهران: {fa(suggestedCover.weight_gram18, { maximumFractionDigits: 3 })} گرم۱۸ —{" "}
+                {coverSideLabel}.
+              </>
+            ) : (
+              <>مانده خالص بالانس است؛ پوشش سفارش‌های باز را کامل کنید.</>
+            )}
+          </p>
+          {suggestedCover && (
+            <button type="button" className="expert-btn expert-btn--cover" onClick={applySuggestedCover}>
+              پر کردن فرم پوشش مانده
+            </button>
+          )}
+        </div>
+      )}
 
       <section className="expert-board" aria-label="سفارش‌های در انتظار">
         <div className="expert-col expert-col--buy">
@@ -474,8 +622,15 @@ export default function AdminExpertTab({ refreshSignal }) {
           )}
         </div>
 
-        <form className="expert-free-hedge" onSubmit={submitFreeHedge}>
-          <h4>پوشش مانده با آبشده تهران (بدون سفارش خاص)</h4>
+        <form ref={freeHedgeRef} className="expert-free-hedge" onSubmit={submitFreeHedge}>
+          <div className="expert-free-hedge__head">
+            <h4>پوشش مانده با آبشده تهران (بدون سفارش خاص)</h4>
+            {suggestedCover && (
+              <button type="button" className="expert-btn expert-btn--cover" onClick={applySuggestedCover}>
+                پیشنهاد: {coverSideLabel} · {fa(suggestedCover.weight_gram18, { maximumFractionDigits: 3 })} g
+              </button>
+            )}
+          </div>
           <div className="expert-free-hedge__row">
             <select
               value={freeHedge.dealerId}

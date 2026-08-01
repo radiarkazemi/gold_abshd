@@ -124,6 +124,124 @@
   padding-bottom: 2px;
 }
 
+.expert-spot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised, var(--surface));
+}
+
+.expert-spot__title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.expert-spot__title strong {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.expert-spot__title span {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.expert-spot__prices {
+  display: flex;
+  gap: 18px;
+  align-items: stretch;
+}
+
+.expert-spot__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 88px;
+}
+
+.expert-spot__cell span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.expert-spot__cell strong {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.expert-spot__cell--buy strong {
+  color: var(--buy-bright, var(--buy));
+}
+
+.expert-spot__cell--sell strong {
+  color: var(--sell-bright, var(--sell));
+}
+
+.expert-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 10px 14px;
+  border: 1px solid rgba(207, 100, 70, 0.45);
+  border-radius: var(--radius-md);
+  background: rgba(207, 100, 70, 0.1);
+}
+
+.expert-alert strong {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--sell-bright, var(--sell));
+}
+
+.expert-alert p {
+  margin: 0;
+  flex: 1 1 220px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
+.expert-btn--cover {
+  background: rgba(212, 175, 55, 0.18);
+  border-color: var(--gold);
+  color: var(--gold-bright, var(--gold));
+  margin-top: 6px;
+  width: fit-content;
+}
+
+.expert-alert .expert-btn--cover,
+.expert-free-hedge__head .expert-btn--cover {
+  margin-top: 0;
+}
+
+.expert-card--uncovered {
+  box-shadow: inset 0 0 0 1px rgba(212, 175, 55, 0.55);
+}
+
+.expert-free-hedge__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.expert-free-hedge__head h4 {
+  margin: 0;
+}
+
 .expert-pill {
   display: inline-block;
   font-size: 10px;
