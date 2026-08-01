@@ -116,12 +116,132 @@
   color: var(--text-muted);
 }
 
+.expert-totals--sticky {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg, var(--surface));
+  padding-bottom: 2px;
+}
+
+.expert-pill {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+}
+
+.expert-pill--done {
+  color: var(--buy-bright);
+  border-color: var(--buy);
+  background: rgba(76, 154, 114, 0.12);
+}
+
+.expert-assign__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.expert-assign__row select,
+.expert-assign__row input {
+  min-width: 0;
+  flex: 1 1 90px;
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 5px 7px;
+  font-size: 11.5px;
+}
+
+.expert-accepted {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.expert-accepted__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.expert-accepted__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.expert-accepted__filters input,
+.expert-accepted__filters select {
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  font-size: 12px;
+  min-width: 140px;
+}
+
+.expert-accepted__count {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.expert-accepted__wrap {
+  overflow: auto;
+  max-height: min(52vh, 560px);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.expert-accepted__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.expert-accepted__table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-raised);
+}
+
+.expert-accepted__table th,
+.expert-accepted__table td {
+  padding: 8px 10px;
+  text-align: right;
+  border-top: 1px solid var(--hairline);
+  vertical-align: middle;
+}
+
+.expert-accepted__table th {
+  color: var(--text-faint);
+  font-weight: 600;
+  border-top: 0;
+  font-size: 11px;
+}
+
+.expert-accepted__table tr.is-hedged {
+  opacity: 0.55;
+}
+
 .expert-col__list {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 10px;
-  max-height: min(70vh, 720px);
+  max-height: min(48vh, 520px);
   overflow-y: auto;
 }
 

@@ -1,15 +1,18 @@
 """
 Expert desk: live open-order board + Tehran melted-gold dealer hedges.
 
-Balance model (گرم۱۸):
+Desk session balance (گرم۱۸) persists across accepts:
+  - Includes PENDING (countdown still open) + ACCEPTED in the session window
   - Customer BUY  (خرید مشتری از ما)  → we sell gold → cover by buying from Tehran
   - Customer SELL (فروش مشتری به ما) → we buy gold  → cover by selling to Tehran
-  net = sell_weight - buy_weight
+  - net = sell_weight - buy_weight (after subtracting Tehran hedges)
+  - Accepting an order moves it from the pending board into the accepted table
+    without zeroing the running totals.
 """
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models_db import (
     Order,
@@ -24,6 +27,9 @@ from app.services.orders import (
     weight_equivalent,
     order_total_toman,
 )
+
+# How far back accepted orders stay on the expert desk table / balance.
+SESSION_HOURS = 36
 
 
 def list_dealers(db: Session, active_only: bool = False) -> list[TehranDealer]:
@@ -85,7 +91,11 @@ def update_dealer(
     return row
 
 
-def _open_orders(db: Session) -> list[Order]:
+def _session_since() -> datetime:
+    return datetime.utcnow() - timedelta(hours=SESSION_HOURS)
+
+
+def _pending_orders(db: Session) -> list[Order]:
     """Pending orders still inside the admin countdown window."""
     now = datetime.utcnow()
     return (
@@ -100,9 +110,24 @@ def _open_orders(db: Session) -> list[Order]:
     )
 
 
+def _accepted_session_orders(db: Session) -> list[Order]:
+    """Accepted orders that still belong to the running desk session."""
+    since = _session_since()
+    return (
+        db.query(Order)
+        .filter(
+            Order.status == OrderStatusEnum.accepted,
+            Order.updated_at >= since,
+        )
+        .order_by(Order.updated_at.desc())
+        .all()
+    )
+
+
 def _hedges_since(db: Session, since: datetime) -> list[ExpertHedge]:
     return (
         db.query(ExpertHedge)
+        .options(joinedload(ExpertHedge.dealer))
         .filter(ExpertHedge.created_at >= since)
         .order_by(ExpertHedge.created_at.desc())
         .all()
@@ -123,64 +148,114 @@ def _hedge_out(h: ExpertHedge) -> dict:
     }
 
 
-def _order_hedged_weight(db: Session, order_id: str) -> float:
+def _order_hedged_weight(db: Session, order_id: str, cache: dict[str, float] | None = None) -> float:
+    if cache is not None and order_id in cache:
+        return cache[order_id]
     rows = db.query(ExpertHedge).filter(ExpertHedge.related_order_id == order_id).all()
-    return sum(float(r.weight_gram18) for r in rows)
+    total = sum(float(r.weight_gram18) for r in rows)
+    if cache is not None:
+        cache[order_id] = total
+    return total
+
+
+def _enrich_order(db: Session, order: Order, hedge_cache: dict[str, float]) -> dict:
+    d = order_to_dict(db, order)
+    w = weight_equivalent(order)
+    hedged = _order_hedged_weight(db, order.id, hedge_cache)
+    d["weight_gram18"] = w
+    d["money_toman"] = order_total_toman(order)
+    d["hedged_weight"] = hedged
+    d["open_hedge_weight"] = max(0.0, w - hedged)
+    d["is_fully_hedged"] = hedged >= w - 1e-6
+    return d
+
+
+def _side_bucket(orders: list[dict]) -> dict:
+    return {
+        "count": len(orders),
+        "weight": sum(float(o.get("weight_gram18") or 0) for o in orders),
+        "money": sum(float(o.get("money_toman") or 0) for o in orders),
+        "open_weight": sum(float(o.get("open_hedge_weight") or 0) for o in orders),
+    }
 
 
 def get_desk(db: Session) -> dict:
-    orders = _open_orders(db)
-    buy_orders = []
-    sell_orders = []
-    buy_w = buy_m = 0.0
-    sell_w = sell_m = 0.0
+    hedge_cache: dict[str, float] = {}
+    pending = [_enrich_order(db, o, hedge_cache) for o in _pending_orders(db)]
+    accepted = [_enrich_order(db, o, hedge_cache) for o in _accepted_session_orders(db)]
 
-    for o in orders:
-        d = order_to_dict(db, o)
-        w = weight_equivalent(o)
-        m = order_total_toman(o)
-        hedged = _order_hedged_weight(db, o.id)
-        d["hedged_weight"] = hedged
-        d["open_hedge_weight"] = max(0.0, w - hedged)
-        if o.side == OrderSideEnum.buy:
-            buy_orders.append(d)
-            buy_w += w
-            buy_m += m
-        else:
-            sell_orders.append(d)
-            sell_w += w
-            sell_m += m
+    pending_buy = [o for o in pending if o.get("side") == "buy"]
+    pending_sell = [o for o in pending if o.get("side") == "sell"]
+    accepted_buy = [o for o in accepted if o.get("side") == "buy"]
+    accepted_sell = [o for o in accepted if o.get("side") == "sell"]
 
-    since = datetime.utcnow() - timedelta(hours=24)
+    # Running desk position = pending + accepted in session (does not reset on accept).
+    desk_buy = pending_buy + accepted_buy
+    desk_sell = pending_sell + accepted_sell
+    buy_bucket = _side_bucket(desk_buy)
+    sell_bucket = _side_bucket(desk_sell)
+
+    since = _session_since()
     hedges = _hedges_since(db, since)
-    hedged_buy = sum(float(h.weight_gram18) for h in hedges if h.side == ExpertHedgeSideEnum.buy_from_dealer)
-    hedged_sell = sum(float(h.weight_gram18) for h in hedges if h.side == ExpertHedgeSideEnum.sell_to_dealer)
+    # Free-standing hedges (no order) also reduce net exposure by side.
+    free_buy = sum(
+        float(h.weight_gram18)
+        for h in hedges
+        if h.side == ExpertHedgeSideEnum.buy_from_dealer and not h.related_order_id
+    )
+    free_sell = sum(
+        float(h.weight_gram18)
+        for h in hedges
+        if h.side == ExpertHedgeSideEnum.sell_to_dealer and not h.related_order_id
+    )
 
-    net = sell_w - buy_w
-    if abs(net) < 1e-9:
+    # Unhedged remaining after per-order hedges + free desk trades.
+    open_buy = max(0.0, buy_bucket["open_weight"] - free_buy)
+    open_sell = max(0.0, sell_bucket["open_weight"] - free_sell)
+    net = open_sell - open_buy
+    if abs(net) < 1e-6:
         direction = "balanced"
     elif net > 0:
         direction = "sell_to_tehran"
     else:
         direction = "buy_from_tehran"
 
-    dealers = list_dealers(db, active_only=False)
+    hedged_buy = sum(float(h.weight_gram18) for h in hedges if h.side == ExpertHedgeSideEnum.buy_from_dealer)
+    hedged_sell = sum(float(h.weight_gram18) for h in hedges if h.side == ExpertHedgeSideEnum.sell_to_dealer)
 
     return {
-        "buy_orders": buy_orders,
-        "sell_orders": sell_orders,
+        "buy_orders": pending_buy,
+        "sell_orders": pending_sell,
+        "accepted_buy_orders": accepted_buy,
+        "accepted_sell_orders": accepted_sell,
         "totals": {
-            "buy": {"count": len(buy_orders), "weight": buy_w, "money": buy_m},
-            "sell": {"count": len(sell_orders), "weight": sell_w, "money": sell_m},
+            "buy": {
+                "count": buy_bucket["count"],
+                "weight": buy_bucket["weight"],
+                "money": buy_bucket["money"],
+                "pending_count": len(pending_buy),
+                "accepted_count": len(accepted_buy),
+            },
+            "sell": {
+                "count": sell_bucket["count"],
+                "weight": sell_bucket["weight"],
+                "money": sell_bucket["money"],
+                "pending_count": len(pending_sell),
+                "accepted_count": len(accepted_sell),
+            },
+            "pending_count": len(pending),
+            "accepted_count": len(accepted),
             "net_weight": net,
             "net_direction": direction,
             "hedged_buy_weight": hedged_buy,
             "hedged_sell_weight": hedged_sell,
-            "open_buy_weight": max(0.0, buy_w - sum(o.get("hedged_weight", 0) for o in buy_orders)),
-            "open_sell_weight": max(0.0, sell_w - sum(o.get("hedged_weight", 0) for o in sell_orders)),
+            "open_buy_weight": open_buy,
+            "open_sell_weight": open_sell,
+            "matched_weight": min(buy_bucket["weight"], sell_bucket["weight"]),
         },
-        "dealers": dealers,
+        "dealers": list_dealers(db, active_only=False),
         "hedges": [_hedge_out(h) for h in hedges],
+        "session_hours": SESSION_HOURS,
     }
 
 
@@ -198,18 +273,17 @@ def create_hedge(
     if not dealer or not dealer.is_active:
         raise HTTPException(status_code=404, detail="آبشده‌فروش فعال پیدا نشد")
 
-    order = None
     if related_order_id:
         order = db.query(Order).filter(Order.id == related_order_id).first()
         if not order:
             raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
-        # Infer hedge side from customer order side
-        inferred = (
+        if order.status not in (OrderStatusEnum.pending, OrderStatusEnum.accepted):
+            raise HTTPException(status_code=400, detail="فقط سفارش‌های در انتظار یا تاییدشده قابل تخصیص هستند")
+        hedge_side = (
             ExpertHedgeSideEnum.buy_from_dealer
             if order.side == OrderSideEnum.buy
             else ExpertHedgeSideEnum.sell_to_dealer
         )
-        hedge_side = inferred
         order_w = weight_equivalent(order)
         already = _order_hedged_weight(db, order.id)
         remaining = max(0.0, order_w - already)
@@ -240,7 +314,6 @@ def create_hedge(
     db.add(row)
     db.commit()
     db.refresh(row)
-    # ensure relationship loaded
     _ = row.dealer
     return _hedge_out(row)
 

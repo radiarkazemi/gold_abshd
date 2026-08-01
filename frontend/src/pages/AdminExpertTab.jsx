@@ -26,39 +26,88 @@ function formatTime(iso) {
   return new Date(iso).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
 }
 
-function CompactOrderCard({
-  order,
-  dealers,
-  busyId,
-  onDecide,
-  onExpire,
-  onAssign,
-}) {
+function formatDateTime(iso) {
+  return new Date(iso).toLocaleString("fa-IR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function DealerAssignInline({ order, dealers, busy, onAssign }) {
   const [dealerId, setDealerId] = useState("");
   const [weight, setWeight] = useState("");
-  const [openAssign, setOpenAssign] = useState(false);
+  const [open, setOpen] = useState(false);
   const activeDealers = (dealers || []).filter((d) => d.is_active);
   const remaining = Math.max(0, Number(order.open_hedge_weight ?? orderGoldWeight(order)));
-  const hedgeAction =
-    order.side === "buy" ? "خرید از آبشده تهران" : "فروش به آبشده تهران";
+  const label = order.side === "buy" ? "خرید از تهران" : "فروش به تهران";
 
   useEffect(() => {
     setWeight(remaining ? String(Number(remaining.toFixed(3))) : "");
   }, [order.id, remaining]);
 
-  async function submitAssign() {
-    if (!dealerId) {
-      alert("آبشده‌فروش را انتخاب کنید");
-      return;
-    }
-    await onAssign({
-      orderId: order.id,
-      dealerId,
-      weightGram18: weight === "" ? null : Number(weight),
-    });
-    setOpenAssign(false);
+  if (remaining <= 0) {
+    return <span className="expert-pill expert-pill--done">پوشش کامل</span>;
   }
 
+  return (
+    <div className="expert-assign">
+      {!open ? (
+        <button
+          type="button"
+          className="expert-btn expert-btn--dealer"
+          disabled={busy || !activeDealers.length}
+          onClick={() => setOpen(true)}
+        >
+          {label}
+        </button>
+      ) : (
+        <div className="expert-assign__row">
+          <select value={dealerId} onChange={(e) => setDealerId(e.target.value)}>
+            <option value="">آبشده‌فروش…</option>
+            {activeDealers.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            step="0.001"
+            value={weight}
+            onChange={(e) => setWeight(e.target.value)}
+            placeholder="گرم"
+          />
+          <button
+            type="button"
+            className="expert-btn expert-btn--ok"
+            disabled={busy}
+            onClick={async () => {
+              if (!dealerId) {
+                alert("آبشده‌فروش را انتخاب کنید");
+                return;
+              }
+              await onAssign({
+                orderId: order.id,
+                dealerId,
+                weightGram18: weight === "" ? null : Number(weight),
+              });
+              setOpen(false);
+            }}
+          >
+            ثبت
+          </button>
+          <button type="button" className="expert-btn" onClick={() => setOpen(false)}>
+            بستن
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CompactOrderCard({ order, dealers, busyId, onDecide, onExpire, onAssign }) {
   return (
     <article className={`expert-card expert-card--${order.side}`}>
       <header className="expert-card__head">
@@ -96,13 +145,6 @@ function CompactOrderCard({
         </div>
       </div>
 
-      {(order.hedged_weight || 0) > 0 && (
-        <p className="expert-card__hedged">
-          تخصیص‌شده: {fa(order.hedged_weight, { maximumFractionDigits: 3 })} g
-          {remaining > 0 && <> · مانده: {fa(remaining, { maximumFractionDigits: 3 })} g</>}
-        </p>
-      )}
-
       <div className="expert-card__actions">
         <button
           type="button"
@@ -128,40 +170,79 @@ function CompactOrderCard({
         >
           رد مظنه
         </button>
-        <button
-          type="button"
-          className="expert-btn expert-btn--dealer"
-          disabled={busyId === order.id || remaining <= 0 || !activeDealers.length}
-          onClick={() => setOpenAssign((v) => !v)}
-        >
-          {hedgeAction}
-        </button>
+        <DealerAssignInline
+          order={order}
+          dealers={dealers}
+          busy={busyId === order.id}
+          onAssign={onAssign}
+        />
       </div>
-
-      {openAssign && (
-        <div className="expert-card__assign">
-          <select value={dealerId} onChange={(e) => setDealerId(e.target.value)}>
-            <option value="">انتخاب آبشده‌فروش…</option>
-            {activeDealers.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-          <input
-            type="number"
-            inputMode="decimal"
-            step="0.001"
-            value={weight}
-            onChange={(e) => setWeight(e.target.value)}
-            placeholder="وزن گرم۱۸"
-          />
-          <button type="button" className="expert-btn expert-btn--ok" onClick={submitAssign}>
-            ثبت تخصیص
-          </button>
-        </div>
-      )}
     </article>
+  );
+}
+
+function AcceptedOrdersTable({ orders, dealers, busyId, onAssign, filterSide, query }) {
+  const rows = useMemo(() => {
+    let list = orders || [];
+    if (filterSide === "buy" || filterSide === "sell") {
+      list = list.filter((o) => o.side === filterSide);
+    }
+    const q = (query || "").trim();
+    if (q) {
+      list = list.filter((o) => {
+        const hay = `${o.customer_name || ""} ${o.customer_code || ""} ${o.id || ""}`;
+        return hay.includes(q);
+      });
+    }
+    return list;
+  }, [orders, filterSide, query]);
+
+  if (!rows.length) {
+    return <p className="expert-col__empty">سفارش تاییدشده‌ای در میز نیست</p>;
+  }
+
+  return (
+    <div className="expert-accepted__wrap">
+      <table className="expert-accepted__table">
+        <thead>
+          <tr>
+            <th>زمان</th>
+            <th>نوع</th>
+            <th>مشتری</th>
+            <th>وزن</th>
+            <th>مانده پوشش</th>
+            <th>مبلغ</th>
+            <th>آبشده تهران</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((o) => (
+            <tr key={o.id} className={o.is_fully_hedged ? "is-hedged" : ""}>
+              <td>{formatDateTime(o.updated_at || o.created_at)}</td>
+              <td>
+                <span className={`expert-card__badge expert-card__badge--${o.side}`}>
+                  {SIDE_LABEL[o.side]}
+                </span>
+              </td>
+              <td>
+                {o.customer_name || "بدون نام"} #{o.customer_code}
+              </td>
+              <td>{fa(orderGoldWeight(o), { maximumFractionDigits: 3 })}</td>
+              <td>{fa(o.open_hedge_weight ?? 0, { maximumFractionDigits: 3 })}</td>
+              <td>{fa(Math.round(orderTotalMoney(o)))}</td>
+              <td>
+                <DealerAssignInline
+                  order={o}
+                  dealers={dealers}
+                  busy={busyId === o.id}
+                  onAssign={onAssign}
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -171,6 +252,8 @@ export default function AdminExpertTab({ refreshSignal }) {
   const [busyId, setBusyId] = useState(null);
   const [dealerForm, setDealerForm] = useState({ name: "", phone: "", notes: "" });
   const [dealerBusy, setDealerBusy] = useState(false);
+  const [acceptedFilter, setAcceptedFilter] = useState("all");
+  const [acceptedQuery, setAcceptedQuery] = useState("");
   const [freeHedge, setFreeHedge] = useState({
     dealerId: "",
     side: "sell_to_dealer",
@@ -192,7 +275,7 @@ export default function AdminExpertTab({ refreshSignal }) {
 
   useEffect(() => {
     reload();
-    const id = setInterval(reload, 5000);
+    const id = setInterval(reload, 4000);
     return () => clearInterval(id);
   }, [reload]);
 
@@ -200,18 +283,20 @@ export default function AdminExpertTab({ refreshSignal }) {
     if (refreshSignal !== undefined) reload();
   }, [refreshSignal, reload]);
 
-  const handleExpire = useCallback((orderId) => {
-    setDesk((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        buy_orders: prev.buy_orders.filter((o) => o.id !== orderId),
-        sell_orders: prev.sell_orders.filter((o) => o.id !== orderId),
-      };
-    });
-    // Refresh totals from server shortly after
-    setTimeout(reload, 300);
-  }, [reload]);
+  const handleExpire = useCallback(
+    (orderId) => {
+      setDesk((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          buy_orders: prev.buy_orders.filter((o) => o.id !== orderId),
+          sell_orders: prev.sell_orders.filter((o) => o.id !== orderId),
+        };
+      });
+      setTimeout(reload, 250);
+    },
+    [reload]
+  );
 
   async function handleDecide(orderId, status) {
     setBusyId(orderId);
@@ -298,11 +383,12 @@ export default function AdminExpertTab({ refreshSignal }) {
   const totals = desk?.totals;
   const netDirLabel = useMemo(() => {
     if (!totals) return "";
+    const left = fa(Math.abs(totals.net_weight), { maximumFractionDigits: 3 });
     if (totals.net_direction === "sell_to_tehran") {
-      return `مانده ${fa(Math.abs(totals.net_weight), { maximumFractionDigits: 3 })} گرم — باید به آبشده تهران بفروشید`;
+      return `${left} گرم مانده — فروش به آبشده تهران`;
     }
     if (totals.net_direction === "buy_from_tehran") {
-      return `کسری ${fa(Math.abs(totals.net_weight), { maximumFractionDigits: 3 })} گرم — باید از آبشده تهران بخرید`;
+      return `${left} گرم کسری — خرید از آبشده تهران`;
     }
     return "بالانس برقرار است";
   }, [totals]);
@@ -316,6 +402,9 @@ export default function AdminExpertTab({ refreshSignal }) {
 
   const buy = desk.buy_orders || [];
   const sell = desk.sell_orders || [];
+  const acceptedAll = [...(desk.accepted_buy_orders || []), ...(desk.accepted_sell_orders || [])].sort(
+    (a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at)
+  );
   const dealers = desk.dealers || [];
   const activeDealers = dealers.filter((d) => d.is_active);
 
@@ -324,38 +413,51 @@ export default function AdminExpertTab({ refreshSignal }) {
       <div className="expert__intro">
         <h3 className="dashboard__section-title">میز کارشناس</h3>
         <p className="expert__hint">
-          سفارش‌های باز در دو ستون. مجموع وزن خرید/فروش مشتری و مانده بالانس برای پوشش با آبشده‌فروش‌های تهران.
+          جمع بالا از سفارش‌های <b>در انتظار + تاییدشده</b> ساخته می‌شود و با تایید صفر نمی‌شود.
+          مثال: ۴۰ گرم فروش مشتری و ۳۰ گرم خرید مشتری ← بعد از تایید ۳۰ گرم خرید، ۱۰ گرم مانده برای فروش به تهران.
+          نشست فعلی حدود {fa(desk.session_hours || 36)} ساعت است.
         </p>
       </div>
 
-      <section className="expert-totals" aria-label="جمع سفارش‌های باز">
+      <section className="expert-totals expert-totals--sticky" aria-label="جمع میز">
         <div className="expert-totals__cell expert-totals__cell--buy">
           <span className="expert-totals__label">خرید مشتری از ما</span>
           <strong className="expert-totals__value">
-            {fa(totals.buy.count)} سفارش · {fa(totals.buy.weight, { maximumFractionDigits: 3 })} گرم۱۸
+            {fa(totals.buy.weight, { maximumFractionDigits: 3 })} گرم۱۸
           </strong>
-          <span className="expert-totals__sub">{fa(Math.round(totals.buy.money))} تومان</span>
+          <span className="expert-totals__sub">
+            {fa(totals.buy.count)} سفارش · باز {fa(totals.buy.pending_count || 0)} · تایید{" "}
+            {fa(totals.buy.accepted_count || 0)}
+          </span>
         </div>
         <div className="expert-totals__cell expert-totals__cell--sell">
           <span className="expert-totals__label">فروش مشتری به ما</span>
           <strong className="expert-totals__value">
-            {fa(totals.sell.count)} سفارش · {fa(totals.sell.weight, { maximumFractionDigits: 3 })} گرم۱۸
+            {fa(totals.sell.weight, { maximumFractionDigits: 3 })} گرم۱۸
           </strong>
-          <span className="expert-totals__sub">{fa(Math.round(totals.sell.money))} تومان</span>
+          <span className="expert-totals__sub">
+            {fa(totals.sell.count)} سفارش · باز {fa(totals.sell.pending_count || 0)} · تایید{" "}
+            {fa(totals.sell.accepted_count || 0)}
+          </span>
         </div>
         <div className={`expert-totals__balance expert-totals__balance--${totals.net_direction}`}>
-          <span className="expert-totals__label">بالانس لحظه‌ای</span>
+          <span className="expert-totals__label">مانده برای تهران</span>
           <strong className="expert-totals__value">
             {fa(totals.net_weight, { maximumFractionDigits: 3 })} گرم۱۸
           </strong>
-          <span className="expert-totals__sub">{netDirLabel}</span>
+          <span className="expert-totals__sub">
+            {netDirLabel}
+            {totals.matched_weight > 0 && (
+              <> · تهاتر داخلی {fa(totals.matched_weight, { maximumFractionDigits: 3 })} g</>
+            )}
+          </span>
         </div>
       </section>
 
-      <section className="expert-board" aria-label="جدول سفارش‌های باز">
+      <section className="expert-board" aria-label="سفارش‌های در انتظار">
         <div className="expert-col expert-col--buy">
           <header className="expert-col__head">
-            <h4>خرید مشتری از ما</h4>
+            <h4>در انتظار — خرید مشتری از ما</h4>
             <span>{fa(buy.length)}</span>
           </header>
           <div className="expert-col__list">
@@ -379,7 +481,7 @@ export default function AdminExpertTab({ refreshSignal }) {
 
         <div className="expert-col expert-col--sell">
           <header className="expert-col__head">
-            <h4>فروش مشتری به ما</h4>
+            <h4>در انتظار — فروش مشتری به ما</h4>
             <span>{fa(sell.length)}</span>
           </header>
           <div className="expert-col__list">
@@ -400,6 +502,33 @@ export default function AdminExpertTab({ refreshSignal }) {
             )}
           </div>
         </div>
+      </section>
+
+      <section className="expert-accepted">
+        <div className="expert-accepted__toolbar">
+          <h3 className="dashboard__section-title">سفارش‌های تاییدشده (میز)</h3>
+          <div className="expert-accepted__filters">
+            <input
+              value={acceptedQuery}
+              onChange={(e) => setAcceptedQuery(e.target.value)}
+              placeholder="جستجوی مشتری / کد…"
+            />
+            <select value={acceptedFilter} onChange={(e) => setAcceptedFilter(e.target.value)}>
+              <option value="all">همه</option>
+              <option value="buy">فقط خرید مشتری</option>
+              <option value="sell">فقط فروش مشتری</option>
+            </select>
+            <span className="expert-accepted__count">{fa(acceptedAll.length)} ردیف</span>
+          </div>
+        </div>
+        <AcceptedOrdersTable
+          orders={acceptedAll}
+          dealers={dealers}
+          busyId={busyId}
+          onAssign={handleAssign}
+          filterSide={acceptedFilter}
+          query={acceptedQuery}
+        />
       </section>
 
       <section className="expert-dealers">
@@ -446,7 +575,7 @@ export default function AdminExpertTab({ refreshSignal }) {
         </div>
 
         <form className="expert-free-hedge" onSubmit={submitFreeHedge}>
-          <h4>معامله آزاد با آبشده تهران (بدون سفارش)</h4>
+          <h4>پوشش مانده با آبشده تهران (بدون سفارش خاص)</h4>
           <div className="expert-free-hedge__row">
             <select
               value={freeHedge.dealerId}
@@ -479,14 +608,14 @@ export default function AdminExpertTab({ refreshSignal }) {
               onChange={(e) => setFreeHedge((f) => ({ ...f, note: e.target.value }))}
             />
             <button type="submit" className="expert-btn expert-btn--dealer">
-              ثبت
+              ثبت پوشش
             </button>
           </div>
         </form>
       </section>
 
       <section className="expert-hedges">
-        <h3 className="dashboard__section-title">تخصیص‌های ۲۴ ساعت اخیر</h3>
+        <h3 className="dashboard__section-title">تاریخچه تخصیص به تهران</h3>
         {(desk.hedges || []).length === 0 ? (
           <p className="expert-col__empty">تخصیصی ثبت نشده</p>
         ) : (
@@ -505,11 +634,11 @@ export default function AdminExpertTab({ refreshSignal }) {
               <tbody>
                 {desk.hedges.map((h) => (
                   <tr key={h.id}>
-                    <td>{formatTime(h.created_at)}</td>
+                    <td>{formatDateTime(h.created_at)}</td>
                     <td>{h.dealer_name}</td>
                     <td>{HEDGE_LABEL[h.side] || h.side}</td>
                     <td>{fa(h.weight_gram18, { maximumFractionDigits: 3 })}</td>
-                    <td>{h.related_order_id ? `#${String(h.related_order_id).slice(0, 8)}` : "—"}</td>
+                    <td>{h.related_order_id ? `#${String(h.related_order_id).slice(0, 8)}` : "آزاد"}</td>
                     <td>
                       <button type="button" className="expert-btn expert-btn--no" onClick={() => removeHedge(h.id)}>
                         حذف

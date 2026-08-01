@@ -57,23 +57,32 @@ class ExpertSideTotals(BaseModel):
     count: int = 0
     weight: float = 0.0
     money: float = 0.0
+    pending_count: int = 0
+    accepted_count: int = 0
 
 
 class ExpertDeskTotals(BaseModel):
-    buy: ExpertSideTotals  # خرید مشتری از ما
-    sell: ExpertSideTotals  # فروش مشتری به ما
-    # sell.weight - buy.weight: >0 excess gold → sell to Tehran; <0 short → buy from Tehran
+    buy: ExpertSideTotals  # خرید مشتری از ما (pending + accepted session)
+    sell: ExpertSideTotals  # فروش مشتری به ما (pending + accepted session)
+    pending_count: int = 0
+    accepted_count: int = 0
+    # Remaining after internal match + Tehran hedges:
+    # sell open - buy open. >0 → sell to Tehran; <0 → buy from Tehran.
     net_weight: float = 0.0
     net_direction: str = "balanced"  # balanced | sell_to_tehran | buy_from_tehran
     hedged_buy_weight: float = 0.0
     hedged_sell_weight: float = 0.0
-    open_buy_weight: float = 0.0   # buy.weight - hedged_buy
-    open_sell_weight: float = 0.0  # sell.weight - hedged_sell
+    open_buy_weight: float = 0.0
+    open_sell_weight: float = 0.0
+    matched_weight: float = 0.0  # min(buy, sell) already offsetting each other
 
 
 class ExpertDeskOut(BaseModel):
-    buy_orders: list[dict]
-    sell_orders: list[dict]
+    buy_orders: list[dict]  # pending only — board left column
+    sell_orders: list[dict]  # pending only — board right column
+    accepted_buy_orders: list[dict] = []
+    accepted_sell_orders: list[dict] = []
     totals: ExpertDeskTotals
     dealers: list[TehranDealerOut]
     hedges: list[ExpertHedgeOut]
+    session_hours: int = 36
