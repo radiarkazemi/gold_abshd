@@ -529,7 +529,7 @@
 }
 
 .expert-hedges__table--wide {
-  min-width: 920px;
+  min-width: 1080px;
 }
 
 .expert-hedges__order {
@@ -687,4 +687,33 @@
   .expert-col__list {
     max-height: none;
   }
+}
+
+
+.expert-hedges__th--buy {
+  color: var(--buy-bright, var(--buy));
+  border-bottom: 2px solid var(--buy) !important;
+}
+
+.expert-hedges__th--sell {
+  color: var(--sell-bright, var(--sell));
+  border-bottom: 2px solid var(--sell) !important;
+}
+
+.expert-hedges__w--buy {
+  color: var(--buy-bright, var(--buy));
+  font-weight: 700;
+  font-family: var(--font-display);
+  background: rgba(76, 154, 114, 0.08);
+}
+
+.expert-hedges__w--sell {
+  color: var(--sell-bright, var(--sell));
+  font-weight: 700;
+  font-family: var(--font-display);
+  background: rgba(207, 100, 70, 0.08);
+}
+
+.expert-hedges__table--wide {
+  min-width: 1080px;
 }

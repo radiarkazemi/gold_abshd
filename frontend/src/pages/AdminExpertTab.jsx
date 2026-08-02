@@ -719,8 +719,7 @@ export default function AdminExpertTab({ refreshSignal }) {
           </div>
         </form>
       </section>
-
-            <section className="expert-hedges">
+      <section className="expert-hedges">
         <h3 className="dashboard__section-title">تاریخچه تخصیص به تهران و سفارش‌های مرتبط</h3>
         <p className="expert__hint">
           مرتب‌شده از قدیم به جدید: اول تایید سفارش مشتری، بعد معامله با تهران، بعد سفارش بعدی — تا ترتیب میز مشخص باشد.
@@ -734,7 +733,8 @@ export default function AdminExpertTab({ refreshSignal }) {
                 <tr>
                   <th>زمان</th>
                   <th>رویداد / سفارش</th>
-                  <th>وزن سفارش</th>
+                  <th className="expert-hedges__th--buy">وزن سفارش<br />(خرید مشتری از ما)</th>
+                  <th className="expert-hedges__th--sell">وزن سفارش<br />(فروش مشتری به ما)</th>
                   <th>فی مشتری</th>
                   <th>معامله تهران</th>
                   <th>آبشده‌فروش</th>
@@ -749,6 +749,8 @@ export default function AdminExpertTab({ refreshSignal }) {
                   if (row.kind === "accepted") {
                     const o = row.order;
                     const open = Math.max(0, Number(o.open_hedge_weight || 0));
+                    const w = o.weight_gram18 ?? orderGoldWeight(o);
+                    const wLabel = `${fa(w, { maximumFractionDigits: 3 })} g`;
                     return (
                       <tr key={row.key} className={open > 1e-6 ? "expert-hedges__row--open" : "expert-hedges__row--accepted"}>
                         <td>{formatDateTime(o.updated_at || o.created_at)}</td>
@@ -763,7 +765,8 @@ export default function AdminExpertTab({ refreshSignal }) {
                             </span>
                           </div>
                         </td>
-                        <td>{fa(o.weight_gram18 ?? orderGoldWeight(o), { maximumFractionDigits: 3 })} g</td>
+                        <td className="expert-hedges__w--buy">{o.side === "buy" ? wLabel : "—"}</td>
+                        <td className="expert-hedges__w--sell">{o.side === "sell" ? wLabel : "—"}</td>
                         <td>
                           {o.mesghal17_price_at_submit != null
                             ? fa(Math.round(o.mesghal17_price_at_submit))
@@ -783,6 +786,7 @@ export default function AdminExpertTab({ refreshSignal }) {
 
                   const h = row.hedge;
                   const o = h.related_order;
+                  const ow = o ? `${fa(o.weight_gram18, { maximumFractionDigits: 3 })} g` : null;
                   return (
                     <tr key={row.key}>
                       <td>{formatDateTime(h.created_at)}</td>
@@ -801,9 +805,8 @@ export default function AdminExpertTab({ refreshSignal }) {
                           <span className="expert-hedges__free">پوشش آزاد (بدون سفارش)</span>
                         )}
                       </td>
-                      <td>
-                        {o ? `${fa(o.weight_gram18, { maximumFractionDigits: 3 })} g` : "—"}
-                      </td>
+                      <td className="expert-hedges__w--buy">{o?.side === "buy" && ow ? ow : "—"}</td>
+                      <td className="expert-hedges__w--sell">{o?.side === "sell" && ow ? ow : "—"}</td>
                       <td>
                         {o?.mesghal17_price_at_submit != null
                           ? fa(Math.round(o.mesghal17_price_at_submit))
