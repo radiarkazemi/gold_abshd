@@ -24,6 +24,8 @@ const HEDGE_LABEL = {
   sell_to_dealer: "فروش به آبشده تهران",
 };
 
+const TEHRAN_LEDGER_PAGE_SIZE = 12;
+
 function fa(n, opts) {
   if (n == null || Number.isNaN(Number(n))) return "—";
   return Number(n).toLocaleString("fa-IR", opts);
@@ -221,6 +223,7 @@ export default function AdminExpertTab({ refreshSignal }) {
     price: "",
     note: "",
   });
+  const [ledgerPage, setLedgerPage] = useState(0);
   const freeHedgeRef = useRef(null);
 
   const reload = useCallback(() => {
@@ -407,10 +410,25 @@ export default function AdminExpertTab({ refreshSignal }) {
         hedge: h,
       });
     }
-    // Oldest first: accept buy → Tehran cover → sell, in real time order.
-    rows.sort((a, b) => a.sortAt - b.sortAt || String(a.key).localeCompare(String(b.key)));
+    // Newest first so the latest trade sits at the top.
+    rows.sort((a, b) => b.sortAt - a.sortAt || String(b.key).localeCompare(String(a.key)));
     return rows;
   }, [desk]);
+
+  const ledgerPageCount = Math.max(1, Math.ceil(tehranLedger.length / TEHRAN_LEDGER_PAGE_SIZE));
+  const safeLedgerPage = Math.min(ledgerPage, ledgerPageCount - 1);
+  const pagedTehranLedger = useMemo(() => {
+    const start = safeLedgerPage * TEHRAN_LEDGER_PAGE_SIZE;
+    return tehranLedger.slice(start, start + TEHRAN_LEDGER_PAGE_SIZE);
+  }, [tehranLedger, safeLedgerPage]);
+
+  useEffect(() => {
+    setLedgerPage(0);
+  }, [desk?.hedges?.length, desk?.accepted_buy_orders?.length, desk?.accepted_sell_orders?.length]);
+
+  useEffect(() => {
+    if (ledgerPage > ledgerPageCount - 1) setLedgerPage(Math.max(0, ledgerPageCount - 1));
+  }, [ledgerPage, ledgerPageCount]);
 
   const uncovered = useMemo(() => {
     if (!desk) return null;
@@ -722,7 +740,7 @@ export default function AdminExpertTab({ refreshSignal }) {
       <section className="expert-hedges">
         <h3 className="dashboard__section-title">تاریخچه تخصیص به تهران و سفارش‌های مرتبط</h3>
         <p className="expert__hint">
-          مرتب‌شده از قدیم به جدید: اول تایید سفارش مشتری، بعد معامله با تهران، بعد سفارش بعدی — تا ترتیب میز مشخص باشد.
+          جدیدترین رویداد بالا است. هر صفحه ۱۲ ردیف — برای دیدن قبلی‌ها از صفحه‌بندی استفاده کنید.
         </p>
         {tehranLedger.length === 0 ? (
           <p className="expert-col__empty">تخصیص یا سفارش تاییدشده‌ای در این نشست نیست</p>
@@ -745,7 +763,7 @@ export default function AdminExpertTab({ refreshSignal }) {
                 </tr>
               </thead>
               <tbody>
-                {tehranLedger.map((row) => {
+                {pagedTehranLedger.map((row) => {
                   if (row.kind === "accepted") {
                     const o = row.order;
                     const open = Math.max(0, Number(o.open_hedge_weight || 0));
@@ -829,6 +847,31 @@ export default function AdminExpertTab({ refreshSignal }) {
                 })}
               </tbody>
             </table>
+            {tehranLedger.length > TEHRAN_LEDGER_PAGE_SIZE && (
+              <div className="expert-hedges__pager">
+                <button
+                  type="button"
+                  className="expert-btn"
+                  disabled={safeLedgerPage <= 0}
+                  onClick={() => setLedgerPage((p) => Math.max(0, p - 1))}
+                >
+                  قبلی
+                </button>
+                <span>
+                  صفحه {fa(safeLedgerPage + 1)} از {fa(ledgerPageCount)}
+                  {" · "}
+                  {fa(tehranLedger.length)} ردیف
+                </span>
+                <button
+                  type="button"
+                  className="expert-btn"
+                  disabled={safeLedgerPage >= ledgerPageCount - 1}
+                  onClick={() => setLedgerPage((p) => Math.min(ledgerPageCount - 1, p + 1))}
+                >
+                  بعدی
+                </button>
+              </div>
+            )}
           </div>
         )}
       </section>
