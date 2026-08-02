@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { fetchOrders, decideOrder, openAdminSocket, getAdminToken, clearAdminToken, fetchReceiptBlobUrlAsAdmin, getAdminIdentity, fetchPrice } from "../api";
+import { formatTehranTime } from "../utils/tehranTime";
+import { fetchOrders, decideOrder, openAdminSocket, getAdminToken, clearAdminToken, fetchReceiptBlobUrlAsAdmin, getAdminIdentity, refreshAdminSession, fetchPrice } from "../api";
 import PendingCountdown from "../components/PendingCountdown";
 import AdminUsersTab from "./AdminUsersTab";
 import AdminLoginPage from "./AdminLoginPage";
@@ -8,6 +9,7 @@ import AdminAddUserTab from "./AdminAddUserTab";
 import AdminRolesTab from "./AdminRolesTab";
 import AdminCalendarTab from "./AdminCalendarTab";
 import AdminDashboardTab from "./AdminDashboardTab";
+import AdminExpertTab from "./AdminExpertTab";
 import AdminPhoneOrderTab from "./AdminPhoneOrderTab";
 import AdminPricesTab from "./AdminPricesTab";
 import AdminAccountsTab from "./AdminAccountsTab";
@@ -56,8 +58,9 @@ function formatPrice(value) {
 }
 
 function formatTime(iso) {
-  return new Date(iso).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
+  return formatTehranTime(iso);
 }
+
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -68,8 +71,7 @@ function shouldShowInOrdersTable(order) {
   return remainingFromOrder(order) > 0;
 }
 
-function AdminPanel({ onLogout }) {
-  const identity = getAdminIdentity();
+function AdminPanel({ onLogout, identity }) {
   const [tab, setTab] = useState(
     identity.is_super || (identity.permissions || []).includes("dashboard")
       ? "dashboard"
@@ -203,6 +205,8 @@ function AdminPanel({ onLogout }) {
       )}
       {tab === "dashboard" ? (
         <AdminDashboardTab onGoToOrders={() => setTab("orders")} refreshSignal={wsTick} />
+      ) : tab === "expert" ? (
+        <AdminExpertTab refreshSignal={wsTick} />
       ) : tab === "users" ? (
         <AdminUsersTab />
       ) : tab === "notice" ? (
@@ -390,15 +394,56 @@ function AdminPanel({ onLogout }) {
 
 export default function AdminPage() {
   const [loggedIn, setLoggedIn] = useState(!!getAdminToken());
+  const [identity, setIdentity] = useState(() => getAdminIdentity());
+  const [sessionReady, setSessionReady] = useState(!getAdminToken());
+
+  useEffect(() => {
+    if (!loggedIn) {
+      setSessionReady(true);
+      return undefined;
+    }
+    let cancelled = false;
+    setSessionReady(false);
+    refreshAdminSession()
+      .then((data) => {
+        if (cancelled) return;
+        setIdentity({
+          is_super: data.is_super,
+          permissions: data.permissions || [],
+          display_name: data.display_name || "",
+        });
+        setSessionReady(true);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        if (e.message === "ADMIN_SESSION_EXPIRED") {
+          clearAdminToken();
+          setLoggedIn(false);
+        }
+        setSessionReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loggedIn]);
 
   function handleLogout() {
     clearAdminToken();
     setLoggedIn(false);
   }
 
-  if (!loggedIn) {
-    return <AdminLoginPage onLoggedIn={() => setLoggedIn(true)} />;
+  function handleLoggedIn() {
+    setIdentity(getAdminIdentity());
+    setLoggedIn(true);
   }
 
-  return <AdminPanel onLogout={handleLogout} />;
+  if (!loggedIn) {
+    return <AdminLoginPage onLoggedIn={handleLoggedIn} />;
+  }
+
+  if (!sessionReady) {
+    return <p className="myorders__empty">در حال آماده‌سازی پنل…</p>;
+  }
+
+  return <AdminPanel onLogout={handleLogout} identity={identity} />;
 }

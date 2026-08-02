@@ -73,6 +73,7 @@ async def update_order_limits(
 ):
     limits = set_order_limits(db, **payload.model_dump())
     limits["pending_seconds"] = int(settings.ORDER_PENDING_SECONDS)
+    limits["card_commissions"] = []
     return OrderLimitsOut(**limits)
 
 

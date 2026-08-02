@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { formatTehranDateTime } from "../utils/tehranTime";
 import { useNavigate } from "react-router-dom";
 import { fetchMyBalance, fetchMyOrders } from "../api";
 import { formatCashStatus, formatGoldStatus } from "../utils/balanceFormat";
@@ -17,12 +18,7 @@ function fa(n, opts) {
 }
 
 function formatTime(iso) {
-  return new Date(iso).toLocaleString("fa-IR", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatTehranDateTime(iso);
 }
 
 export default function RecentOrdersTable({ limit = 5, refreshSignal }) {

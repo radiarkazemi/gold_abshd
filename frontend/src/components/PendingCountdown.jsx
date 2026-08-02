@@ -51,7 +51,7 @@ export default function PendingCountdown({ order, onExpire }) {
 
 /**
  * Circular animated countdown for the customer waiting card.
- * `totalSeconds` is the full window length (defaults to 60).
+ * `totalSeconds` is the full window length (defaults to 120).
  */
 export function CircularCountdown({ order, totalSeconds = DEFAULT_PENDING_SECONDS, onExpire }) {
   const deadlineRef = useRef(localDeadlineMsFromOrder(order));

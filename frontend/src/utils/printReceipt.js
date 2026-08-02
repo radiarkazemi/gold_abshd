@@ -1,3 +1,4 @@
+import { formatTehranDateTime } from "./tehranTime";
 function fa(n, opts) {
   return Number(n).toLocaleString("fa-IR", opts);
 }
@@ -11,13 +12,7 @@ function orderMoney(order) {
 }
 
 function formatDate(iso) {
-  return new Date(iso).toLocaleString("fa-IR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatTehranDateTime(iso);
 }
 
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
@@ -105,47 +100,57 @@ export function buildOrderReceiptHtml(order, { priceLabelMode = "mesghal_and_gra
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>رسید سفارش</title>
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet" />
 <style>
   * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
   body {
     font-family: 'Vazirmatn', sans-serif;
     direction: rtl;
-    padding: 40px;
+    margin: 0;
+    padding: clamp(12px, 4vw, 40px);
     color: #1a1508;
     background: #fff;
+    max-width: 100%;
+    overflow-x: hidden;
   }
   h1 {
-    font-size: 20px;
+    font-size: clamp(16px, 4.2vw, 20px);
     text-align: center;
-    margin-bottom: 4px;
+    margin: 0 0 4px;
   }
   .sub {
     text-align: center;
     color: #666;
-    font-size: 12px;
-    margin-bottom: 28px;
+    font-size: clamp(11px, 3vw, 12px);
+    margin-bottom: clamp(16px, 4vw, 28px);
   }
   table {
     width: 100%;
     border-collapse: collapse;
+    table-layout: fixed;
   }
   td {
-    padding: 12px 8px;
+    padding: clamp(8px, 2.2vw, 12px) clamp(4px, 1.5vw, 8px);
     border-bottom: 1px solid #ddd;
-    font-size: 13px;
+    font-size: clamp(11px, 3.1vw, 13px);
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    vertical-align: top;
   }
-  td.label { color: #666; width: 40%; }
-  td.value { font-weight: 600; }
+  td.label { color: #666; width: 38%; }
+  td.value { font-weight: 600; width: 62%; }
   .footer {
-    margin-top: 30px;
+    margin-top: clamp(18px, 4vw, 30px);
     text-align: center;
-    font-size: 11px;
+    font-size: clamp(10px, 2.8vw, 11px);
     color: #999;
   }
   @media print {
-    body { padding: 0; }
+    body { padding: 8mm; }
+    @page { margin: 10mm; size: auto; }
   }
 </style>
 </head>
@@ -208,38 +213,63 @@ export function buildOrdersReceiptHtml(orders, { dateFrom, dateTo, priceLabelMod
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>گزارش سفارش‌ها</title>
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet" />
 <style>
   * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
   body {
     font-family: 'Vazirmatn', sans-serif;
     direction: rtl;
-    padding: 40px;
+    margin: 0;
+    padding: clamp(12px, 4vw, 40px);
     color: #1a1508;
     background: #fff;
+    max-width: 100%;
+    overflow-x: hidden;
   }
-  h1 { font-size: 20px; text-align: center; margin-bottom: 4px; }
-  .sub { text-align: center; color: #666; font-size: 12px; margin-bottom: 28px; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { padding: 8px 6px; border-bottom: 1px solid #ddd; font-size: 12px; text-align: center; }
+  h1 { font-size: clamp(16px, 4.2vw, 20px); text-align: center; margin: 0 0 4px; }
+  .sub { text-align: center; color: #666; font-size: clamp(11px, 3vw, 12px); margin-bottom: clamp(16px, 4vw, 28px); }
+  .table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; min-width: 520px; border-collapse: collapse; }
+  th, td {
+    padding: clamp(6px, 1.6vw, 8px) clamp(4px, 1.2vw, 6px);
+    border-bottom: 1px solid #ddd;
+    font-size: clamp(10px, 2.6vw, 12px);
+    text-align: center;
+    word-break: break-word;
+  }
   th { color: #666; font-weight: 600; background: #f7f2e4; }
-  .summary { margin-top: 20px; text-align: left; font-size: 13px; font-weight: 700; }
-  .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #999; }
-  @media print { body { padding: 0; } }
+  .summary {
+    margin-top: clamp(14px, 3vw, 20px);
+    text-align: right;
+    font-size: clamp(11px, 3vw, 13px);
+    font-weight: 700;
+    line-height: 1.7;
+  }
+  .footer { margin-top: clamp(18px, 4vw, 30px); text-align: center; font-size: clamp(10px, 2.8vw, 11px); color: #999; }
+  @media print {
+    body { padding: 8mm; }
+    .table-wrap { overflow: visible; }
+    table { min-width: 0; }
+    @page { margin: 10mm; size: auto; }
+  }
 </style>
 </head>
 <body>
   <h1>آبشده قصر طلا</h1>
   <p class="sub">گزارش سفارش‌ها - ${rangeLabel}</p>
-  <table>
-    <thead>
-      <tr>
-        <th>تاریخ</th><th>نوع</th><th>وضعیت</th><th>وزن (گرم۱۸)</th><th>${unitLabel}</th><th>مبلغ کل</th>
-      </tr>
-    </thead>
-    <tbody>${rowsHtml}</tbody>
-  </table>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>تاریخ</th><th>نوع</th><th>وضعیت</th><th>وزن (گرم۱۸)</th><th>${unitLabel}</th><th>مبلغ کل</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+  </div>
   <p class="summary">مجموع طلا: ${goldSummary} — مجموع نقدی: ${cashSummary} — تعداد سفارش‌ها: ${fa(orders.length)}</p>
   <p class="footer">این گزارش در تاریخ ${formatDate(new Date().toISOString())} صادر شده است.</p>
 </body>

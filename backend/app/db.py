@@ -162,7 +162,7 @@ def _patch_orders_table():
         # enum or a plain varchar (both exist across install ages).
         conn.execute(text("""
             UPDATE orders
-            SET pending_deadline_at = NOW() + INTERVAL '60 seconds'
+            SET pending_deadline_at = NOW() + INTERVAL '120 seconds'
             WHERE status::text = 'pending'
               AND pending_deadline_at IS NULL
         """))
@@ -213,6 +213,18 @@ def _patch_price_cards_table():
         conn.execute(text(
             "ALTER TABLE price_cards ADD COLUMN IF NOT EXISTS override_source_restriction BOOLEAN NOT NULL DEFAULT false"
         ))
+        conn.execute(text(
+            "ALTER TABLE price_cards ADD COLUMN IF NOT EXISTS use_manual_price BOOLEAN NOT NULL DEFAULT false"
+        ))
+        conn.execute(text(
+            "ALTER TABLE price_cards ADD COLUMN IF NOT EXISTS manual_buy DOUBLE PRECISION"
+        ))
+        conn.execute(text(
+            "ALTER TABLE price_cards ADD COLUMN IF NOT EXISTS manual_sell DOUBLE PRECISION"
+        ))
+        conn.execute(text(
+            "ALTER TABLE price_card_commissions ADD COLUMN IF NOT EXISTS can_order BOOLEAN NOT NULL DEFAULT true"
+        ))
         # Carry over whatever the old single-flag value was, if that
         # column still exists, before dropping it.
         conn.execute(text("""
@@ -244,6 +256,16 @@ def _patch_amount_type_enum():
         conn.commit()
 
 
+def _patch_expert_hedges_table():
+    """Add Tehran deal-price column to existing expert_hedges installs."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(
+            text("ALTER TABLE expert_hedges ADD COLUMN IF NOT EXISTS price_mesghal17 DOUBLE PRECISION")
+        )
+        conn.commit()
+
+
 def init_db():
     """Call once at app startup: creates the database, then the tables."""
     ensure_database_exists()
@@ -258,6 +280,7 @@ def init_db():
     _patch_roles_table()
     _patch_balance_transactions_table()
     _patch_price_cards_table()
+    _patch_expert_hedges_table()
     _patch_amount_type_enum()
     _backfill_user_devices()
     print("[db] Tables ready")

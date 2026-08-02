@@ -8,6 +8,8 @@
  * Requires Notification permission (requested after admin login).
  */
 
+import { icon192Url, APP_BUILD_V, BRAND_V } from "../brandAssets";
+
 const PERMISSION_ASKED_KEY = "goldapp_admin_notify_asked";
 
 export function notificationsSupported() {
@@ -88,8 +90,8 @@ export function notifyNewOrder(order) {
     renotify: true,
     requireInteraction: false,
     silent: false,
-    icon: "/icon-192.png",
-    badge: "/icon-192.png",
+    icon: icon192Url,
+    badge: icon192Url,
     data: { orderId: order?.id, type: "new_order" },
   };
 
@@ -120,7 +122,7 @@ export async function registerNotifyServiceWorker() {
     return null;
   }
   try {
-    return await navigator.serviceWorker.register("/sw-notify.js", { scope: "/" });
+    return await navigator.serviceWorker.register(`/sw-notify.js?v=${APP_BUILD_V || BRAND_V}`, { scope: "/" });
   } catch (e) {
     console.warn("Notify service worker registration failed:", e);
     return null;

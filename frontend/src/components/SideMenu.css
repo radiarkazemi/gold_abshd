@@ -62,11 +62,21 @@
 }
 
 .side-menu__brand {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 800;
   color: var(--gold-bright);
   font-size: 16px;
   margin-bottom: 4px;
+}
+
+.side-menu__logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .side-menu__phone {
