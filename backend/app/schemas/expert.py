@@ -116,3 +116,11 @@ class ExpertDeskOut(BaseModel):
     dealers: list[TehranDealerOut]
     hedges: list[ExpertHedgeOut]
     session_hours: int = 36
+
+
+class ExpertDayReportOut(BaseModel):
+    date: str  # YYYY-MM-DD (Tehran calendar day, Gregorian key)
+    hedges: list[ExpertHedgeOut] = []
+    accepted_orders: list[dict] = []
+    hedge_count: int = 0
+    accepted_count: int = 0

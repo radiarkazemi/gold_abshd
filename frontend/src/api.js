@@ -426,6 +426,22 @@ export async function fetchExpertDesk() {
   return res.json();
 }
 
+export async function fetchExpertTehranReport(day) {
+  const q = new URLSearchParams({ day });
+  const res = await fetch(`${API_BASE}/api/admin/expert/tehran-report?${q}`, {
+    headers: { ...adminAuthHeaders() },
+  });
+  if (res.status === 401 || res.status === 403) {
+    clearAdminToken();
+    throw new Error("ADMIN_SESSION_EXPIRED");
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to fetch Tehran report");
+  }
+  return res.json();
+}
+
 export async function createTehranDealer({ name, phone, notes, sortOrder = 0 }) {
   const res = await fetch(`${API_BASE}/api/admin/expert/dealers`, {
     method: "POST",

@@ -718,6 +718,31 @@
   min-width: 1080px;
 }
 
+.expert-report {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--hairline);
+}
+
+.expert-report__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.expert-report__status {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding-bottom: 6px;
+}
+
+.expert-report__status--err {
+  color: var(--sell-bright, var(--sell));
+}
+
 .expert-hedges__pager {
   display: flex;
   align-items: center;

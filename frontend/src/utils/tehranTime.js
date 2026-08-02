@@ -49,3 +49,19 @@ export function formatTehranDateTime(iso, opts = {}) {
     ...opts,
   });
 }
+
+/** Gregorian YYYY-MM-DD for an instant in Asia/Tehran. */
+export function tehranDayKey(isoOrDate = new Date()) {
+  const d = isoOrDate instanceof Date ? isoOrDate : parseServerDate(isoOrDate);
+  if (!d) return null;
+  return d.toLocaleDateString("en-CA", { timeZone: TEHRAN_TZ });
+}
+
+export function tehranTodayKey() {
+  return tehranDayKey(new Date());
+}
+
+/** Gregorian YYYY-MM-DD for yesterday in Tehran. */
+export function tehranYesterdayKey() {
+  return tehranDayKey(new Date(Date.now() - 24 * 60 * 60 * 1000));
+}

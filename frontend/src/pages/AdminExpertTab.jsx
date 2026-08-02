@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchExpertDesk,
+  fetchExpertTehranReport,
   fetchPrice,
   decideOrder,
   createTehranDealer,
@@ -10,7 +11,9 @@ import {
 } from "../api";
 import { orderGoldWeight, orderTotalMoney } from "../utils/orderCalc";
 import PendingCountdown from "../components/PendingCountdown";
-import { formatTehranDateTime, formatTehranTime, serverDateMs } from "../utils/tehranTime";
+import ExpertTehranLedger from "../components/ExpertTehranLedger";
+import JalaliDateInput from "../components/JalaliDateInput";
+import { formatTehranTime, tehranTodayKey, tehranYesterdayKey } from "../utils/tehranTime";
 import "./AdminExpertTab.css";
 
 function pickPrimaryGoldCard(cards) {
@@ -24,7 +27,6 @@ const HEDGE_LABEL = {
   sell_to_dealer: "فروش به آبشده تهران",
 };
 
-const TEHRAN_LEDGER_PAGE_SIZE = 12;
 
 function fa(n, opts) {
   if (n == null || Number.isNaN(Number(n))) return "—";
@@ -33,10 +35,6 @@ function fa(n, opts) {
 
 function formatTime(iso) {
   return formatTehranTime(iso);
-}
-
-function formatDateTime(iso) {
-  return formatTehranDateTime(iso);
 }
 
 function DealerAssignInline({ order, dealers, busy, onAssign }) {
@@ -223,7 +221,11 @@ export default function AdminExpertTab({ refreshSignal }) {
     price: "",
     note: "",
   });
-  const [ledgerPage, setLedgerPage] = useState(0);
+  const [reportDate, setReportDate] = useState(() => tehranYesterdayKey());
+  const [report, setReport] = useState(null);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportError, setReportError] = useState("");
+  const [reportTick, setReportTick] = useState(0);
   const freeHedgeRef = useRef(null);
 
   const reload = useCallback(() => {
@@ -296,6 +298,7 @@ export default function AdminExpertTab({ refreshSignal }) {
         priceMesghal17,
       });
       reload();
+      setReportTick((n) => n + 1);
     } catch (e) {
       alert(e.message || "تخصیص ناموفق بود");
     } finally {
@@ -347,6 +350,7 @@ export default function AdminExpertTab({ refreshSignal }) {
       });
       setFreeHedge((f) => ({ ...f, weight: "", price: "", note: "" }));
       reload();
+      setReportTick((n) => n + 1);
     } catch (err) {
       alert(err.message || "ثبت معامله ناموفق بود");
     }
@@ -357,6 +361,7 @@ export default function AdminExpertTab({ refreshSignal }) {
     try {
       await deleteExpertHedge(id);
       reload();
+      setReportTick((n) => n + 1);
     } catch {
       alert("حذف ناموفق بود");
     }
@@ -391,44 +396,34 @@ export default function AdminExpertTab({ refreshSignal }) {
     return null;
   }, [totals]);
 
-  const tehranLedger = useMemo(() => {
+  const todayKey = tehranTodayKey();
+  const todayAccepted = useMemo(() => {
     if (!desk) return [];
-    const rows = [];
-    for (const o of [...(desk.accepted_buy_orders || []), ...(desk.accepted_sell_orders || [])]) {
-      rows.push({
-        kind: "accepted",
-        sortAt: serverDateMs(o.updated_at || o.created_at),
-        key: `accepted-${o.id}`,
-        order: o,
-      });
-    }
-    for (const h of desk.hedges || []) {
-      rows.push({
-        kind: "hedge",
-        sortAt: serverDateMs(h.created_at),
-        key: `hedge-${h.id}`,
-        hedge: h,
-      });
-    }
-    // Newest first so the latest trade sits at the top.
-    rows.sort((a, b) => b.sortAt - a.sortAt || String(b.key).localeCompare(String(a.key)));
-    return rows;
+    return [...(desk.accepted_buy_orders || []), ...(desk.accepted_sell_orders || [])];
   }, [desk]);
 
-  const ledgerPageCount = Math.max(1, Math.ceil(tehranLedger.length / TEHRAN_LEDGER_PAGE_SIZE));
-  const safeLedgerPage = Math.min(ledgerPage, ledgerPageCount - 1);
-  const pagedTehranLedger = useMemo(() => {
-    const start = safeLedgerPage * TEHRAN_LEDGER_PAGE_SIZE;
-    return tehranLedger.slice(start, start + TEHRAN_LEDGER_PAGE_SIZE);
-  }, [tehranLedger, safeLedgerPage]);
-
   useEffect(() => {
-    setLedgerPage(0);
-  }, [desk?.hedges?.length, desk?.accepted_buy_orders?.length, desk?.accepted_sell_orders?.length]);
-
-  useEffect(() => {
-    if (ledgerPage > ledgerPageCount - 1) setLedgerPage(Math.max(0, ledgerPageCount - 1));
-  }, [ledgerPage, ledgerPageCount]);
+    let cancelled = false;
+    if (!reportDate) return undefined;
+    setReportBusy(true);
+    setReportError("");
+    fetchExpertTehranReport(reportDate)
+      .then((data) => {
+        if (!cancelled) setReport(data);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        console.error(e);
+        setReport(null);
+        setReportError(e.message === "ADMIN_SESSION_EXPIRED" ? e.message : "بارگذاری گزارش ناموفق بود");
+      })
+      .finally(() => {
+        if (!cancelled) setReportBusy(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reportDate, reportTick, refreshSignal]);
 
   const uncovered = useMemo(() => {
     if (!desk) return null;
@@ -738,141 +733,41 @@ export default function AdminExpertTab({ refreshSignal }) {
         </form>
       </section>
       <section className="expert-hedges">
-        <h3 className="dashboard__section-title">تاریخچه تخصیص به تهران و سفارش‌های مرتبط</h3>
+        <h3 className="dashboard__section-title">تخصیص امروز به تهران</h3>
         <p className="expert__hint">
-          جدیدترین رویداد بالا است. هر صفحه ۱۲ ردیف — برای دیدن قبلی‌ها از صفحه‌بندی استفاده کنید.
+          فقط رویدادهای <b>امروز (تهران)</b> — جدیدترین بالا. روزهای قبل را از گزارش پایین ببینید.
         </p>
-        {tehranLedger.length === 0 ? (
-          <p className="expert-col__empty">تخصیص یا سفارش تاییدشده‌ای در این نشست نیست</p>
-        ) : (
-          <div className="expert-hedges__table-wrap">
-            <table className="expert-hedges__table expert-hedges__table--wide">
-              <thead>
-                <tr>
-                  <th>زمان</th>
-                  <th>رویداد / سفارش</th>
-                  <th className="expert-hedges__th--buy">وزن سفارش<br />(خرید مشتری از ما)</th>
-                  <th className="expert-hedges__th--sell">وزن سفارش<br />(فروش مشتری به ما)</th>
-                  <th>فی مشتری</th>
-                  <th>معامله تهران</th>
-                  <th>آبشده‌فروش</th>
-                  <th>وزن تخصیص</th>
-                  <th>فی تهران</th>
-                  <th>یادداشت</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {pagedTehranLedger.map((row) => {
-                  if (row.kind === "accepted") {
-                    const o = row.order;
-                    const open = Math.max(0, Number(o.open_hedge_weight || 0));
-                    const w = o.weight_gram18 ?? orderGoldWeight(o);
-                    const wLabel = `${fa(w, { maximumFractionDigits: 3 })} g`;
-                    return (
-                      <tr key={row.key} className={open > 1e-6 ? "expert-hedges__row--open" : "expert-hedges__row--accepted"}>
-                        <td>{formatDateTime(o.updated_at || o.created_at)}</td>
-                        <td>
-                          <div className="expert-hedges__order">
-                            <strong>
-                              {o.customer_name || "بدون نام"} #{o.customer_code}
-                            </strong>
-                            <span>
-                              تایید · {SIDE_LABEL[o.side] || o.side}
-                              {open > 1e-6 ? " · هنوز پوشش تهران ناقص" : " · پوشش تهران انجام شد"}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="expert-hedges__w--buy">{o.side === "buy" ? wLabel : "—"}</td>
-                        <td className="expert-hedges__w--sell">{o.side === "sell" ? wLabel : "—"}</td>
-                        <td>
-                          {o.mesghal17_price_at_submit != null
-                            ? fa(Math.round(o.mesghal17_price_at_submit))
-                            : "—"}
-                        </td>
-                        <td colSpan={3}>
-                          {open > 1e-6
-                            ? `مانده برای تهران: ${fa(open, { maximumFractionDigits: 3 })} g`
-                            : "—"}
-                        </td>
-                        <td>—</td>
-                        <td>—</td>
-                        <td></td>
-                      </tr>
-                    );
-                  }
+        <ExpertTehranLedger
+          hedges={desk.hedges || []}
+          acceptedOrders={todayAccepted}
+          dayKey={todayKey}
+          emptyText="امروز هنوز تخصیص یا تایید مرتبطی ثبت نشده"
+          onRemoveHedge={removeHedge}
+        />
+      </section>
 
-                  const h = row.hedge;
-                  const o = h.related_order;
-                  const ow = o ? `${fa(o.weight_gram18, { maximumFractionDigits: 3 })} g` : null;
-                  return (
-                    <tr key={row.key}>
-                      <td>{formatDateTime(h.created_at)}</td>
-                      <td>
-                        {o ? (
-                          <div className="expert-hedges__order">
-                            <strong>
-                              {o.customer_name || "بدون نام"} #{o.customer_code}
-                            </strong>
-                            <span>
-                              تخصیص تهران · {SIDE_LABEL[o.side] || o.side}
-                              {o.status === "accepted" ? " · تاییدشده" : o.status === "pending" ? " · در انتظار" : ""}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="expert-hedges__free">پوشش آزاد (بدون سفارش)</span>
-                        )}
-                      </td>
-                      <td className="expert-hedges__w--buy">{o?.side === "buy" && ow ? ow : "—"}</td>
-                      <td className="expert-hedges__w--sell">{o?.side === "sell" && ow ? ow : "—"}</td>
-                      <td>
-                        {o?.mesghal17_price_at_submit != null
-                          ? fa(Math.round(o.mesghal17_price_at_submit))
-                          : "—"}
-                      </td>
-                      <td>{HEDGE_LABEL[h.side] || h.side}</td>
-                      <td>{h.dealer_name}</td>
-                      <td>{fa(h.weight_gram18, { maximumFractionDigits: 3 })} g</td>
-                      <td>
-                        {h.price_mesghal17 != null ? fa(Math.round(h.price_mesghal17)) : "—"}
-                      </td>
-                      <td>{h.note || "—"}</td>
-                      <td>
-                        <button type="button" className="expert-btn expert-btn--no" onClick={() => removeHedge(h.id)}>
-                          حذف
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {tehranLedger.length > TEHRAN_LEDGER_PAGE_SIZE && (
-              <div className="expert-hedges__pager">
-                <button
-                  type="button"
-                  className="expert-btn"
-                  disabled={safeLedgerPage <= 0}
-                  onClick={() => setLedgerPage((p) => Math.max(0, p - 1))}
-                >
-                  قبلی
-                </button>
-                <span>
-                  صفحه {fa(safeLedgerPage + 1)} از {fa(ledgerPageCount)}
-                  {" · "}
-                  {fa(tehranLedger.length)} ردیف
-                </span>
-                <button
-                  type="button"
-                  className="expert-btn"
-                  disabled={safeLedgerPage >= ledgerPageCount - 1}
-                  onClick={() => setLedgerPage((p) => Math.min(ledgerPageCount - 1, p + 1))}
-                >
-                  بعدی
-                </button>
-              </div>
-            )}
-          </div>
+      <section className="expert-report">
+        <h3 className="dashboard__section-title">گزارش روزهای قبل</h3>
+        <p className="expert__hint">
+          برای آرشیو و بررسی، یک روز را انتخاب کنید. این بخش میز زنده امروز را شلوغ نمی‌کند.
+        </p>
+        <div className="expert-report__toolbar">
+          <JalaliDateInput label="تاریخ گزارش" value={reportDate} onChange={setReportDate} />
+          {reportBusy && <span className="expert-report__status">در حال بارگذاری…</span>}
+          {reportError && reportError !== "ADMIN_SESSION_EXPIRED" && (
+            <span className="expert-report__status expert-report__status--err">{reportError}</span>
+          )}
+        </div>
+        {!reportBusy && report && (
+          <ExpertTehranLedger
+            hedges={report.hedges || []}
+            acceptedOrders={report.accepted_orders || []}
+            dayKey={report.date}
+            emptyText="برای این تاریخ ردیفی نیست"
+            onRemoveHedge={async (id) => {
+              await removeHedge(id);
+            }}
+          />
         )}
       </section>
     </div>

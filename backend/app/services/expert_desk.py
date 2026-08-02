@@ -11,7 +11,8 @@ Buy/sell cards (گرم۱۸) show PENDING (waiting) orders only.
   - When nothing is left open and Tehran hedges cover the remainder, all
     cards read 0.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
@@ -31,8 +32,9 @@ from app.services.orders import (
     order_customer_fields,
 )
 
-# How far back accepted orders stay on the expert desk table / balance.
+# How far back accepted orders stay on the expert desk balance.
 SESSION_HOURS = 36
+TEHRAN_TZ = ZoneInfo("Asia/Tehran")
 
 
 def list_dealers(db: Session, active_only: bool = False) -> list[TehranDealer]:
@@ -392,3 +394,46 @@ def delete_hedge(db: Session, hedge_id: str) -> None:
         raise HTTPException(status_code=404, detail="تراکنش پیدا نشد")
     db.delete(row)
     db.commit()
+
+
+def _tehran_day_bounds_utc_naive(day: date) -> tuple[datetime, datetime]:
+    """Inclusive start / exclusive end of a Tehran calendar day, as naive UTC."""
+    start_local = datetime(day.year, day.month, day.day, 0, 0, 0, tzinfo=TEHRAN_TZ)
+    end_local = start_local + timedelta(days=1)
+    start_utc = start_local.astimezone(timezone.utc).replace(tzinfo=None)
+    end_utc = end_local.astimezone(timezone.utc).replace(tzinfo=None)
+    return start_utc, end_utc
+
+
+def get_day_report(db: Session, day: date) -> dict:
+    """Hedges + accepted orders that occurred on a Tehran calendar day."""
+    start, end = _tehran_day_bounds_utc_naive(day)
+    hedges = (
+        db.query(ExpertHedge)
+        .options(
+            joinedload(ExpertHedge.dealer),
+            joinedload(ExpertHedge.order).joinedload(Order.user),
+        )
+        .filter(ExpertHedge.created_at >= start, ExpertHedge.created_at < end)
+        .order_by(ExpertHedge.created_at.desc())
+        .all()
+    )
+    accepted = (
+        db.query(Order)
+        .filter(
+            Order.status == OrderStatusEnum.accepted,
+            Order.updated_at >= start,
+            Order.updated_at < end,
+        )
+        .order_by(Order.updated_at.desc())
+        .all()
+    )
+    hedge_cache: dict[str, float] = {}
+    accepted_out = [_enrich_order(db, o, hedge_cache) for o in accepted]
+    return {
+        "date": day.isoformat(),
+        "hedges": [_hedge_out(db, h) for h in hedges],
+        "accepted_orders": accepted_out,
+        "hedge_count": len(hedges),
+        "accepted_count": len(accepted_out),
+    }

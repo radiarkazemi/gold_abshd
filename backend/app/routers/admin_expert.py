@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from datetime import date, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from sqlalchemy.orm import Session
 
@@ -11,6 +13,7 @@ from app.schemas.expert import (
     ExpertHedgeOut,
     ExpertHedgeCreateIn,
     ExpertDeskOut,
+    ExpertDayReportOut,
 )
 from app.services import expert_desk
 
@@ -23,6 +26,17 @@ async def get_expert_desk(
     _admin=Depends(require_permission("expert")),
 ):
     return expert_desk.get_desk(db)
+
+
+@router.get("/tehran-report", response_model=ExpertDayReportOut)
+async def get_tehran_day_report(
+    day: date = Query(..., description="Gregorian YYYY-MM-DD (Tehran calendar day)"),
+    db: Session = Depends(get_db),
+    _admin=Depends(require_permission("expert")),
+):
+    if day > date.today() + timedelta(days=1):
+        raise HTTPException(status_code=400, detail="تاریخ نامعتبر است")
+    return expert_desk.get_day_report(db, day)
 
 
 @router.get("/dealers", response_model=list[TehranDealerOut])
