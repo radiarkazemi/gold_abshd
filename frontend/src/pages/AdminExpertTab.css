@@ -552,6 +552,10 @@
   background: rgba(212, 175, 55, 0.08);
 }
 
+.expert-hedges__row--accepted td {
+  background: rgba(76, 154, 114, 0.06);
+}
+
 .expert-card__assign select,
 .expert-card__assign input,
 .expert-dealers__form input,
