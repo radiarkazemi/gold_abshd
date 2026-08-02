@@ -1,7 +1,7 @@
 /* Minimal service worker: show admin order notifications when the
    page is backgrounded (mobile PWA / Windows). No offline caching.
-   Query-string on the script URL (from brand stamp) forces browsers
-   to fetch a fresh SW when brand icons change. */
+   Query-string on the script URL (APP_BUILD_V) forces browsers to
+   fetch a fresh SW on every deploy so clients auto-reload. */
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -11,7 +11,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       await self.clients.claim();
-      // Drop any stale caches so updated icon URLs are fetched next time.
+      // Drop any stale caches so updated assets/icons are fetched next time.
       const keys = await caches.keys();
       await Promise.all(keys.map((k) => caches.delete(k)));
     })()

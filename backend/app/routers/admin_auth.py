@@ -5,8 +5,9 @@ from app.rate_limit import limiter
 from app.db import get_db
 from app.config import settings
 from app.schemas.admin import AdminLoginIn, AdminLoginOut, AdminVerifyIn
-from app.admin_auth import create_admin_token
+from app.admin_auth import create_admin_token, get_current_admin
 from app.permissions import PERMISSION_SCOPES
+from app.models_db import AdminUser
 from app.services.admin_accounts import (
     verify_sub_admin_password,
     send_login_otp,
@@ -85,5 +86,45 @@ async def admin_verify(request: Request, payload: AdminVerifyIn, db: Session = D
         requires_verification=False,
         is_super=False,
         display_name=sub_admin.full_name or sub_admin.username,
+        permissions=perms,
+    )
+
+
+@router.get("/me", response_model=AdminLoginOut)
+async def admin_me(db: Session = Depends(get_db), admin: dict = Depends(get_current_admin)):
+    """Refresh identity + JWT from the live DB row.
+
+    Newly promoted main admins (or newly granted scopes) pick up access
+    on the next soft page load without clearing browser data.
+    """
+    admin_user_id = admin.get("admin_user_id")
+    row = get_sub_admin(db, admin_user_id) if admin_user_id else None
+    if not row:
+        row = (
+            db.query(AdminUser)
+            .filter(AdminUser.username == admin.get("username"), AdminUser.is_active == True)  # noqa: E712
+            .first()
+        )
+    if not row or not row.is_active:
+        raise HTTPException(status_code=401, detail="نشست ادمین نامعتبر است")
+
+    if row.is_super:
+        perms = list(PERMISSION_SCOPES.keys())
+        token = create_admin_token(row.username, is_super=True, admin_user_id=row.id, permissions=perms)
+        return AdminLoginOut(
+            token=token,
+            requires_verification=False,
+            is_super=True,
+            display_name=row.full_name or "مدیر اصلی",
+            permissions=perms,
+        )
+
+    perms = admin_user_permissions(row)
+    token = create_admin_token(row.username, is_super=False, admin_user_id=row.id, permissions=perms)
+    return AdminLoginOut(
+        token=token,
+        requires_verification=False,
+        is_super=False,
+        display_name=row.full_name or row.username,
         permissions=perms,
     )

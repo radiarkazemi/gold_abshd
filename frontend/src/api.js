@@ -80,6 +80,27 @@ export async function adminVerify(adminUserId, code, registrationKey) {
   return data;
 }
 
+/** Refresh admin JWT + identity from DB (picks up is_super / new scopes). */
+export async function refreshAdminSession() {
+  const res = await fetch(`${API_BASE}/api/admin/auth/me`, {
+    headers: { ...adminAuthHeaders() },
+  });
+  if (res.status === 401) {
+    clearAdminToken();
+    const err = new Error("ADMIN_SESSION_EXPIRED");
+    throw err;
+  }
+  if (!res.ok) throw new Error("Failed to refresh admin session");
+  const data = await res.json();
+  if (data.token) setAdminToken(data.token);
+  setAdminIdentity({
+    is_super: data.is_super,
+    permissions: data.permissions || [],
+    display_name: data.display_name || "",
+  });
+  return data;
+}
+
 export async function fetchKycStatus() {
   const res = await fetch(`${API_BASE}/api/kyc/status`, { headers: { ...authHeaders() } });
   if (!res.ok) throw new Error("Failed to fetch KYC status");
