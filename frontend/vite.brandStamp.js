@@ -1,8 +1,28 @@
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { resolve, join, relative } from "node:path";
+import { spawnSync } from "node:child_process";
 
-const BRAND_FILES = ["logo.png", "icon-192.png", "icon-512.png", "favicon-64.png"];
+const BRAND_FILES = [
+  "logo.png",
+  "icon-192.png",
+  "icon-512.png",
+  "icon-192-maskable.png",
+  "icon-512-maskable.png",
+  "apple-touch-icon.png",
+  "favicon-64.png",
+];
+
+function regenerateBrandIcons(rootDir) {
+  const script = resolve(rootDir, "scripts/generate_brand_icons.py");
+  if (!existsSync(script)) return;
+  const result = spawnSync("python3", [script], { cwd: rootDir, encoding: "utf8" });
+  if (result.status !== 0) {
+    console.warn("[brand-stamp] icon generation failed:\n", result.stderr || result.stdout);
+  } else if (result.stdout) {
+    console.log(result.stdout.trim());
+  }
+}
 
 function hashBrandAssets(publicDir) {
   const hash = createHash("sha256");
@@ -52,6 +72,8 @@ function writeManifest(publicDir, brandVersion) {
     start_url: "/",
     display: "standalone",
     orientation: "portrait",
+    // Used by some Android launchers behind transparent adaptive icons.
+    // Keeping it dark avoids random white plates; icons themselves stay transparent.
     background_color: "#12100b",
     theme_color: "#12100b",
     dir: "rtl",
@@ -60,9 +82,26 @@ function writeManifest(publicDir, brandVersion) {
     id: `/?brand=${brandVersion}`,
     icons: [
       { src: `/favicon-64.png?v=${brandVersion}`, sizes: "64x64", type: "image/png", purpose: "any" },
-      { src: `/icon-192.png?v=${brandVersion}`, sizes: "192x192", type: "image/png", purpose: "any maskable" },
-      { src: `/icon-512.png?v=${brandVersion}`, sizes: "512x512", type: "image/png", purpose: "any maskable" },
-      { src: `/logo.png?v=${brandVersion}`, sizes: "1254x1254", type: "image/png", purpose: "any" },
+      { src: `/icon-192.png?v=${brandVersion}`, sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: `/icon-512.png?v=${brandVersion}`, sizes: "512x512", type: "image/png", purpose: "any" },
+      {
+        src: `/icon-192-maskable.png?v=${brandVersion}`,
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "maskable",
+      },
+      {
+        src: `/icon-512-maskable.png?v=${brandVersion}`,
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
+      {
+        src: `/apple-touch-icon.png?v=${brandVersion}`,
+        sizes: "180x180",
+        type: "image/png",
+        purpose: "any",
+      },
     ],
   };
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
@@ -76,6 +115,7 @@ export const logoUrl = \`/logo.png?v=\${BRAND_V}\`;
 export const icon192Url = \`/icon-192.png?v=\${BRAND_V}\`;
 export const icon512Url = \`/icon-512.png?v=\${BRAND_V}\`;
 export const faviconUrl = \`/favicon-64.png?v=\${BRAND_V}\`;
+export const appleTouchIconUrl = \`/apple-touch-icon.png?v=\${BRAND_V}\`;
 export const manifestUrl = \`/manifest.json?v=\${BRAND_V}\`;
 `;
   writeFileSync(resolve(srcDir, "brandAssets.js"), contents);
@@ -103,6 +143,7 @@ export function brandStampPlugin() {
       rootDir = config.root;
       publicDir = resolve(config.root, "public");
       const srcDir = resolve(config.root, "src");
+      regenerateBrandIcons(rootDir);
       brandVersion = hashBrandAssets(publicDir);
       buildVersion = hashAppBuild(config.root, publicDir);
       writeManifest(publicDir, brandVersion);
@@ -115,6 +156,7 @@ export function brandStampPlugin() {
         .replaceAll('href="/favicon-64.png"', `href="/favicon-64.png?v=${brandVersion}"`)
         .replaceAll('href="/icon-192.png"', `href="/icon-192.png?v=${brandVersion}"`)
         .replaceAll('href="/icon-512.png"', `href="/icon-512.png?v=${brandVersion}"`)
+        .replaceAll('href="/apple-touch-icon.png"', `href="/apple-touch-icon.png?v=${brandVersion}"`)
         .replace(
           "</head>",
           `    <meta name="app-build" content="${buildVersion}" />\n  </head>`

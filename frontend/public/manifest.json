@@ -9,29 +9,41 @@
   "theme_color": "#12100b",
   "dir": "rtl",
   "lang": "fa",
-  "id": "/?brand=d646e4643b77",
+  "id": "/?brand=4e45f3f0fa07",
   "icons": [
     {
-      "src": "/favicon-64.png?v=d646e4643b77",
+      "src": "/favicon-64.png?v=4e45f3f0fa07",
       "sizes": "64x64",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-192.png?v=d646e4643b77",
+      "src": "/icon-192.png?v=4e45f3f0fa07",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "/icon-512.png?v=d646e4643b77",
+      "src": "/icon-512.png?v=4e45f3f0fa07",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "/logo.png?v=d646e4643b77",
-      "sizes": "1254x1254",
+      "src": "/icon-192-maskable.png?v=4e45f3f0fa07",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512-maskable.png?v=4e45f3f0fa07",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png?v=4e45f3f0fa07",
+      "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"
     }
