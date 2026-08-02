@@ -1,10 +1,17 @@
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { resolve, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const BRAND_FILES = [
   "logo.png",
+  "gt-icon-192.png",
+  "gt-icon-512.png",
+  "gt-apple-touch-icon.png",
+  "gt-favicon-64.png",
+];
+
+const LEGACY_DIST_ICONS = [
   "icon-192.png",
   "icon-512.png",
   "icon-192-maskable.png",
@@ -72,8 +79,8 @@ function writeManifest(publicDir, brandVersion) {
     start_url: "/",
     display: "standalone",
     orientation: "portrait",
-    // Used by some Android launchers behind transparent adaptive icons.
-    // Keeping it dark avoids random white plates; icons themselves stay transparent.
+    // Splash only. Do NOT ship maskable icons — Chrome fills those with this
+    // color and produces the black circular plate on Android shortcuts.
     background_color: "#12100b",
     theme_color: "#12100b",
     dir: "rtl",
@@ -81,23 +88,26 @@ function writeManifest(publicDir, brandVersion) {
     // Changing id when icons change nudges Chromium to refresh the installed icon.
     id: `/?brand=${brandVersion}`,
     icons: [
-      { src: `/favicon-64.png?v=${brandVersion}`, sizes: "64x64", type: "image/png", purpose: "any" },
-      { src: `/icon-192.png?v=${brandVersion}`, sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: `/icon-512.png?v=${brandVersion}`, sizes: "512x512", type: "image/png", purpose: "any" },
       {
-        src: `/icon-192-maskable.png?v=${brandVersion}`,
+        src: `/gt-favicon-64.png?v=${brandVersion}`,
+        sizes: "64x64",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: `/gt-icon-192.png?v=${brandVersion}`,
         sizes: "192x192",
         type: "image/png",
-        purpose: "maskable",
+        purpose: "any",
       },
       {
-        src: `/icon-512-maskable.png?v=${brandVersion}`,
+        src: `/gt-icon-512.png?v=${brandVersion}`,
         sizes: "512x512",
         type: "image/png",
-        purpose: "maskable",
+        purpose: "any",
       },
       {
-        src: `/apple-touch-icon.png?v=${brandVersion}`,
+        src: `/gt-apple-touch-icon.png?v=${brandVersion}`,
         sizes: "180x180",
         type: "image/png",
         purpose: "any",
@@ -112,10 +122,10 @@ function writeBrandModule(srcDir, brandVersion, buildVersion) {
 export const BRAND_V = ${JSON.stringify(brandVersion)};
 export const APP_BUILD_V = ${JSON.stringify(buildVersion)};
 export const logoUrl = \`/logo.png?v=\${BRAND_V}\`;
-export const icon192Url = \`/icon-192.png?v=\${BRAND_V}\`;
-export const icon512Url = \`/icon-512.png?v=\${BRAND_V}\`;
-export const faviconUrl = \`/favicon-64.png?v=\${BRAND_V}\`;
-export const appleTouchIconUrl = \`/apple-touch-icon.png?v=\${BRAND_V}\`;
+export const icon192Url = \`/gt-icon-192.png?v=\${BRAND_V}\`;
+export const icon512Url = \`/gt-icon-512.png?v=\${BRAND_V}\`;
+export const faviconUrl = \`/gt-favicon-64.png?v=\${BRAND_V}\`;
+export const appleTouchIconUrl = \`/gt-apple-touch-icon.png?v=\${BRAND_V}\`;
 export const manifestUrl = \`/manifest.json?v=\${BRAND_V}\`;
 `;
   writeFileSync(resolve(srcDir, "brandAssets.js"), contents);
@@ -126,6 +136,17 @@ function writeVersionFile(dir, brandVersion, buildVersion) {
     resolve(dir, "version.json"),
     `${JSON.stringify({ build: buildVersion, brand: brandVersion }, null, 2)}\n`
   );
+}
+
+function purgeLegacyIcons(dir) {
+  if (!existsSync(dir)) return;
+  for (const name of LEGACY_DIST_ICONS) {
+    const full = resolve(dir, name);
+    if (existsSync(full)) {
+      unlinkSync(full);
+      console.log(`[brand-stamp] removed legacy ${name}`);
+    }
+  }
 }
 
 /**
@@ -153,10 +174,13 @@ export function brandStampPlugin() {
     transformIndexHtml(html) {
       return html
         .replaceAll('href="/manifest.json"', `href="/manifest.json?v=${brandVersion}"`)
-        .replaceAll('href="/favicon-64.png"', `href="/favicon-64.png?v=${brandVersion}"`)
-        .replaceAll('href="/icon-192.png"', `href="/icon-192.png?v=${brandVersion}"`)
-        .replaceAll('href="/icon-512.png"', `href="/icon-512.png?v=${brandVersion}"`)
-        .replaceAll('href="/apple-touch-icon.png"', `href="/apple-touch-icon.png?v=${brandVersion}"`)
+        .replaceAll('href="/gt-favicon-64.png"', `href="/gt-favicon-64.png?v=${brandVersion}"`)
+        .replaceAll('href="/gt-icon-192.png"', `href="/gt-icon-192.png?v=${brandVersion}"`)
+        .replaceAll('href="/gt-icon-512.png"', `href="/gt-icon-512.png?v=${brandVersion}"`)
+        .replaceAll(
+          'href="/gt-apple-touch-icon.png"',
+          `href="/gt-apple-touch-icon.png?v=${brandVersion}"`
+        )
         .replace(
           "</head>",
           `    <meta name="app-build" content="${buildVersion}" />\n  </head>`
@@ -167,6 +191,7 @@ export function brandStampPlugin() {
       const outDir = resolve(rootDir, "dist");
       if (existsSync(outDir)) {
         writeVersionFile(outDir, brandVersion, buildVersion);
+        purgeLegacyIcons(outDir);
       }
     },
   };

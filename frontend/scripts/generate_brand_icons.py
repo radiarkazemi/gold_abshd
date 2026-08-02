@@ -3,8 +3,8 @@
 
 Goals:
   - Fully transparent canvas (no baked black/white plate)
-  - `any` icons padded so the mark fits launcher grids without clipping
-  - `maskable` icons keep the mark inside the Android safe zone (~80%)
+  - Mark kept well inside circular / squircle launcher masks
+  - Filenames are versioned (gt-*) so phones cannot keep a stale icon URL
 """
 
 from __future__ import annotations
@@ -19,9 +19,19 @@ PUBLIC = ROOT / "public"
 SOURCE = PUBLIC / "logo.png"
 
 # Max content size as a fraction of the canvas edge.
-ANY_SCALE = 0.70          # comfortable grid fit for circles / squcircles
-MASKABLE_SCALE = 0.52     # well inside the 80% maskable safe zone
-APPLE_SCALE = 0.68
+# ~0.50 keeps diamond points inside an inscribed circular mask.
+ANY_SCALE = 0.50
+APPLE_SCALE = 0.50
+
+# Legacy names we no longer ship (delete so stale dist copies vanish).
+LEGACY_ICON_NAMES = [
+    "icon-192.png",
+    "icon-512.png",
+    "icon-192-maskable.png",
+    "icon-512-maskable.png",
+    "apple-touch-icon.png",
+    "favicon-64.png",
+]
 
 
 def clean_alpha(im: Image.Image) -> Image.Image:
@@ -71,12 +81,10 @@ def main() -> None:
     content = content_layer(Image.open(SOURCE))
 
     specs = [
-        ("favicon-64.png", 64, ANY_SCALE),
-        ("icon-192.png", 192, ANY_SCALE),
-        ("icon-512.png", 512, ANY_SCALE),
-        ("icon-192-maskable.png", 192, MASKABLE_SCALE),
-        ("icon-512-maskable.png", 512, MASKABLE_SCALE),
-        ("apple-touch-icon.png", 180, APPLE_SCALE),
+        ("gt-favicon-64.png", 64, ANY_SCALE),
+        ("gt-icon-192.png", 192, ANY_SCALE),
+        ("gt-icon-512.png", 512, ANY_SCALE),
+        ("gt-apple-touch-icon.png", 180, APPLE_SCALE),
     ]
     for name, size, scale in specs:
         save(fit_on_canvas(content, size, scale), PUBLIC / name)
@@ -84,6 +92,13 @@ def main() -> None:
     # Keep logo.png as the in-app artwork, but normalize transparent pixels.
     logo = clean_alpha(Image.open(SOURCE))
     save(logo, PUBLIC / "logo.png")
+
+    for name in LEGACY_ICON_NAMES:
+        legacy = PUBLIC / name
+        if legacy.exists():
+            legacy.unlink()
+            print(f"removed legacy {name}")
+
     print("brand icons regenerated")
 
 
