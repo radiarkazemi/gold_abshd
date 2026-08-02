@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { formatTehranTime } from "../utils/tehranTime";
 import { fetchOrders, decideOrder, fetchAdminUsers, fetchTradingStatus, updateTradingStatus, fetchOrderLimits, updateOrderLimits, fetchPrice } from "../api";
 import { orderGoldWeight, orderTotalMoney } from "../utils/orderCalc";
 import PendingCountdown from "../components/PendingCountdown";
@@ -16,8 +17,9 @@ function formatValue(order) {
 }
 
 function formatTime(iso) {
-  return new Date(iso).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
+  return formatTehranTime(iso);
 }
+
 
 export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
   const [pending, setPending] = useState([]);

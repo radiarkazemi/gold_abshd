@@ -1,3 +1,4 @@
+import { formatTehranDateTime } from "./tehranTime";
 function fa(n, opts) {
   return Number(n).toLocaleString("fa-IR", opts);
 }
@@ -11,13 +12,7 @@ function orderMoney(order) {
 }
 
 function formatDate(iso) {
-  return new Date(iso).toLocaleString("fa-IR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatTehranDateTime(iso);
 }
 
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };

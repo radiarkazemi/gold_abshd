@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { TEHRAN_TZ } from "../utils/tehranTime";
 
 function formatTimestamp(date) {
   return date.toLocaleString("fa-IR", {
+    timeZone: TEHRAN_TZ,
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",

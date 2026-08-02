@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
+import { formatTehranDateTime } from "../utils/tehranTime";
 import { fetchAdminKycPending, reviewKyc, fetchKycDocumentBlobUrlAsAdmin } from "../api";
 
 function formatDate(iso) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("fa-IR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return formatTehranDateTime(iso);
 }
 
 export default function AdminKycTab() {

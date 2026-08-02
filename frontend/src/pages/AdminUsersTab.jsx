@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { formatTehranDateTime } from "../utils/tehranTime";
 import {
   fetchAdminUsers,
   fetchAdminUserDetail,
@@ -18,12 +19,7 @@ function fa(n, opts) {
 }
 
 function formatDate(iso) {
-  return new Date(iso).toLocaleString("fa-IR", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatTehranDateTime(iso);
 }
 
 function formatDateOnly(iso) {

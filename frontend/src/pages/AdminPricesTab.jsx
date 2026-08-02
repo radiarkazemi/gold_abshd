@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { TEHRAN_TZ } from "../utils/tehranTime";
 import {
   fetchAdminPriceCards,
   setPriceCardEnabled,
@@ -294,7 +295,7 @@ export default function AdminPricesTab() {
         <div className="admin-prices__meta">
           {lastFetched && (
             <span className="admin-prices__fetched">
-              دریافت شد: {lastFetched.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              دریافت شد: {lastFetched.toLocaleTimeString("fa-IR", { timeZone: TEHRAN_TZ, hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </span>
           )}
         </div>

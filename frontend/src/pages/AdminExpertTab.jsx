@@ -10,6 +10,7 @@ import {
 } from "../api";
 import { orderGoldWeight, orderTotalMoney } from "../utils/orderCalc";
 import PendingCountdown from "../components/PendingCountdown";
+import { formatTehranDateTime, formatTehranTime, serverDateMs } from "../utils/tehranTime";
 import "./AdminExpertTab.css";
 
 function pickPrimaryGoldCard(cards) {
@@ -29,16 +30,11 @@ function fa(n, opts) {
 }
 
 function formatTime(iso) {
-  return new Date(iso).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
+  return formatTehranTime(iso);
 }
 
 function formatDateTime(iso) {
-  return new Date(iso).toLocaleString("fa-IR", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatTehranDateTime(iso);
 }
 
 function DealerAssignInline({ order, dealers, busy, onAssign }) {
@@ -398,7 +394,7 @@ export default function AdminExpertTab({ refreshSignal }) {
     for (const o of [...(desk.accepted_buy_orders || []), ...(desk.accepted_sell_orders || [])]) {
       rows.push({
         kind: "accepted",
-        sortAt: Date.parse(o.updated_at || o.created_at || 0) || 0,
+        sortAt: serverDateMs(o.updated_at || o.created_at),
         key: `accepted-${o.id}`,
         order: o,
       });
@@ -406,7 +402,7 @@ export default function AdminExpertTab({ refreshSignal }) {
     for (const h of desk.hedges || []) {
       rows.push({
         kind: "hedge",
-        sortAt: Date.parse(h.created_at || 0) || 0,
+        sortAt: serverDateMs(h.created_at),
         key: `hedge-${h.id}`,
         hedge: h,
       });

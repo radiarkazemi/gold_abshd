@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { formatTehranTime } from "../utils/tehranTime";
 import { fetchOrders, decideOrder, openAdminSocket, getAdminToken, clearAdminToken, fetchReceiptBlobUrlAsAdmin, getAdminIdentity, refreshAdminSession, fetchPrice } from "../api";
 import PendingCountdown from "../components/PendingCountdown";
 import AdminUsersTab from "./AdminUsersTab";
@@ -57,8 +58,9 @@ function formatPrice(value) {
 }
 
 function formatTime(iso) {
-  return new Date(iso).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
+  return formatTehranTime(iso);
 }
+
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
