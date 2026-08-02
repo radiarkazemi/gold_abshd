@@ -533,6 +533,8 @@ class ExpertHedge(Base):
     dealer_id = Column(UUID(as_uuid=False), ForeignKey("tehran_dealers.id"), nullable=False, index=True)
     side = Column(Enum(ExpertHedgeSideEnum), nullable=False)
     weight_gram18 = Column(Float, nullable=False)
+    # Deal price with Tehran (مثقال ۱۷) — what we actually bought/sold at.
+    price_mesghal17 = Column(Float, nullable=True)
     related_order_id = Column(UUID(as_uuid=False), ForeignKey("orders.id"), nullable=True, index=True)
     note = Column(Text, nullable=True)
     created_by = Column(String, nullable=True)  # admin username

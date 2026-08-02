@@ -74,6 +74,7 @@ async def add_hedge(
         related_order_id=payload.related_order_id,
         side=payload.side,
         weight_gram18=payload.weight_gram18,
+        price_mesghal17=payload.price_mesghal17,
         note=payload.note,
         created_by=admin.get("username"),
     )

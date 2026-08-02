@@ -28,6 +28,7 @@ from app.services.orders import (
     order_to_dict,
     weight_equivalent,
     order_total_toman,
+    order_customer_fields,
 )
 
 # How far back accepted orders stay on the expert desk table / balance.
@@ -129,21 +130,43 @@ def _accepted_session_orders(db: Session) -> list[Order]:
 def _hedges_since(db: Session, since: datetime) -> list[ExpertHedge]:
     return (
         db.query(ExpertHedge)
-        .options(joinedload(ExpertHedge.dealer))
+        .options(
+            joinedload(ExpertHedge.dealer),
+            joinedload(ExpertHedge.order).joinedload(Order.user),
+        )
         .filter(ExpertHedge.created_at >= since)
         .order_by(ExpertHedge.created_at.desc())
         .all()
     )
 
 
-def _hedge_out(h: ExpertHedge) -> dict:
+def _related_order_brief(db: Session, order: Order | None) -> dict | None:
+    if not order:
+        return None
+    cust = order_customer_fields(db, order)
+    return {
+        "id": order.id,
+        "side": order.side.value if hasattr(order.side, "value") else order.side,
+        "status": order.status.value if hasattr(order.status, "value") else order.status,
+        "customer_name": cust.get("customer_name"),
+        "customer_code": cust.get("customer_code"),
+        "weight_gram18": float(weight_equivalent(order)),
+        "mesghal17_price_at_submit": order.mesghal17_price_at_submit,
+        "created_at": order.created_at,
+        "updated_at": order.updated_at,
+    }
+
+
+def _hedge_out(db: Session, h: ExpertHedge) -> dict:
     return {
         "id": h.id,
         "dealer_id": h.dealer_id,
         "dealer_name": h.dealer.name if h.dealer else "—",
         "side": h.side.value if hasattr(h.side, "value") else h.side,
         "weight_gram18": float(h.weight_gram18),
+        "price_mesghal17": float(h.price_mesghal17) if h.price_mesghal17 is not None else None,
         "related_order_id": h.related_order_id,
+        "related_order": _related_order_brief(db, h.order),
         "note": h.note,
         "created_by": h.created_by,
         "created_at": h.created_at,
@@ -285,7 +308,7 @@ def get_desk(db: Session) -> dict:
             },
         },
         "dealers": list_dealers(db, active_only=False),
-        "hedges": [_hedge_out(h) for h in hedges],
+        "hedges": [_hedge_out(db, h) for h in hedges],
         "session_hours": SESSION_HOURS,
     }
 
@@ -297,12 +320,17 @@ def create_hedge(
     related_order_id: str | None,
     side: str | None,
     weight_gram18: float | None,
+    price_mesghal17: float | None,
     note: str | None,
     created_by: str | None,
 ) -> dict:
     dealer = db.query(TehranDealer).filter(TehranDealer.id == dealer_id).first()
     if not dealer or not dealer.is_active:
         raise HTTPException(status_code=404, detail="آبشده‌فروش فعال پیدا نشد")
+
+    if price_mesghal17 is None or float(price_mesghal17) <= 0:
+        raise HTTPException(status_code=400, detail="فی مثقال معامله با تهران الزامی است")
+    price = float(price_mesghal17)
 
     if related_order_id:
         order = db.query(Order).filter(Order.id == related_order_id).first()
@@ -333,11 +361,13 @@ def create_hedge(
             raise HTTPException(status_code=400, detail="وزن باید بزرگتر از صفر باشد")
         hedge_side = ExpertHedgeSideEnum(side)
         w = float(weight_gram18)
+        order = None
 
     row = ExpertHedge(
         dealer_id=dealer_id,
         side=hedge_side,
         weight_gram18=w,
+        price_mesghal17=price,
         related_order_id=related_order_id,
         note=note or None,
         created_by=created_by,
@@ -345,8 +375,15 @@ def create_hedge(
     db.add(row)
     db.commit()
     db.refresh(row)
-    _ = row.dealer
-    return _hedge_out(row)
+    row.dealer = dealer
+    if related_order_id:
+        row.order = (
+            db.query(Order)
+            .options(joinedload(Order.user))
+            .filter(Order.id == related_order_id)
+            .first()
+        )
+    return _hedge_out(db, row)
 
 
 def delete_hedge(db: Session, hedge_id: str) -> None:

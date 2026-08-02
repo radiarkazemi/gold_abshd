@@ -44,6 +44,7 @@ function formatDateTime(iso) {
 function DealerAssignInline({ order, dealers, busy, onAssign }) {
   const [dealerId, setDealerId] = useState("");
   const [weight, setWeight] = useState("");
+  const [price, setPrice] = useState("");
   const [open, setOpen] = useState(false);
   const activeDealers = (dealers || []).filter((d) => d.is_active);
   const remaining = Math.max(0, Number(order.open_hedge_weight ?? orderGoldWeight(order)));
@@ -69,7 +70,7 @@ function DealerAssignInline({ order, dealers, busy, onAssign }) {
           {label}
         </button>
       ) : (
-        <div className="expert-assign__row">
+        <div className="expert-assign__row expert-assign__row--price">
           <select value={dealerId} onChange={(e) => setDealerId(e.target.value)}>
             <option value="">آبشده‌فروش…</option>
             {activeDealers.map((d) => (
@@ -85,6 +86,13 @@ function DealerAssignInline({ order, dealers, busy, onAssign }) {
             onChange={(e) => setWeight(e.target.value)}
             placeholder="گرم"
           />
+          <input
+            type="number"
+            step="1"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            placeholder="فی مثقال تهران"
+          />
           <button
             type="button"
             className="expert-btn expert-btn--ok"
@@ -94,12 +102,18 @@ function DealerAssignInline({ order, dealers, busy, onAssign }) {
                 alert("آبشده‌فروش را انتخاب کنید");
                 return;
               }
+              if (!price || Number(price) <= 0) {
+                alert("فی مثقال معامله با تهران را وارد کنید");
+                return;
+              }
               await onAssign({
                 orderId: order.id,
                 dealerId,
                 weightGram18: weight === "" ? null : Number(weight),
+                priceMesghal17: Number(price),
               });
               setOpen(false);
+              setPrice("");
             }}
           >
             ثبت
@@ -208,6 +222,7 @@ export default function AdminExpertTab({ refreshSignal }) {
     dealerId: "",
     side: "sell_to_dealer",
     weight: "",
+    price: "",
     note: "",
   });
   const freeHedgeRef = useRef(null);
@@ -272,13 +287,14 @@ export default function AdminExpertTab({ refreshSignal }) {
     }
   }
 
-  async function handleAssign({ orderId, dealerId, weightGram18 }) {
+  async function handleAssign({ orderId, dealerId, weightGram18, priceMesghal17 }) {
     setBusyId(orderId);
     try {
       await createExpertHedge({
         dealerId,
         relatedOrderId: orderId,
         weightGram18,
+        priceMesghal17,
       });
       reload();
     } catch (e) {
@@ -318,14 +334,19 @@ export default function AdminExpertTab({ refreshSignal }) {
       alert("آبشده‌فروش و وزن لازم است");
       return;
     }
+    if (!freeHedge.price || Number(freeHedge.price) <= 0) {
+      alert("فی مثقال معامله با تهران را وارد کنید");
+      return;
+    }
     try {
       await createExpertHedge({
         dealerId: freeHedge.dealerId,
         side: freeHedge.side,
         weightGram18: Number(freeHedge.weight),
+        priceMesghal17: Number(freeHedge.price),
         note: freeHedge.note,
       });
-      setFreeHedge((f) => ({ ...f, weight: "", note: "" }));
+      setFreeHedge((f) => ({ ...f, weight: "", price: "", note: "" }));
       reload();
     } catch (err) {
       alert(err.message || "ثبت معامله ناموفق بود");
@@ -660,6 +681,14 @@ export default function AdminExpertTab({ refreshSignal }) {
               onChange={(e) => setFreeHedge((f) => ({ ...f, weight: e.target.value }))}
             />
             <input
+              type="number"
+              step="1"
+              placeholder="فی مثقال تهران"
+              value={freeHedge.price}
+              onChange={(e) => setFreeHedge((f) => ({ ...f, price: e.target.value }))}
+              required
+            />
+            <input
               placeholder="یادداشت"
               value={freeHedge.note}
               onChange={(e) => setFreeHedge((f) => ({ ...f, note: e.target.value }))}
@@ -672,37 +701,102 @@ export default function AdminExpertTab({ refreshSignal }) {
       </section>
 
       <section className="expert-hedges">
-        <h3 className="dashboard__section-title">تاریخچه تخصیص به تهران</h3>
-        {(desk.hedges || []).length === 0 ? (
-          <p className="expert-col__empty">تخصیصی ثبت نشده</p>
+        <h3 className="dashboard__section-title">تاریخچه تخصیص به تهران و سفارش‌های مرتبط</h3>
+        <p className="expert__hint">
+          هر ردیف نشان می‌دهد بعد از کدام سفارش مشتری، چه وزنی با چه فی‌ای از/به آبشده تهران معامله شده است.
+        </p>
+        {(desk.hedges || []).length === 0 && !(desk.accepted_buy_orders || []).length && !(desk.accepted_sell_orders || []).length ? (
+          <p className="expert-col__empty">تخصیص یا سفارش تاییدشده‌ای در این نشست نیست</p>
         ) : (
           <div className="expert-hedges__table-wrap">
-            <table className="expert-hedges__table">
+            <table className="expert-hedges__table expert-hedges__table--wide">
               <thead>
                 <tr>
-                  <th>زمان</th>
+                  <th>زمان تخصیص</th>
+                  <th>سفارش مشتری</th>
+                  <th>وزن سفارش</th>
+                  <th>فی مشتری</th>
+                  <th>معامله تهران</th>
                   <th>آبشده‌فروش</th>
-                  <th>نوع</th>
-                  <th>وزن</th>
-                  <th>سفارش</th>
+                  <th>وزن تخصیص</th>
+                  <th>فی تهران</th>
+                  <th>یادداشت</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {desk.hedges.map((h) => (
-                  <tr key={h.id}>
-                    <td>{formatDateTime(h.created_at)}</td>
-                    <td>{h.dealer_name}</td>
-                    <td>{HEDGE_LABEL[h.side] || h.side}</td>
-                    <td>{fa(h.weight_gram18, { maximumFractionDigits: 3 })}</td>
-                    <td>{h.related_order_id ? `#${String(h.related_order_id).slice(0, 8)}` : "آزاد"}</td>
-                    <td>
-                      <button type="button" className="expert-btn expert-btn--no" onClick={() => removeHedge(h.id)}>
-                        حذف
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {(desk.hedges || []).map((h) => {
+                  const o = h.related_order;
+                  return (
+                    <tr key={h.id}>
+                      <td>{formatDateTime(h.created_at)}</td>
+                      <td>
+                        {o ? (
+                          <div className="expert-hedges__order">
+                            <strong>
+                              {o.customer_name || "بدون نام"} #{o.customer_code}
+                            </strong>
+                            <span>
+                              {SIDE_LABEL[o.side] || o.side}
+                              {o.status === "accepted" ? " · تاییدشده" : o.status === "pending" ? " · در انتظار" : ""}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="expert-hedges__free">پوشش آزاد (بدون سفارش)</span>
+                        )}
+                      </td>
+                      <td>
+                        {o
+                          ? `${fa(o.weight_gram18, { maximumFractionDigits: 3 })} g`
+                          : "—"}
+                      </td>
+                      <td>
+                        {o?.mesghal17_price_at_submit != null
+                          ? fa(Math.round(o.mesghal17_price_at_submit))
+                          : "—"}
+                      </td>
+                      <td>{HEDGE_LABEL[h.side] || h.side}</td>
+                      <td>{h.dealer_name}</td>
+                      <td>{fa(h.weight_gram18, { maximumFractionDigits: 3 })} g</td>
+                      <td>
+                        {h.price_mesghal17 != null ? fa(Math.round(h.price_mesghal17)) : "—"}
+                      </td>
+                      <td>{h.note || "—"}</td>
+                      <td>
+                        <button type="button" className="expert-btn expert-btn--no" onClick={() => removeHedge(h.id)}>
+                          حذف
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {[...(desk.accepted_buy_orders || []), ...(desk.accepted_sell_orders || [])]
+                  .filter((o) => Number(o.open_hedge_weight || 0) > 1e-6)
+                  .map((o) => (
+                    <tr key={`open-${o.id}`} className="expert-hedges__row--open">
+                      <td>{formatDateTime(o.updated_at || o.created_at)}</td>
+                      <td>
+                        <div className="expert-hedges__order">
+                          <strong>
+                            {o.customer_name || "بدون نام"} #{o.customer_code}
+                          </strong>
+                          <span>{SIDE_LABEL[o.side] || o.side} · تاییدشده · بدون پوشش کامل</span>
+                        </div>
+                      </td>
+                      <td>{fa(o.weight_gram18 ?? orderGoldWeight(o), { maximumFractionDigits: 3 })} g</td>
+                      <td>
+                        {o.mesghal17_price_at_submit != null
+                          ? fa(Math.round(o.mesghal17_price_at_submit))
+                          : "—"}
+                      </td>
+                      <td colSpan={3}>
+                        مانده برای تهران: {fa(o.open_hedge_weight, { maximumFractionDigits: 3 })} g
+                      </td>
+                      <td>—</td>
+                      <td>—</td>
+                      <td></td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>

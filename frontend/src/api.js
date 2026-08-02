@@ -458,7 +458,7 @@ export async function updateTehranDealer(dealerId, payload) {
   return res.json();
 }
 
-export async function createExpertHedge({ dealerId, relatedOrderId, side, weightGram18, note }) {
+export async function createExpertHedge({ dealerId, relatedOrderId, side, weightGram18, priceMesghal17, note }) {
   const res = await fetch(`${API_BASE}/api/admin/expert/hedges`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
@@ -467,6 +467,7 @@ export async function createExpertHedge({ dealerId, relatedOrderId, side, weight
       related_order_id: relatedOrderId || null,
       side: side || null,
       weight_gram18: weightGram18 == null || weightGram18 === "" ? null : Number(weightGram18),
+      price_mesghal17: priceMesghal17 == null || priceMesghal17 === "" ? null : Number(priceMesghal17),
       note: note || null,
     }),
   });

@@ -508,6 +508,50 @@
   border-top: 1px dashed var(--hairline);
 }
 
+.expert-assign__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+}
+
+.expert-assign__row--price {
+  display: grid;
+  grid-template-columns: minmax(110px, 1.3fr) 72px minmax(110px, 1fr) auto auto;
+  gap: 6px;
+  width: 100%;
+}
+
+.expert-assign__row select,
+.expert-assign__row input {
+  min-width: 0;
+}
+
+.expert-hedges__table--wide {
+  min-width: 920px;
+}
+
+.expert-hedges__order {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.expert-hedges__order strong {
+  font-size: 12px;
+}
+
+.expert-hedges__order span,
+.expert-hedges__free {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.expert-hedges__row--open td {
+  background: rgba(212, 175, 55, 0.08);
+}
+
 .expert-card__assign select,
 .expert-card__assign input,
 .expert-dealers__form input,

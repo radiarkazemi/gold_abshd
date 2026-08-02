@@ -31,13 +31,27 @@ class TehranDealerUpdateIn(BaseModel):
     sort_order: Optional[int] = None
 
 
+class ExpertHedgeRelatedOrder(BaseModel):
+    id: str
+    side: str
+    status: str
+    customer_name: Optional[str] = None
+    customer_code: Optional[str] = None
+    weight_gram18: float = 0.0
+    mesghal17_price_at_submit: Optional[float] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
 class ExpertHedgeOut(BaseModel):
     id: str
     dealer_id: str
     dealer_name: str
     side: str  # buy_from_dealer | sell_to_dealer
     weight_gram18: float
+    price_mesghal17: Optional[float] = None  # فی معامله با تهران (مثقال ۱۷)
     related_order_id: Optional[str] = None
+    related_order: Optional[ExpertHedgeRelatedOrder] = None
     note: Optional[str] = None
     created_by: Optional[str] = None
     created_at: datetime
@@ -50,6 +64,7 @@ class ExpertHedgeCreateIn(BaseModel):
     # Required when related_order_id is null; ignored (overridden) when order is set unless provided as override
     side: Optional[str] = None  # buy_from_dealer | sell_to_dealer
     weight_gram18: Optional[float] = None  # defaults to full order weight when order-linked
+    price_mesghal17: Optional[float] = None  # فی مثقال معامله با تهران
     note: Optional[str] = None
 
 

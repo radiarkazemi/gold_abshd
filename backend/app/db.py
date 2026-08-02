@@ -256,6 +256,16 @@ def _patch_amount_type_enum():
         conn.commit()
 
 
+def _patch_expert_hedges_table():
+    """Add Tehran deal-price column to existing expert_hedges installs."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(
+            text("ALTER TABLE expert_hedges ADD COLUMN IF NOT EXISTS price_mesghal17 DOUBLE PRECISION")
+        )
+        conn.commit()
+
+
 def init_db():
     """Call once at app startup: creates the database, then the tables."""
     ensure_database_exists()
@@ -270,6 +280,7 @@ def init_db():
     _patch_roles_table()
     _patch_balance_transactions_table()
     _patch_price_cards_table()
+    _patch_expert_hedges_table()
     _patch_amount_type_enum()
     _backfill_user_devices()
     print("[db] Tables ready")
