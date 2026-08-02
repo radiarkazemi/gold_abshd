@@ -392,6 +392,30 @@ export default function AdminExpertTab({ refreshSignal }) {
     return null;
   }, [totals]);
 
+  const tehranLedger = useMemo(() => {
+    if (!desk) return [];
+    const rows = [];
+    for (const o of [...(desk.accepted_buy_orders || []), ...(desk.accepted_sell_orders || [])]) {
+      rows.push({
+        kind: "accepted",
+        sortAt: Date.parse(o.updated_at || o.created_at || 0) || 0,
+        key: `accepted-${o.id}`,
+        order: o,
+      });
+    }
+    for (const h of desk.hedges || []) {
+      rows.push({
+        kind: "hedge",
+        sortAt: Date.parse(h.created_at || 0) || 0,
+        key: `hedge-${h.id}`,
+        hedge: h,
+      });
+    }
+    // Oldest first: accept buy → Tehran cover → sell, in real time order.
+    rows.sort((a, b) => a.sortAt - b.sortAt || String(a.key).localeCompare(String(b.key)));
+    return rows;
+  }, [desk]);
+
   const uncovered = useMemo(() => {
     if (!desk) return null;
     const fromApi = totals?.uncovered_pending;
@@ -700,20 +724,20 @@ export default function AdminExpertTab({ refreshSignal }) {
         </form>
       </section>
 
-      <section className="expert-hedges">
+            <section className="expert-hedges">
         <h3 className="dashboard__section-title">تاریخچه تخصیص به تهران و سفارش‌های مرتبط</h3>
         <p className="expert__hint">
-          هر ردیف نشان می‌دهد بعد از کدام سفارش مشتری، چه وزنی با چه فی‌ای از/به آبشده تهران معامله شده است.
+          مرتب‌شده از قدیم به جدید: اول تایید سفارش مشتری، بعد معامله با تهران، بعد سفارش بعدی — تا ترتیب میز مشخص باشد.
         </p>
-        {(desk.hedges || []).length === 0 && !(desk.accepted_buy_orders || []).length && !(desk.accepted_sell_orders || []).length ? (
+        {tehranLedger.length === 0 ? (
           <p className="expert-col__empty">تخصیص یا سفارش تاییدشده‌ای در این نشست نیست</p>
         ) : (
           <div className="expert-hedges__table-wrap">
             <table className="expert-hedges__table expert-hedges__table--wide">
               <thead>
                 <tr>
-                  <th>زمان تخصیص</th>
-                  <th>سفارش مشتری</th>
+                  <th>زمان</th>
+                  <th>رویداد / سفارش</th>
                   <th>وزن سفارش</th>
                   <th>فی مشتری</th>
                   <th>معامله تهران</th>
@@ -725,10 +749,46 @@ export default function AdminExpertTab({ refreshSignal }) {
                 </tr>
               </thead>
               <tbody>
-                {(desk.hedges || []).map((h) => {
+                {tehranLedger.map((row) => {
+                  if (row.kind === "accepted") {
+                    const o = row.order;
+                    const open = Math.max(0, Number(o.open_hedge_weight || 0));
+                    return (
+                      <tr key={row.key} className={open > 1e-6 ? "expert-hedges__row--open" : "expert-hedges__row--accepted"}>
+                        <td>{formatDateTime(o.updated_at || o.created_at)}</td>
+                        <td>
+                          <div className="expert-hedges__order">
+                            <strong>
+                              {o.customer_name || "بدون نام"} #{o.customer_code}
+                            </strong>
+                            <span>
+                              تایید · {SIDE_LABEL[o.side] || o.side}
+                              {open > 1e-6 ? " · هنوز پوشش تهران ناقص" : " · پوشش تهران انجام شد"}
+                            </span>
+                          </div>
+                        </td>
+                        <td>{fa(o.weight_gram18 ?? orderGoldWeight(o), { maximumFractionDigits: 3 })} g</td>
+                        <td>
+                          {o.mesghal17_price_at_submit != null
+                            ? fa(Math.round(o.mesghal17_price_at_submit))
+                            : "—"}
+                        </td>
+                        <td colSpan={3}>
+                          {open > 1e-6
+                            ? `مانده برای تهران: ${fa(open, { maximumFractionDigits: 3 })} g`
+                            : "—"}
+                        </td>
+                        <td>—</td>
+                        <td>—</td>
+                        <td></td>
+                      </tr>
+                    );
+                  }
+
+                  const h = row.hedge;
                   const o = h.related_order;
                   return (
-                    <tr key={h.id}>
+                    <tr key={row.key}>
                       <td>{formatDateTime(h.created_at)}</td>
                       <td>
                         {o ? (
@@ -737,7 +797,7 @@ export default function AdminExpertTab({ refreshSignal }) {
                               {o.customer_name || "بدون نام"} #{o.customer_code}
                             </strong>
                             <span>
-                              {SIDE_LABEL[o.side] || o.side}
+                              تخصیص تهران · {SIDE_LABEL[o.side] || o.side}
                               {o.status === "accepted" ? " · تاییدشده" : o.status === "pending" ? " · در انتظار" : ""}
                             </span>
                           </div>
@@ -746,9 +806,7 @@ export default function AdminExpertTab({ refreshSignal }) {
                         )}
                       </td>
                       <td>
-                        {o
-                          ? `${fa(o.weight_gram18, { maximumFractionDigits: 3 })} g`
-                          : "—"}
+                        {o ? `${fa(o.weight_gram18, { maximumFractionDigits: 3 })} g` : "—"}
                       </td>
                       <td>
                         {o?.mesghal17_price_at_submit != null
@@ -770,33 +828,6 @@ export default function AdminExpertTab({ refreshSignal }) {
                     </tr>
                   );
                 })}
-                {[...(desk.accepted_buy_orders || []), ...(desk.accepted_sell_orders || [])]
-                  .filter((o) => Number(o.open_hedge_weight || 0) > 1e-6)
-                  .map((o) => (
-                    <tr key={`open-${o.id}`} className="expert-hedges__row--open">
-                      <td>{formatDateTime(o.updated_at || o.created_at)}</td>
-                      <td>
-                        <div className="expert-hedges__order">
-                          <strong>
-                            {o.customer_name || "بدون نام"} #{o.customer_code}
-                          </strong>
-                          <span>{SIDE_LABEL[o.side] || o.side} · تاییدشده · بدون پوشش کامل</span>
-                        </div>
-                      </td>
-                      <td>{fa(o.weight_gram18 ?? orderGoldWeight(o), { maximumFractionDigits: 3 })} g</td>
-                      <td>
-                        {o.mesghal17_price_at_submit != null
-                          ? fa(Math.round(o.mesghal17_price_at_submit))
-                          : "—"}
-                      </td>
-                      <td colSpan={3}>
-                        مانده برای تهران: {fa(o.open_hedge_weight, { maximumFractionDigits: 3 })} g
-                      </td>
-                      <td>—</td>
-                      <td>—</td>
-                      <td></td>
-                    </tr>
-                  ))}
               </tbody>
             </table>
           </div>
