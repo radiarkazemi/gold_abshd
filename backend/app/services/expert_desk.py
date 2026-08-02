@@ -1,13 +1,12 @@
 """
 Expert desk: live open-order board + Tehran melted-gold dealer hedges.
 
-Desk session balance (گرم۱۸) persists across accepts:
-  - Includes PENDING (countdown still open) + ACCEPTED in the session window
+Desk totals (گرم۱۸) reflect PENDING orders only (countdown still open):
   - Customer BUY  (خرید مشتری از ما)  → we sell gold → cover by buying from Tehran
   - Customer SELL (فروش مشتری به ما) → we buy gold  → cover by selling to Tehran
-  - net = sell_weight - buy_weight (after subtracting Tehran hedges)
-  - Accepting an order moves it from the pending board into the accepted table
-    without zeroing the running totals.
+  - net = sell_open - buy_open (after per-order + free Tehran hedges)
+  - Accept / reject removes the order from the board and from the totals.
+  - When nothing is waiting (and Tehran cover is settled), all cards read 0.
 """
 from datetime import datetime, timedelta
 
@@ -189,15 +188,13 @@ def get_desk(db: Session) -> dict:
     accepted_buy = [o for o in accepted if o.get("side") == "buy"]
     accepted_sell = [o for o in accepted if o.get("side") == "sell"]
 
-    # Running desk position = pending + accepted in session (does not reset on accept).
-    desk_buy = pending_buy + accepted_buy
-    desk_sell = pending_sell + accepted_sell
-    buy_bucket = _side_bucket(desk_buy)
-    sell_bucket = _side_bucket(desk_sell)
+    # Totals cards = waiting orders only (accepted/rejected do not count).
+    buy_bucket = _side_bucket(pending_buy)
+    sell_bucket = _side_bucket(pending_sell)
 
     since = _session_since()
     hedges = _hedges_since(db, since)
-    # Free-standing hedges (no order) also reduce net exposure by side.
+    # Free-standing hedges (no order) reduce current pending exposure by side.
     free_buy = sum(
         float(h.weight_gram18)
         for h in hedges
@@ -209,28 +206,37 @@ def get_desk(db: Session) -> dict:
         if h.side == ExpertHedgeSideEnum.sell_to_dealer and not h.related_order_id
     )
 
-    # Unhedged remaining after per-order hedges + free desk trades.
-    open_buy = max(0.0, buy_bucket["open_weight"] - free_buy)
-    open_sell = max(0.0, sell_bucket["open_weight"] - free_sell)
-    net = open_sell - open_buy
-    if abs(net) < 1e-6:
+    if not pending:
+        # Nothing waiting → desk is clear regardless of older hedges/accepts.
+        open_buy = 0.0
+        open_sell = 0.0
+        net = 0.0
         direction = "balanced"
-    elif net > 0:
-        direction = "sell_to_tehran"
+        matched = 0.0
     else:
-        direction = "buy_from_tehran"
+        open_buy = max(0.0, buy_bucket["open_weight"] - free_buy)
+        open_sell = max(0.0, sell_bucket["open_weight"] - free_sell)
+        net = open_sell - open_buy
+        if abs(net) < 1e-6:
+            direction = "balanced"
+            net = 0.0
+        elif net > 0:
+            direction = "sell_to_tehran"
+        else:
+            direction = "buy_from_tehran"
+        matched = min(buy_bucket["weight"], sell_bucket["weight"])
 
     hedged_buy = sum(float(h.weight_gram18) for h in hedges if h.side == ExpertHedgeSideEnum.buy_from_dealer)
     hedged_sell = sum(float(h.weight_gram18) for h in hedges if h.side == ExpertHedgeSideEnum.sell_to_dealer)
 
     suggested_cover = None
-    if direction == "sell_to_tehran":
+    if direction == "sell_to_tehran" and abs(net) > 1e-6:
         suggested_cover = {
             "side": "sell_to_dealer",
             "weight_gram18": abs(net),
             "net_direction": direction,
         }
-    elif direction == "buy_from_tehran":
+    elif direction == "buy_from_tehran" and abs(net) > 1e-6:
         suggested_cover = {
             "side": "buy_from_dealer",
             "weight_gram18": abs(net),
@@ -268,7 +274,7 @@ def get_desk(db: Session) -> dict:
             "hedged_sell_weight": hedged_sell,
             "open_buy_weight": open_buy,
             "open_sell_weight": open_sell,
-            "matched_weight": min(buy_bucket["weight"], sell_bucket["weight"]),
+            "matched_weight": matched,
             "suggested_cover": suggested_cover,
             "uncovered_pending": {
                 "buy_weight": sum(float(o.get("open_hedge_weight") or 0) for o in uncovered_buy),

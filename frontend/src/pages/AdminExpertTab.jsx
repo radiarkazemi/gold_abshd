@@ -357,9 +357,11 @@ export default function AdminExpertTab({ refreshSignal }) {
 
   const suggestedCover = useMemo(() => {
     if (!totals) return null;
-    if (totals.suggested_cover?.weight_gram18 > 1e-6) return totals.suggested_cover;
+    const fromApi = totals.suggested_cover;
+    if (fromApi && Number(fromApi.weight_gram18) > 1e-6) return fromApi;
+    if (totals.net_direction === "balanced") return null;
     const abs = Math.abs(Number(totals.net_weight) || 0);
-    if (abs < 1e-6) return null;
+    if (abs <= 1e-6) return null;
     if (totals.net_direction === "sell_to_tehran") {
       return { side: "sell_to_dealer", weight_gram18: abs, net_direction: "sell_to_tehran" };
     }
@@ -426,8 +428,8 @@ export default function AdminExpertTab({ refreshSignal }) {
       <div className="expert__intro">
         <h3 className="dashboard__section-title">میز کارشناس</h3>
         <p className="expert__hint">
-          فقط سفارش‌های <b>در انتظار</b> روی میز دیده می‌شوند. جمع بالا با تایید صفر نمی‌شود
-          (تهاتر خرید/فروش تا مانده برای تهران مشخص شود).
+          کارت‌های بالا و جدول فقط سفارش‌های <b>در انتظار</b> را می‌شمارند. با تایید یا رد،
+          وزن از جمع حذف می‌شود؛ وقتی چیزی در انتظار نماند (و پوشش تهران انجام شود) همه صفر می‌شوند.
         </p>
       </div>
 
@@ -459,7 +461,7 @@ export default function AdminExpertTab({ refreshSignal }) {
             {fa(totals.buy.weight, { maximumFractionDigits: 3 })} گرم۱۸
           </strong>
           <span className="expert-totals__sub">
-            {fa(totals.buy.count)} سفارش · در انتظار {fa(totals.buy.pending_count || 0)}
+            {fa(totals.buy.count)} سفارش در انتظار
           </span>
         </div>
         <div className="expert-totals__cell expert-totals__cell--sell">
@@ -468,7 +470,7 @@ export default function AdminExpertTab({ refreshSignal }) {
             {fa(totals.sell.weight, { maximumFractionDigits: 3 })} گرم۱۸
           </strong>
           <span className="expert-totals__sub">
-            {fa(totals.sell.count)} سفارش · در انتظار {fa(totals.sell.pending_count || 0)}
+            {fa(totals.sell.count)} سفارش در انتظار
           </span>
         </div>
         <div className={`expert-totals__balance expert-totals__balance--${totals.net_direction}`}>
