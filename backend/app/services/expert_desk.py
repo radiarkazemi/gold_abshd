@@ -1,12 +1,15 @@
 """
 Expert desk: live open-order board + Tehran melted-gold dealer hedges.
 
-Desk totals (گرم۱۸) reflect PENDING orders only (countdown still open):
-  - Customer BUY  (خرید مشتری از ما)  → we sell gold → cover by buying from Tehran
-  - Customer SELL (فروش مشتری به ما) → we buy gold  → cover by selling to Tehran
-  - net = sell_open - buy_open (after per-order + free Tehran hedges)
-  - Accept / reject removes the order from the board and from the totals.
-  - When nothing is waiting (and Tehran cover is settled), all cards read 0.
+Buy/sell cards (گرم۱۸) show PENDING (waiting) orders only.
+مانده برای تهران nets the running desk session:
+  - PENDING + ACCEPTED in the session window (rejected never count)
+  - Customer BUY  → cover by buying from Tehran
+  - Customer SELL → cover by selling to Tehran
+  - Accepting a buy still offsets a pending sell (e.g. 20 accepted buy +
+    30 pending sell → 10g مانده فروش به تهران)
+  - When nothing is left open and Tehran hedges cover the remainder, all
+    cards read 0.
 """
 from datetime import datetime, timedelta
 
@@ -188,13 +191,18 @@ def get_desk(db: Session) -> dict:
     accepted_buy = [o for o in accepted if o.get("side") == "buy"]
     accepted_sell = [o for o in accepted if o.get("side") == "sell"]
 
-    # Totals cards = waiting orders only (accepted/rejected do not count).
-    buy_bucket = _side_bucket(pending_buy)
-    sell_bucket = _side_bucket(pending_sell)
+    # Top buy/sell cards: waiting orders only.
+    pending_buy_bucket = _side_bucket(pending_buy)
+    pending_sell_bucket = _side_bucket(pending_sell)
+
+    # Tehran remainder: pending + accepted in session still net against each other.
+    desk_buy = pending_buy + accepted_buy
+    desk_sell = pending_sell + accepted_sell
+    desk_buy_bucket = _side_bucket(desk_buy)
+    desk_sell_bucket = _side_bucket(desk_sell)
 
     since = _session_since()
     hedges = _hedges_since(db, since)
-    # Free-standing hedges (no order) reduce current pending exposure by side.
     free_buy = sum(
         float(h.weight_gram18)
         for h in hedges
@@ -206,25 +214,18 @@ def get_desk(db: Session) -> dict:
         if h.side == ExpertHedgeSideEnum.sell_to_dealer and not h.related_order_id
     )
 
-    if not pending:
-        # Nothing waiting → desk is clear regardless of older hedges/accepts.
-        open_buy = 0.0
-        open_sell = 0.0
-        net = 0.0
+    open_buy = max(0.0, desk_buy_bucket["open_weight"] - free_buy)
+    open_sell = max(0.0, desk_sell_bucket["open_weight"] - free_sell)
+    net = open_sell - open_buy
+    if abs(net) < 1e-6:
         direction = "balanced"
-        matched = 0.0
+        net = 0.0
+    elif net > 0:
+        direction = "sell_to_tehran"
     else:
-        open_buy = max(0.0, buy_bucket["open_weight"] - free_buy)
-        open_sell = max(0.0, sell_bucket["open_weight"] - free_sell)
-        net = open_sell - open_buy
-        if abs(net) < 1e-6:
-            direction = "balanced"
-            net = 0.0
-        elif net > 0:
-            direction = "sell_to_tehran"
-        else:
-            direction = "buy_from_tehran"
-        matched = min(buy_bucket["weight"], sell_bucket["weight"])
+        direction = "buy_from_tehran"
+
+    matched = min(desk_buy_bucket["weight"], desk_sell_bucket["weight"])
 
     hedged_buy = sum(float(h.weight_gram18) for h in hedges if h.side == ExpertHedgeSideEnum.buy_from_dealer)
     hedged_sell = sum(float(h.weight_gram18) for h in hedges if h.side == ExpertHedgeSideEnum.sell_to_dealer)
@@ -253,16 +254,16 @@ def get_desk(db: Session) -> dict:
         "accepted_sell_orders": accepted_sell,
         "totals": {
             "buy": {
-                "count": buy_bucket["count"],
-                "weight": buy_bucket["weight"],
-                "money": buy_bucket["money"],
+                "count": pending_buy_bucket["count"],
+                "weight": pending_buy_bucket["weight"],
+                "money": pending_buy_bucket["money"],
                 "pending_count": len(pending_buy),
                 "accepted_count": len(accepted_buy),
             },
             "sell": {
-                "count": sell_bucket["count"],
-                "weight": sell_bucket["weight"],
-                "money": sell_bucket["money"],
+                "count": pending_sell_bucket["count"],
+                "weight": pending_sell_bucket["weight"],
+                "money": pending_sell_bucket["money"],
                 "pending_count": len(pending_sell),
                 "accepted_count": len(accepted_sell),
             },

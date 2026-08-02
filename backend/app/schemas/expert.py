@@ -75,11 +75,11 @@ class ExpertUncoveredPending(BaseModel):
 
 
 class ExpertDeskTotals(BaseModel):
-    buy: ExpertSideTotals  # خرید مشتری از ما — pending (waiting) only
-    sell: ExpertSideTotals  # فروش مشتری به ما — pending (waiting) only
+    buy: ExpertSideTotals  # کارت خرید — فقط در انتظار
+    sell: ExpertSideTotals  # کارت فروش — فقط در انتظار
     pending_count: int = 0
-    accepted_count: int = 0  # session accepted (not shown in totals cards)
-    # Remaining after internal match + Tehran hedges on pending board:
+    accepted_count: int = 0  # accepted in session (used for Tehran net, not buy/sell cards)
+    # مانده تهران: pending + accepted session, after hedges.
     # sell open - buy open. >0 → sell to Tehran; <0 → buy from Tehran.
     net_weight: float = 0.0
     net_direction: str = "balanced"  # balanced | sell_to_tehran | buy_from_tehran
@@ -87,7 +87,7 @@ class ExpertDeskTotals(BaseModel):
     hedged_sell_weight: float = 0.0
     open_buy_weight: float = 0.0
     open_sell_weight: float = 0.0
-    matched_weight: float = 0.0  # min(buy, sell) already offsetting each other
+    matched_weight: float = 0.0  # internal buy/sell offset in the session
     suggested_cover: Optional[ExpertSuggestedCover] = None
     uncovered_pending: ExpertUncoveredPending = ExpertUncoveredPending()
 
