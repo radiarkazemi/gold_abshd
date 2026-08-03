@@ -42,3 +42,12 @@ Staging nginx asks for HTTP basic auth. Credentials are created for the
 two main admins during bootstrap (same usernames: radiar, sasanHKH).
 Store the generated staging gate passwords securely; they are separate
 from the admin-panel login passwords inside the app.
+
+## Staging gate vs admin login
+
+The browser gate (HTTP basic auth) only protects HTML/assets.
+After you pass it, a cookie (`ghasrtala_stg`) unlocks `/api` and `/ws`.
+Admin panel login then uses a normal Bearer token — this avoids the
+browser conflict where Basic auth and Bearer cannot both use the
+`Authorization` header (which caused an endless re-login loop).
+
