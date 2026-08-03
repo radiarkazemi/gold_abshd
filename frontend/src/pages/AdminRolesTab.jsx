@@ -6,19 +6,7 @@ function emptyLimits(role) {
   return {
     minWeight: role?.min_weight ?? "",
     maxWeight: role?.max_weight ?? "",
-    minAmount: role?.min_amount ?? "",
-    maxAmount: role?.max_amount ?? "",
     priceLabelMode: role?.price_label_mode || "mesghal_and_gram18",
-  };
-}
-
-function toExtra(limits) {
-  return {
-    minWeight: limits.minWeight === "" ? null : Number(limits.minWeight),
-    maxWeight: limits.maxWeight === "" ? null : Number(limits.maxWeight),
-    minAmount: limits.minAmount === "" ? null : Number(limits.minAmount),
-    maxAmount: limits.maxAmount === "" ? null : Number(limits.maxAmount),
-    priceLabelMode: limits.priceLabelMode,
   };
 }
 
@@ -31,12 +19,24 @@ function pickPrimaryGoldCard(payload) {
 function autoAmountFromWeight(weight, rawGoldCard) {
   if (weight === "" || weight == null || !rawGoldCard) return "";
   const numericWeight = Number(weight);
-  if (!numericWeight) return "";
+  if (!Number.isFinite(numericWeight) || numericWeight === 0) return "";
   const personalized = personalizePrice(rawGoldCard, "fixed", 0);
   const gram18 = personalized?.gram18_buy_price;
   if (!gram18) return "";
   const displayedUnit = Math.round(gram18);
   return String(Math.round(numericWeight * displayedUnit));
+}
+
+function limitsPayload(limits, rawGoldCard) {
+  const minAmount = autoAmountFromWeight(limits.minWeight, rawGoldCard);
+  const maxAmount = autoAmountFromWeight(limits.maxWeight, rawGoldCard);
+  return {
+    minWeight: limits.minWeight === "" ? null : Number(limits.minWeight),
+    maxWeight: limits.maxWeight === "" ? null : Number(limits.maxWeight),
+    minAmount: minAmount === "" ? null : Number(minAmount),
+    maxAmount: maxAmount === "" ? null : Number(maxAmount),
+    priceLabelMode: limits.priceLabelMode,
+  };
 }
 
 function RoleRow({ role, onUpdated, rawGoldCard }) {
@@ -45,20 +45,19 @@ function RoleRow({ role, onUpdated, rawGoldCard }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // Keep fields in sync if role row reloads from server.
   useEffect(() => {
-    setLimits((prev) => {
-      const nextMinAmount = autoAmountFromWeight(prev.minWeight, rawGoldCard);
-      const nextMaxAmount = autoAmountFromWeight(prev.maxWeight, rawGoldCard);
-      if (prev.minAmount === nextMinAmount && prev.maxAmount === nextMaxAmount) return prev;
-      return { ...prev, minAmount: nextMinAmount, maxAmount: nextMaxAmount };
-    });
-  }, [rawGoldCard]);
+    setLimits(emptyLimits(role));
+  }, [role.id, role.min_weight, role.max_weight, role.price_label_mode]);
+
+  // Derived live from current weight + live قیمت — no extra click needed.
+  const minAmount = autoAmountFromWeight(limits.minWeight, rawGoldCard);
+  const maxAmount = autoAmountFromWeight(limits.maxWeight, rawGoldCard);
 
   async function handleSave() {
     setSaving(true);
     try {
-      // Keep existing role commission untouched; fees live on قیمت‌ها.
-      await updateRoleCommission(role.id, null, null, toExtra(limits));
+      await updateRoleCommission(role.id, null, null, limitsPayload(limits, rawGoldCard));
       setSaved(true);
       onUpdated();
       setTimeout(() => setSaved(false), 2000);
@@ -90,14 +89,7 @@ function RoleRow({ role, onUpdated, rawGoldCard }) {
               <input
                 type="number"
                 value={limits.minWeight}
-                onChange={(e) => {
-                  const minWeight = e.target.value;
-                  setLimits({
-                    ...limits,
-                    minWeight,
-                    minAmount: autoAmountFromWeight(minWeight, rawGoldCard),
-                  });
-                }}
+                onChange={(e) => setLimits({ ...limits, minWeight: e.target.value })}
               />
             </label>
             <label className="order-limits-box__field">
@@ -105,23 +97,16 @@ function RoleRow({ role, onUpdated, rawGoldCard }) {
               <input
                 type="number"
                 value={limits.maxWeight}
-                onChange={(e) => {
-                  const maxWeight = e.target.value;
-                  setLimits({
-                    ...limits,
-                    maxWeight,
-                    maxAmount: autoAmountFromWeight(maxWeight, rawGoldCard),
-                  });
-                }}
+                onChange={(e) => setLimits({ ...limits, maxWeight: e.target.value })}
               />
             </label>
             <label className="order-limits-box__field">
               <span>حداقل مبلغ (تومان) — خودکار از قیمت گرم ۱۸</span>
-              <input type="number" value={limits.minAmount} readOnly />
+              <input type="number" value={minAmount} readOnly />
             </label>
             <label className="order-limits-box__field">
               <span>حداکثر مبلغ (تومان) — خودکار از قیمت گرم ۱۸</span>
-              <input type="number" value={limits.maxAmount} readOnly />
+              <input type="number" value={maxAmount} readOnly />
             </label>
           </div>
           <label className="order-limits-box__field">
@@ -153,6 +138,9 @@ export default function AdminRolesTab() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [error, setError] = useState("");
 
+  const newMinAmount = autoAmountFromWeight(newLimits.minWeight, rawGoldCard);
+  const newMaxAmount = autoAmountFromWeight(newLimits.maxWeight, rawGoldCard);
+
   function reload() {
     fetchRoles()
       .then(setRoles)
@@ -163,6 +151,7 @@ export default function AdminRolesTab() {
   useEffect(() => {
     reload();
     function applyPrice(payload) {
+      // Always replace so live tick re-renders derived amounts.
       setRawGoldCard(pickPrimaryGoldCard(payload));
     }
     fetchPrice().then(applyPrice).catch(() => {});
@@ -176,15 +165,6 @@ export default function AdminRolesTab() {
     };
   }, []);
 
-  useEffect(() => {
-    setNewLimits((prev) => {
-      const nextMinAmount = autoAmountFromWeight(prev.minWeight, rawGoldCard);
-      const nextMaxAmount = autoAmountFromWeight(prev.maxWeight, rawGoldCard);
-      if (prev.minAmount === nextMinAmount && prev.maxAmount === nextMaxAmount) return prev;
-      return { ...prev, minAmount: nextMinAmount, maxAmount: nextMaxAmount };
-    });
-  }, [rawGoldCard]);
-
   async function handleCreate(e) {
     e.preventDefault();
     setError("");
@@ -193,8 +173,7 @@ export default function AdminRolesTab() {
       return;
     }
     try {
-      // Fees are configured per card on قیمت‌ها; create with zero role commission.
-      await createRole(newName.trim(), "fixed", 0, toExtra(newLimits));
+      await createRole(newName.trim(), "fixed", 0, limitsPayload(newLimits, rawGoldCard));
       setNewName("");
       setNewLimits(emptyLimits(null));
       setShowAdvanced(false);
@@ -254,14 +233,7 @@ export default function AdminRolesTab() {
                 <input
                   type="number"
                   value={newLimits.minWeight}
-                  onChange={(e) => {
-                    const minWeight = e.target.value;
-                    setNewLimits({
-                      ...newLimits,
-                      minWeight,
-                      minAmount: autoAmountFromWeight(minWeight, rawGoldCard),
-                    });
-                  }}
+                  onChange={(e) => setNewLimits({ ...newLimits, minWeight: e.target.value })}
                 />
               </label>
               <label className="order-limits-box__field">
@@ -269,23 +241,16 @@ export default function AdminRolesTab() {
                 <input
                   type="number"
                   value={newLimits.maxWeight}
-                  onChange={(e) => {
-                    const maxWeight = e.target.value;
-                    setNewLimits({
-                      ...newLimits,
-                      maxWeight,
-                      maxAmount: autoAmountFromWeight(maxWeight, rawGoldCard),
-                    });
-                  }}
+                  onChange={(e) => setNewLimits({ ...newLimits, maxWeight: e.target.value })}
                 />
               </label>
               <label className="order-limits-box__field">
                 <span>حداقل مبلغ (تومان) — خودکار از قیمت گرم ۱۸</span>
-                <input type="number" value={newLimits.minAmount} readOnly />
+                <input type="number" value={newMinAmount} readOnly />
               </label>
               <label className="order-limits-box__field">
                 <span>حداکثر مبلغ (تومان) — خودکار از قیمت گرم ۱۸</span>
-                <input type="number" value={newLimits.maxAmount} readOnly />
+                <input type="number" value={newMaxAmount} readOnly />
               </label>
             </div>
             <label className="order-limits-box__field" style={{ marginBottom: 14 }}>

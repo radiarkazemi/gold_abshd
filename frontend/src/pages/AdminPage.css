@@ -1397,14 +1397,21 @@
   gap: 14px;
 }
 
+.admin-kyc__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .admin-kyc__card {
   background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-lg);
-  padding: 16px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
+  min-width: 0;
 }
 
 .admin-kyc__card--approved {
@@ -1490,6 +1497,35 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+}
+
+.admin-kyc__docs--links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.admin-kyc__doc-link {
+  border: 1px solid var(--hairline);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 8px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.admin-kyc__doc-link:hover:not(:disabled) {
+  color: var(--text);
+  border-color: rgba(201, 162, 39, 0.45);
+}
+
+.admin-kyc__doc-link:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .admin-kyc__doc {
