@@ -11,6 +11,7 @@ import UploadReceiptPage from "./pages/UploadReceiptPage";
 import RegisterTransferPage from "./pages/RegisterTransferPage";
 import TermsPage from "./pages/TermsPage";
 import AboutPage from "./pages/AboutPage";
+import ReygiriLinksPage from "./pages/ReygiriLinksPage";
 import NoticeModal from "./components/NoticeModal";
 import UpdatePrompt from "./components/UpdatePrompt";
 import "./components/PriceButton.css";
@@ -74,6 +75,7 @@ export default function App() {
             <Route path="/register-transfer" element={<Protected><RegisterTransferPage /></Protected>} />
             <Route path="/terms" element={<Protected><TermsPage /></Protected>} />
             <Route path="/about" element={<Protected><AboutPage /></Protected>} />
+            <Route path="/reygiri" element={<Protected><ReygiriLinksPage /></Protected>} />
             <Route path={ADMIN_PATH} element={<AdminPage />} />
           </Routes>
         </BrowserRouter>

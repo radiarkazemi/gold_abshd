@@ -6,6 +6,7 @@ const MORE_ITEMS = [
   { label: "احراز هویت", to: "/kyc" },
   { label: "ارسال فیش واریز", to: "/upload-receipt" },
   { label: "ثبت حواله", to: "/register-transfer" },
+  { label: "سامانه‌های ریگیری", to: "/reygiri" },
   { label: "شرایط و قوانین", to: "/terms" },
   { label: "درباره ما", to: "/about" },
 ];
