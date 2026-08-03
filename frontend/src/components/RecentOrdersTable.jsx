@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatTehranDateTime, tehranDayKey, tehranTodayKey } from "../utils/tehranTime";
 import { fetchMyOrders } from "../api";
 import { orderGoldWeight } from "../utils/orderCalc";
@@ -23,21 +23,21 @@ function isSettledStatus(status) {
   return status === "accepted" || status === "rejected" || status === "cancelled";
 }
 
-export default function RecentOrdersTable({ limit = 5, refreshSignal }) {
-  const [orders, setOrders] = useState(null);
+function pickTodayOrders(data) {
+  const today = tehranTodayKey();
+  return (data || []).filter(
+    (o) => isSettledStatus(o.status) && tehranDayKey(o.created_at) === today
+  );
+}
 
-  function pickTodayOrders(data) {
-    const today = tehranTodayKey();
-    return (data || [])
-      .filter((o) => isSettledStatus(o.status) && tehranDayKey(o.created_at) === today)
-      .slice(0, limit);
-  }
+export default function RecentOrdersTable({ limit = 5, refreshSignal }) {
+  const [todayOrders, setTodayOrders] = useState(null);
 
   useEffect(() => {
     function load() {
       fetchMyOrders()
-        .then((data) => setOrders(pickTodayOrders(data)))
-        .catch(() => setOrders([]));
+        .then((data) => setTodayOrders(pickTodayOrders(data)))
+        .catch(() => setTodayOrders([]));
     }
     load();
     const interval = setInterval(load, 6000);
@@ -47,24 +47,71 @@ export default function RecentOrdersTable({ limit = 5, refreshSignal }) {
   useEffect(() => {
     if (refreshSignal === undefined) return;
     fetchMyOrders()
-      .then((data) => setOrders(pickTodayOrders(data)))
+      .then((data) => setTodayOrders(pickTodayOrders(data)))
       .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshSignal]);
 
-  if (orders === null || orders.length === 0) return null;
+  const rows = useMemo(() => (todayOrders || []).slice(0, limit), [todayOrders, limit]);
+
+  // Totals from the same today-settled set the table is built from (not only the visible slice).
+  const totals = useMemo(() => {
+    const list = todayOrders || [];
+    let buy = 0;
+    let sell = 0;
+    for (const o of list) {
+      const w = orderGoldWeight(o);
+      if (o.side === "buy") buy += w;
+      else if (o.side === "sell") sell += w;
+    }
+    return { buy, sell, net: buy - sell };
+  }, [todayOrders]);
+
+  if (todayOrders === null || todayOrders.length === 0) return null;
+
+  const netClass =
+    Math.abs(totals.net) < 1e-9
+      ? "recent-orders__net--flat"
+      : totals.net > 0
+        ? "recent-orders__net--buy"
+        : "recent-orders__net--sell";
 
   return (
     <div className="recent-orders">
       <h3 className="recent-orders__title">آخرین سفارش‌ها · امروز</h3>
       <div className="recent-orders__table">
+        <div className="recent-orders__totals" role="group" aria-label="جمع امروز">
+          <div className="recent-orders__totals-item recent-orders__totals-item--buy">
+            <span className="recent-orders__totals-label">مجموع خریدها</span>
+            <span className="recent-orders__totals-value">
+              {fa(totals.buy, { maximumFractionDigits: 3 })}
+              <span className="recent-orders__totals-unit"> گرم</span>
+            </span>
+          </div>
+          <span className="recent-orders__totals-sep" aria-hidden="true" />
+          <div className="recent-orders__totals-item recent-orders__totals-item--sell">
+            <span className="recent-orders__totals-label">مجموع فروش‌ها</span>
+            <span className="recent-orders__totals-value">
+              {fa(totals.sell, { maximumFractionDigits: 3 })}
+              <span className="recent-orders__totals-unit"> گرم</span>
+            </span>
+          </div>
+          <span className="recent-orders__totals-sep" aria-hidden="true" />
+          <div className={`recent-orders__totals-item recent-orders__totals-item--net ${netClass}`}>
+            <span className="recent-orders__totals-label">تفاضل خرید و فروش</span>
+            <span className="recent-orders__totals-value">
+              {fa(Math.abs(totals.net), { maximumFractionDigits: 3 })}
+              <span className="recent-orders__totals-unit"> گرم</span>
+            </span>
+          </div>
+        </div>
+
         <div className="recent-orders__row recent-orders__row--head">
           <span>نوع</span>
           <span>مقدار</span>
           <span>مظنه</span>
           <span>وضعیت</span>
         </div>
-        {orders.map((o) => (
+        {rows.map((o) => (
           <div className="recent-orders__row" key={o.id}>
             <span className={`recent-orders__side recent-orders__side--${o.side}`}>
               {SIDE_LABEL[o.side]}
@@ -81,7 +128,7 @@ export default function RecentOrdersTable({ limit = 5, refreshSignal }) {
           </div>
         ))}
       </div>
-      <span className="recent-orders__time-note">{formatTime(orders[0].created_at)} آخرین بروزرسانی</span>
+      <span className="recent-orders__time-note">{formatTime(rows[0].created_at)} آخرین بروزرسانی</span>
     </div>
   );
 }
