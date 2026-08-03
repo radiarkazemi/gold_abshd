@@ -146,8 +146,13 @@ sudo cp "$STAGING_ROOT/deploy/gold-abshd-staging.service" /etc/systemd/system/go
 sudo systemctl daemon-reload
 sudo systemctl enable gold-abshd-staging
 sudo systemctl restart gold-abshd-staging
-sleep 3
-systemctl is-active gold-abshd-staging
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  if curl -sf http://127.0.0.1:8001/api/health >/dev/null; then
+    echo "staging health ok"
+    break
+  fi
+  sleep 1
+done
 curl -sf http://127.0.0.1:8001/api/health || true
 echo
 
