@@ -47,8 +47,8 @@ if (typeof window !== "undefined") {
       checking = false;
     }
   }
-  setTimeout(checkForDeploy, 8_000);
-  setInterval(checkForDeploy, 45_000);
+  setTimeout(checkForDeploy, 500);
+  setInterval(checkForDeploy, 30_000);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") checkForDeploy();
   });

@@ -45,7 +45,6 @@ function Protected({ children }) {
   if (!user) return <LoginPage />;
   return (
     <>
-      <UpdatePrompt />
       <NoticeModal />
       {children}
     </>
@@ -57,6 +56,7 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <BrowserRouter>
+          <UpdatePrompt />
           <Routes>
             <Route path="/" element={<Protected><TraderPage /></Protected>} />
             <Route path="/my-orders" element={<Protected><MyOrdersPage /></Protected>} />
