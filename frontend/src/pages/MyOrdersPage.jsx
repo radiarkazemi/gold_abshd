@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { formatTehranDateTime } from "../utils/tehranTime";
+import { useEffect, useMemo, useState } from "react";
+import { formatTehranDateTime, tehranDayKey, tehranThisWeekExcludingToday, tehranTodayKey } from "../utils/tehranTime";
 import { fetchMyOrders, fetchMyBalance, fetchReceiptBlobUrl, uploadReceipt, cancelMyOrder, fetchOrderLimits } from "../api";
 import {
   downloadOrderReceipt,
@@ -64,7 +64,7 @@ export default function MyOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [uploadingId, setUploadingId] = useState(null);
   const [priceLabelMode, setPriceLabelMode] = useState("mesghal_and_gram18");
-  const [preview, setPreview] = useState(null); // { title, html, onDownload }
+  const [preview, setPreview] = useState(null);
 
   function reload() {
     Promise.all([fetchMyOrders(), fetchMyBalance()])
@@ -88,18 +88,33 @@ export default function MyOrdersPage() {
 
   const visible = orders.filter((o) => {
     if (filter && o.status !== filter) return false;
-    const created = new Date(o.created_at);
-    if (dateFrom && created < new Date(dateFrom)) return false;
-    if (dateTo && created > new Date(dateTo + "T23:59:59")) return false;
+    const day = tehranDayKey(o.created_at);
+    if (!day) return false;
+    if (dateFrom && day < dateFrom) return false;
+    if (dateTo && day > dateTo) return false;
     return true;
   });
 
-  function applyQuickRange(days) {
-    const to = new Date();
-    const from = new Date();
-    from.setDate(from.getDate() - days);
-    setDateFrom(from.toISOString().slice(0, 10));
-    setDateTo(to.toISOString().slice(0, 10));
+  const pdfOrders = useMemo(
+    () => visible.filter((o) => o.status === "accepted"),
+    [visible]
+  );
+
+  function applyToday() {
+    const today = tehranTodayKey();
+    setDateFrom(today);
+    setDateTo(today);
+  }
+
+  function applyThisWeek() {
+    const { from, to } = tehranThisWeekExcludingToday();
+    setDateFrom(from);
+    setDateTo(to);
+  }
+
+  function applyAll() {
+    setDateFrom("");
+    setDateTo("");
   }
 
   function clearDateRange() {
@@ -202,11 +217,13 @@ export default function MyOrdersPage() {
 
       <div className="date-filter">
         <div className="date-filter__quick">
-          <button className="admin__filter" onClick={() => applyQuickRange(0)}>امروز</button>
-          <button className="admin__filter" onClick={() => applyQuickRange(1)}>دیروز تا امروز</button>
-          <button className="admin__filter" onClick={() => applyQuickRange(7)}>۷ روز اخیر</button>
+          <button type="button" className="admin__filter" onClick={applyToday}>امروز</button>
+          <button type="button" className="admin__filter" onClick={applyThisWeek}>این هفته</button>
+          <button type="button" className="admin__filter" onClick={applyAll}>کل</button>
           {(dateFrom || dateTo) && (
-            <button className="admin__filter date-filter__clear" onClick={clearDateRange}>پاک کردن</button>
+            <button type="button" className="admin__filter date-filter__clear" onClick={clearDateRange}>
+              پاک کردن
+            </button>
           )}
         </div>
         <div className="date-filter__inputs">
@@ -217,20 +234,20 @@ export default function MyOrdersPage() {
           <button
             type="button"
             className="date-filter__download-all"
-            disabled={visible.length === 0}
-            onClick={() => downloadOrdersReceipt(visible, { dateFrom, dateTo, priceLabelMode })}
+            disabled={pdfOrders.length === 0}
+            onClick={() => downloadOrdersReceipt(pdfOrders, { dateFrom, dateTo, priceLabelMode })}
           >
-            دانلود همه ({fa(visible.length)}) — PDF
+            دانلود همه ({fa(pdfOrders.length)}) — PDF
           </button>
           <button
             type="button"
             className="date-filter__download-all date-filter__download-all--ghost"
-            disabled={visible.length === 0}
+            disabled={pdfOrders.length === 0}
             onClick={() =>
               setPreview({
-                title: `مشاهده گزارش (${fa(visible.length)})`,
-                html: buildOrdersReceiptHtml(visible, { dateFrom, dateTo, priceLabelMode }),
-                onDownload: () => downloadOrdersReceipt(visible, { dateFrom, dateTo, priceLabelMode }),
+                title: `مشاهده گزارش (${fa(pdfOrders.length)})`,
+                html: buildOrdersReceiptHtml(pdfOrders, { dateFrom, dateTo, priceLabelMode }),
+                onDownload: () => downloadOrdersReceipt(pdfOrders, { dateFrom, dateTo, priceLabelMode }),
               })
             }
           >
@@ -355,7 +372,6 @@ export default function MyOrdersPage() {
                   مشاهده در برنامه
                 </button>
               </div>
-
             </div>
           ))}
         </div>
