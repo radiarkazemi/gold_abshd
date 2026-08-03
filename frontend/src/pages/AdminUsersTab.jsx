@@ -450,13 +450,19 @@ export default function AdminUsersTab() {
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState(null);
 
   function reload() {
     setLoading(true);
+    setError("");
     fetchAdminUsers(search || undefined)
       .then(setUsers)
-      .catch(console.error)
+      .catch((e) => {
+        console.error(e);
+        setUsers([]);
+        setError(e.message || "بارگذاری کاربران با خطا مواجه شد");
+      })
       .finally(() => setLoading(false));
   }
 
@@ -478,6 +484,8 @@ export default function AdminUsersTab() {
 
       {loading ? (
         <p className="myorders__empty">در حال بارگذاری…</p>
+      ) : error ? (
+        <p className="myorders__empty">{error}</p>
       ) : users.length === 0 ? (
         <p className="myorders__empty">کاربری پیدا نشد.</p>
       ) : (

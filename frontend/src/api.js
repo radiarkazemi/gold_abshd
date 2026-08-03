@@ -9,6 +9,18 @@ const API_BASE =
 const WS_BASE = API_BASE
   ? API_BASE.replace(/^http/, "ws")
   : `${typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws"}://${typeof window !== "undefined" ? window.location.host : "localhost"}`;
+
+/** Build an absolute URL even when API_BASE is "" (same-origin production). */
+function apiUrl(pathWithQuery) {
+  const path = pathWithQuery.startsWith("/") ? pathWithQuery : `/${pathWithQuery}`;
+  if (API_BASE) return new URL(`${API_BASE}${path}`);
+  const origin =
+    typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin
+      : "http://127.0.0.1";
+  return new URL(path, origin);
+}
+
 import { getDeviceId, getDeviceInfo } from "./utils/deviceId";
 import { decodePayload } from "./utils/payloadCodec";
 const TOKEN_KEY = "goldapp_token";
@@ -190,7 +202,7 @@ export async function fetchKycDocumentBlobUrlAsAdmin(userId, kind = "id_front") 
 }
 
 export async function fetchAdminTransfers(status) {
-  const url = new URL(`${API_BASE}/api/admin/transfers`);
+  const url = apiUrl("/api/admin/transfers");
   if (status) url.searchParams.set("status", status);
   const res = await fetch(url, { headers: { ...adminAuthHeaders() } });
   if (!res.ok) throw new Error("Failed to fetch transfers");
@@ -414,7 +426,7 @@ export async function fetchOrder(orderId) {
 }
 
 export async function fetchOrders(status) {
-  const url = new URL(`${API_BASE}/api/admin/orders`);
+  const url = apiUrl("/api/admin/orders");
   if (status) url.searchParams.set("status", status);
   const res = await fetch(url, { headers: { ...adminAuthHeaders() } });
   if (res.status === 401 || res.status === 403) {
@@ -523,7 +535,7 @@ export async function deleteExpertHedge(hedgeId) {
 }
 
 export async function fetchAdminUsers(search) {
-  const url = new URL(`${API_BASE}/api/admin/users`);
+  const url = apiUrl("/api/admin/users");
   if (search) url.searchParams.set("search", search);
   const res = await fetch(url, { headers: { ...adminAuthHeaders() } });
   if (!res.ok) throw new Error("Failed to fetch users");
