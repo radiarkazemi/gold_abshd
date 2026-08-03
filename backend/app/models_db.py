@@ -134,10 +134,13 @@ class User(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # KYC (احراز هویت) - customer submits a document photo for review;
-    # admin approves or rejects. "none" until the customer submits once.
-    kyc_status = Column(String, nullable=False, default="none")  # none | pending | approved | rejected
-    kyc_document_path = Column(String, nullable=True)
+    # KYC (احراز هویت) — three document photos required before trading.
+    # Status: none → pending → approved | rejected
+    kyc_status = Column(String, nullable=False, default="none")
+    kyc_document_path = Column(String, nullable=True)  # legacy single-doc path
+    kyc_id_front_path = Column(String, nullable=True)
+    kyc_id_back_path = Column(String, nullable=True)
+    kyc_birth_cert_path = Column(String, nullable=True)
     kyc_submitted_at = Column(DateTime, nullable=True)
     kyc_reviewed_at = Column(DateTime, nullable=True)
     kyc_reject_reason = Column(String, nullable=True)

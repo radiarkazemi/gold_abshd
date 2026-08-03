@@ -327,3 +327,8 @@
 .static-page__gap {
   height: 14px;
 }
+.trading-offline-note__link {
+  color: var(--gold-bright);
+  font-weight: 800;
+  text-decoration: underline;
+}

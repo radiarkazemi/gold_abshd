@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { usePriceFeed } from "../hooks/usePriceFeed";
 import { submitOrder, fetchSettlementLabel, fetchTradingStatus } from "../api";
 import { useAuth } from "../context/AuthContext";
@@ -12,7 +13,8 @@ import BottomTabBar from "../components/BottomTabBar";
 import RefreshBar from "../components/RefreshBar";
 
 export default function TraderPage() {
-  const { cards, prevCards, connected, priceLabelMode, tradingBanned } = usePriceFeed();
+  const { cards, prevCards, connected, priceLabelMode, tradingBanned, kycApproved, kycStatus } =
+    usePriceFeed();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [activeOrder, setActiveOrder] = useState(null); // { card, side } | null
@@ -22,6 +24,8 @@ export default function TraderPage() {
   const [settlement, setSettlement] = useState(null);
   const [tradingOnline, setTradingOnline] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  const ordersLocked = tradingBanned || !kycApproved;
 
   async function handleManualRefresh() {
     setRefreshKey((k) => k + 1);
@@ -45,7 +49,7 @@ export default function TraderPage() {
   }, []);
 
   function openModal(card, side) {
-    if (!tradingOnline || tradingBanned) return;
+    if (!tradingOnline || ordersLocked) return;
     setResult(null);
     setError("");
     setActiveOrder({ card, side });
@@ -111,6 +115,16 @@ export default function TraderPage() {
             امکان خرید و فروش برای این حساب غیرفعال شده است. مشاهده قیمت‌ها همچنان فعال است.
           </p>
         )}
+        {!tradingBanned && !kycApproved && (
+          <p className="trading-offline-note">
+            {kycStatus === "pending"
+              ? "مدارک احراز هویت در حال بررسی است؛ تا تایید مدیریت امکان ثبت سفارش ندارید. "
+              : "برای ثبت سفارش باید احراز هویت را تکمیل کنید. "}
+            <Link to="/kyc" className="trading-offline-note__link">
+              رفتن به احراز هویت
+            </Link>
+          </p>
+        )}
 
         {!primaryCard && otherCards.length === 0 ? (
           <p className="price-updated-note">در حال دریافت قیمت…</p>
@@ -121,7 +135,7 @@ export default function TraderPage() {
                 card={primaryCard}
                 prevCard={prevByItemId[primaryCard.goldbridge_item_id]}
                 onOrder={openModal}
-                disabled={!tradingOnline}
+                disabled={!tradingOnline || ordersLocked}
                 priceLabelMode={priceLabelMode}
               />
             )}
@@ -133,7 +147,7 @@ export default function TraderPage() {
                     card={card}
                     prevCard={prevByItemId[card.goldbridge_item_id]}
                     onOrder={openModal}
-                    disabled={!tradingOnline}
+                    disabled={!tradingOnline || ordersLocked}
                     priceLabelMode={priceLabelMode}
                   />
                 ))}

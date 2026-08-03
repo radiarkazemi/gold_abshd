@@ -90,6 +90,8 @@ class OrderLimitsOut(BaseModel):
     commission_type: str = "fixed"   # "fixed" | "percentage" - this user's own commission
     commission_value: float = 0.0    # تومان اگر fixed, درصد اگر percentage
     trading_banned: bool = False
+    kyc_status: str = "none"  # none | pending | approved | rejected
+    kyc_approved: bool = False
     pending_seconds: int = 120
     # Per-card commission overrides for this user's role (fallback = role default above).
     card_commissions: list[CardCommissionOut] = []

@@ -8,6 +8,8 @@ export function usePriceFeed() {
   const [connected, setConnected] = useState(false);
   const [priceLabelMode, setPriceLabelMode] = useState("mesghal_and_gram18");
   const [tradingBanned, setTradingBanned] = useState(false);
+  const [kycApproved, setKycApproved] = useState(true); // optimistic until limits load
+  const [kycStatus, setKycStatus] = useState("none");
   const wsRef = useRef(null);
   const retryRef = useRef(null);
   // Kept in a ref (not state) so the WS onmessage closure below always
@@ -74,6 +76,8 @@ export function usePriceFeed() {
       };
       setPriceLabelMode(limits.price_label_mode || "mesghal_and_gram18");
       setTradingBanned(!!limits.trading_banned);
+      setKycStatus(limits.kyc_status || "none");
+      setKycApproved(limits.kyc_approved === true || limits.kyc_status === "approved");
       setCards(personalizeAll(rawCardsRef.current));
     }
 
@@ -112,5 +116,5 @@ export function usePriceFeed() {
     };
   }, []);
 
-  return { cards, prevCards, connected, priceLabelMode, tradingBanned };
+  return { cards, prevCards, connected, priceLabelMode, tradingBanned, kycApproved, kycStatus };
 }

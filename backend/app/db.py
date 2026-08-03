@@ -88,6 +88,9 @@ def _patch_users_table():
     statements = [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_status VARCHAR NOT NULL DEFAULT 'none'",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_document_path VARCHAR",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_id_front_path VARCHAR",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_id_back_path VARCHAR",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_birth_cert_path VARCHAR",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_submitted_at TIMESTAMP",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_reviewed_at TIMESTAMP",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_reject_reason VARCHAR",

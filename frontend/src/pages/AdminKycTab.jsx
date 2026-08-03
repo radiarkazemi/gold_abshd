@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import { formatTehranDateTime } from "../utils/tehranTime";
 import { fetchAdminKycPending, reviewKyc, fetchKycDocumentBlobUrlAsAdmin } from "../api";
 
+const DOC_BUTTONS = [
+  { kind: "id_front", label: "روی کارت ملی" },
+  { kind: "id_back", label: "پشت کارت ملی" },
+  { kind: "birth_cert", label: "شناسنامه" },
+];
+
 function formatDate(iso) {
   return formatTehranDateTime(iso);
 }
@@ -16,11 +22,13 @@ export default function AdminKycTab() {
     fetchAdminKycPending().then(setPending).catch(() => setPending([]));
   }
 
-  useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    reload();
+  }, []);
 
-  async function viewDocument(userId) {
+  async function viewDocument(userId, kind) {
     try {
-      const { url } = await fetchKycDocumentBlobUrlAsAdmin(userId);
+      const { url } = await fetchKycDocumentBlobUrlAsAdmin(userId, kind);
       window.open(url, "_blank");
     } catch {
       alert("نمایش مدرک با خطا مواجه شد");
@@ -67,19 +75,37 @@ export default function AdminKycTab() {
               <div className="admin-accounts__card-top">
                 <div>
                   <span className="admin-accounts__name">{p.full_name || "بدون نام"}</span>
-                  <span className="admin-accounts__username" dir="ltr">{p.phone_number}</span>
+                  <span className="admin-accounts__username" dir="ltr">
+                    {p.phone_number}
+                  </span>
                 </div>
                 <span className="admin-accounts__status is-on">#{p.user_code}</span>
               </div>
               <div className="admin-accounts__meta">
                 <span>ارسال شده: {formatDate(p.kyc_submitted_at)}</span>
               </div>
-              <div className="admin-accounts__actions">
-                <button className="dashboard__see-all" onClick={() => viewDocument(p.user_id)}>مشاهده مدرک</button>
-                <button className="order-limits-box__save" disabled={busyId === p.user_id} onClick={() => handleApprove(p.user_id)}>
+              <div className="admin-accounts__actions admin-accounts__actions--wrap">
+                {DOC_BUTTONS.map((doc) => (
+                  <button
+                    key={doc.kind}
+                    type="button"
+                    className="dashboard__see-all"
+                    onClick={() => viewDocument(p.user_id, doc.kind)}
+                  >
+                    {doc.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="order-limits-box__save"
+                  disabled={busyId === p.user_id}
+                  onClick={() => handleApprove(p.user_id)}
+                >
                   تایید
                 </button>
-                <button className="admin-accounts__delete" onClick={() => setRejectingId(p.user_id)}>رد</button>
+                <button type="button" className="admin-accounts__delete" onClick={() => setRejectingId(p.user_id)}>
+                  رد
+                </button>
               </div>
               {rejectingId === p.user_id && (
                 <div className="admin-accounts__reject-box">
@@ -88,10 +114,24 @@ export default function AdminKycTab() {
                     value={rejectReason}
                     onChange={(e) => setRejectReason(e.target.value)}
                   />
-                  <button className="admin-accounts__delete" disabled={busyId === p.user_id} onClick={() => handleReject(p.user_id)}>
+                  <button
+                    type="button"
+                    className="admin-accounts__delete"
+                    disabled={busyId === p.user_id}
+                    onClick={() => handleReject(p.user_id)}
+                  >
                     ثبت رد درخواست
                   </button>
-                  <button className="dashboard__see-all" onClick={() => { setRejectingId(null); setRejectReason(""); }}>انصراف</button>
+                  <button
+                    type="button"
+                    className="dashboard__see-all"
+                    onClick={() => {
+                      setRejectingId(null);
+                      setRejectReason("");
+                    }}
+                  >
+                    انصراف
+                  </button>
                 </div>
               )}
             </div>

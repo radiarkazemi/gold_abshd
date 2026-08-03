@@ -19,6 +19,7 @@ from app.services.orders import (
 )
 from app.services.trading_status import is_trading_online
 from app.services import price_cards
+from app.services.kyc import require_kyc_approved
 
 router = APIRouter(tags=["orders"])
 
@@ -39,6 +40,7 @@ async def submit_order(
             status_code=403,
             detail="برای این حساب امکان خرید و فروش غیرفعال شده است.",
         )
+    require_kyc_approved(current_user)
 
     card = price_cards.get_card_state(db, order_in.goldbridge_item_id)
     if not card or not card.is_enabled:
@@ -158,6 +160,7 @@ async def retry_my_order_at_new_price(
             status_code=403,
             detail="برای این حساب امکان خرید و فروش غیرفعال شده است.",
         )
+    require_kyc_approved(current_user)
     order = resubmit_order_at_new_price_db(db, order_id, current_user)
     await manager.broadcast_to_admins({"type": "new_order", "order": order_to_dict(db, order)})
     return order_to_customer_out(order)

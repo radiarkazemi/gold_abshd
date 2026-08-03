@@ -107,9 +107,11 @@ export async function fetchKycStatus() {
   return res.json();
 }
 
-export async function submitKyc(file) {
+export async function submitKyc({ idFront, idBack, birthCert }) {
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("id_front", idFront);
+  formData.append("id_back", idBack);
+  formData.append("birth_cert", birthCert);
   const res = await fetch(`${API_BASE}/api/kyc/submit`, {
     method: "POST",
     headers: { ...authHeaders() },
@@ -117,7 +119,11 @@ export async function submitKyc(file) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "ارسال مدرک با خطا مواجه شد");
+    const detail = err.detail;
+    const msg = Array.isArray(detail)
+      ? detail.map((d) => d.msg || d).join(" · ")
+      : detail || "ارسال مدارک با خطا مواجه شد";
+    throw new Error(msg);
   }
   return res.json();
 }
@@ -163,8 +169,12 @@ export async function reviewKyc(userId, approve, rejectReason) {
   return res.json();
 }
 
-export async function fetchKycDocumentBlobUrlAsAdmin(userId) {
-  const res = await fetch(`${API_BASE}/api/admin/kyc/${userId}/document`, { headers: { ...adminAuthHeaders() } });
+export async function fetchKycDocumentBlobUrlAsAdmin(userId, kind = "id_front") {
+  const path =
+    kind && kind !== "id_front"
+      ? `${API_BASE}/api/admin/kyc/${userId}/document/${kind}`
+      : `${API_BASE}/api/admin/kyc/${userId}/document`;
+  const res = await fetch(path, { headers: { ...adminAuthHeaders() } });
   if (!res.ok) throw new Error("Failed to fetch document");
   const blob = await res.blob();
   return { url: URL.createObjectURL(blob), contentType: blob.type };

@@ -184,6 +184,9 @@ def delete_user(db: Session, user_id: str) -> None:
                 pass
 
     _unlink(user.kyc_document_path)
+    _unlink(getattr(user, "kyc_id_front_path", None))
+    _unlink(getattr(user, "kyc_id_back_path", None))
+    _unlink(getattr(user, "kyc_birth_cert_path", None))
 
     orders = db.query(Order).filter(Order.user_id == user_id).all()
     for order in orders:

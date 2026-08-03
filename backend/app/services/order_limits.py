@@ -63,10 +63,15 @@ def get_effective_limits(db: Session, user) -> dict:
     result["commission_type"] = "fixed"
     result["commission_value"] = 0.0
     result["trading_banned"] = False
+    result["kyc_status"] = "none"
+    result["kyc_approved"] = False
     result["card_commissions"] = []
 
     role = getattr(user, "role", None)
     result["trading_banned"] = bool(getattr(user, "is_trading_banned", False))
+    kyc_status = getattr(user, "kyc_status", None) or "none"
+    result["kyc_status"] = kyc_status
+    result["kyc_approved"] = kyc_status == "approved"
     result["pending_seconds"] = int(settings.ORDER_PENDING_SECONDS)
     if role:
         for field in ("min_weight", "max_weight", "min_amount", "max_amount"):

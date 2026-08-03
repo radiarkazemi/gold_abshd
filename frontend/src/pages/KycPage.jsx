@@ -11,11 +11,19 @@ const STATUS_META = {
   rejected: { label: "رد شده", className: "kyc-status--rejected" },
 };
 
+const SLOTS = [
+  { key: "idFront", label: "عکس روی کارت ملی", accept: "image/*,.jpg,.jpeg,.png,.webp,.pdf" },
+  { key: "idBack", label: "عکس پشت کارت ملی", accept: "image/*,.jpg,.jpeg,.png,.webp,.pdf" },
+  { key: "birthCert", label: "عکس صفحه اول شناسنامه", accept: "image/*,.jpg,.jpeg,.png,.webp,.pdf" },
+];
+
+const emptyFiles = () => ({ idFront: null, idBack: null, birthCert: null });
+
 export default function KycPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [status, setStatus] = useState(null);
-  const [file, setFile] = useState(null);
+  const [files, setFiles] = useState(emptyFiles);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -23,19 +31,29 @@ export default function KycPage() {
     fetchKycStatus().then(setStatus).catch(() => {});
   }
 
-  useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    reload();
+  }, []);
+
+  function setSlotFile(key, file) {
+    setFiles((prev) => ({ ...prev, [key]: file || null }));
+  }
 
   async function handleSubmit() {
-    if (!file) {
-      setError("یک فایل انتخاب کنید");
+    if (!files.idFront || !files.idBack || !files.birthCert) {
+      setError("لطفا هر سه تصویر را انتخاب کنید");
       return;
     }
     setError("");
     setBusy(true);
     try {
-      const res = await submitKyc(file);
+      const res = await submitKyc({
+        idFront: files.idFront,
+        idBack: files.idBack,
+        birthCert: files.birthCert,
+      });
       setStatus(res);
-      setFile(null);
+      setFiles(emptyFiles());
     } catch (err) {
       setError(err.message || "ارسال با خطا مواجه شد");
     } finally {
@@ -45,11 +63,14 @@ export default function KycPage() {
 
   const meta = status ? STATUS_META[status.kyc_status] : null;
   const canSubmit = status && (status.kyc_status === "none" || status.kyc_status === "rejected");
+  const allPicked = !!(files.idFront && files.idBack && files.birthCert);
 
   return (
     <div className="app">
       <header className="app__header">
-        <button className="placeholder-page__back" onClick={() => navigate(-1)}>‹ بازگشت</button>
+        <button type="button" className="placeholder-page__back" onClick={() => navigate(-1)}>
+          ‹ بازگشت
+        </button>
         <h1 className="app__title">احراز هویت</h1>
         <span />
       </header>
@@ -67,30 +88,47 @@ export default function KycPage() {
           )}
 
           {status?.kyc_status === "approved" && (
-            <p className="kyc-page__done">هویت شما تایید شده و نیاز به اقدام دیگری نیست.</p>
+            <p className="kyc-page__done">
+              هویت شما تایید شده است و امکان ثبت سفارش برای شما فعال است.
+            </p>
           )}
 
           {status?.kyc_status === "pending" && (
-            <p className="kyc-page__done">مدرک شما ارسال شده و در انتظار بررسی مدیریت است.</p>
+            <p className="kyc-page__done">
+              مدارک شما ارسال شده و در انتظار بررسی مدیریت است. تا زمان تایید، ثبت سفارش غیرفعال است.
+            </p>
           )}
 
           {canSubmit && (
             <>
               <p className="upload-receipt__label">
-                لطفا تصویر واضح کارت ملی یا مدرک هویتی خود را ارسال کنید:
+                برای فعال‌سازی خرید و فروش، هر سه تصویر زیر را با کیفیت واضح بارگذاری کنید:
               </p>
-              <label className="upload-receipt__file-label">
-                <span>انتخاب فایل (عکس یا PDF)</span>
-                <input
-                  type="file"
-                  accept=".jpg,.jpeg,.png,.webp,.pdf"
-                  onChange={(e) => setFile(e.target.files?.[0] || null)}
-                />
-              </label>
-              {file && <p className="upload-receipt__filename">{file.name}</p>}
+              <div className="kyc-page__slots">
+                {SLOTS.map((slot) => (
+                  <label key={slot.key} className="kyc-page__slot">
+                    <span className="kyc-page__slot-label">{slot.label}</span>
+                    <input
+                      type="file"
+                      accept={slot.accept}
+                      onChange={(e) => setSlotFile(slot.key, e.target.files?.[0] || null)}
+                    />
+                    {files[slot.key] ? (
+                      <span className="kyc-page__slot-file">{files[slot.key].name}</span>
+                    ) : (
+                      <span className="kyc-page__slot-placeholder">انتخاب تصویر…</span>
+                    )}
+                  </label>
+                ))}
+              </div>
               {error && <p className="login__error">{error}</p>}
-              <button className="login__btn" disabled={busy || !file} onClick={handleSubmit}>
-                {busy ? "در حال ارسال…" : "ارسال مدرک"}
+              <button
+                type="button"
+                className="login__btn"
+                disabled={busy || !allPicked}
+                onClick={handleSubmit}
+              >
+                {busy ? "در حال ارسال…" : "ارسال درخواست احراز هویت"}
               </button>
             </>
           )}
