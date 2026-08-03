@@ -28,7 +28,8 @@
   }
 
   .price-panel__cta {
-    padding: 7px 18px;
+    padding: 7px 14px;
+    min-width: 7.5em;
     font-size: 13px;
   }
 }
@@ -85,7 +86,10 @@
 .price-panel__cta {
   border: none;
   cursor: pointer;
-  padding: 8px 22px;
+  padding: 8px 16px;
+  min-width: 7.75em; /* equal width for بخرید / بفروشید */
+  text-align: center;
+  box-sizing: border-box;
   border-radius: 999px;
   font-size: 14px;
   font-weight: 700;
@@ -219,4 +223,30 @@
   gap: 10px;
   width: 100%;
   margin-top: 6px;
+}
+
+@media (max-width: 420px) {
+  .price-stage {
+    max-width: 100%;
+  }
+
+  .price-panel {
+    padding: 12px 8px 11px;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .price-panel__cta {
+    min-width: 0;
+    width: 100%;
+    max-width: 9em;
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+
+  .price-card-row,
+  .secondary-cards-grid {
+    width: 100%;
+    max-width: 100%;
+  }
 }

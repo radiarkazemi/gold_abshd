@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { fetchOrders, decideOrder, openAdminSocket, getAdminToken, clearAdminToken, fetchReceiptBlobUrlAsAdmin, getAdminIdentity, fetchPrice } from "../api";
+import { formatTehranTime } from "../utils/tehranTime";
+import { fetchOrders, decideOrder, openAdminSocket, getAdminToken, clearAdminToken, fetchReceiptBlobUrlAsAdmin, getAdminIdentity, refreshAdminSession, fetchPrice, fetchAdminKycPending } from "../api";
 import PendingCountdown from "../components/PendingCountdown";
 import AdminUsersTab from "./AdminUsersTab";
 import AdminLoginPage from "./AdminLoginPage";
@@ -8,6 +9,7 @@ import AdminAddUserTab from "./AdminAddUserTab";
 import AdminRolesTab from "./AdminRolesTab";
 import AdminCalendarTab from "./AdminCalendarTab";
 import AdminDashboardTab from "./AdminDashboardTab";
+import AdminExpertTab from "./AdminExpertTab";
 import AdminPhoneOrderTab from "./AdminPhoneOrderTab";
 import AdminPricesTab from "./AdminPricesTab";
 import AdminAccountsTab from "./AdminAccountsTab";
@@ -15,10 +17,11 @@ import AdminKycTab from "./AdminKycTab";
 import AdminTransfersTab from "./AdminTransfersTab";
 import AdminShell from "../components/AdminShell";
 import JalaliDateInput from "../components/JalaliDateInput";
-import { playNotificationSound } from "../utils/notificationSound";
+import { playNotificationSound, playKycNotificationSound } from "../utils/notificationSound";
 import {
   ensureNotificationPermission,
   notifyNewOrder,
+  notifyNewKyc,
   registerNotifyServiceWorker,
 } from "../utils/desktopNotify";
 import { orderGoldWeight, orderTotalMoney, summarizeOrders } from "../utils/orderCalc";
@@ -56,8 +59,9 @@ function formatPrice(value) {
 }
 
 function formatTime(iso) {
-  return new Date(iso).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
+  return formatTehranTime(iso);
 }
+
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -68,8 +72,7 @@ function shouldShowInOrdersTable(order) {
   return remainingFromOrder(order) > 0;
 }
 
-function AdminPanel({ onLogout }) {
-  const identity = getAdminIdentity();
+function AdminPanel({ onLogout, identity }) {
   const [tab, setTab] = useState(
     identity.is_super || (identity.permissions || []).includes("dashboard")
       ? "dashboard"
@@ -80,7 +83,9 @@ function AdminPanel({ onLogout }) {
   const [connected, setConnected] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
+  const [kycPendingCount, setKycPendingCount] = useState(0);
   const [newOrderFlash, setNewOrderFlash] = useState(false);
+  const [newKycFlash, setNewKycFlash] = useState(false);
   const [wsTick, setWsTick] = useState(0);
   const [dateFrom, setDateFrom] = useState(todayIso());
   const [dateTo, setDateTo] = useState(todayIso());
@@ -97,6 +102,12 @@ function AdminPanel({ onLogout }) {
 
   function refreshPendingCount() {
     fetchOrders("pending").then((data) => setPendingCount(data.length)).catch(() => {});
+  }
+
+  function refreshKycPendingCount() {
+    fetchAdminKycPending()
+      .then((data) => setKycPendingCount(Array.isArray(data) ? data.length : 0))
+      .catch(() => {});
   }
 
   const handlePendingExpire = useCallback((orderId) => {
@@ -122,6 +133,7 @@ function AdminPanel({ onLogout }) {
   useEffect(() => {
     reload(filter);
     refreshPendingCount();
+    refreshKycPendingCount();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
 
@@ -145,10 +157,20 @@ function AdminPanel({ onLogout }) {
 
   useEffect(() => {
     const ws = openAdminSocket((message) => {
-      // any new_order / order_updated event: just refresh the current view
+      setWsTick((t) => t + 1);
+
+      if (message?.type === "new_kyc") {
+        refreshKycPendingCount();
+        playKycNotificationSound();
+        setNewKycFlash(true);
+        setTimeout(() => setNewKycFlash(false), 3200);
+        notifyNewKyc(message.user);
+        return;
+      }
+
+      // order events: refresh the current orders view + pending badge
       reload(filter);
       refreshPendingCount();
-      setWsTick((t) => t + 1);
 
       if (message?.type === "new_order") {
         playNotificationSound();
@@ -194,15 +216,21 @@ function AdminPanel({ onLogout }) {
       activeTab={tab}
       onTabChange={setTab}
       pendingCount={pendingCount}
+      kycPendingCount={kycPendingCount}
       connected={connected}
       onLogout={onLogout}
       identity={identity}
     >
       {newOrderFlash && (
-        <div className="new-order-flash">🔔 سفارش جدید دریافت شد</div>
+        <div className="new-order-flash">سفارش جدید دریافت شد</div>
+      )}
+      {newKycFlash && (
+        <div className="new-kyc-flash">درخواست احراز هویت جدید دریافت شد</div>
       )}
       {tab === "dashboard" ? (
         <AdminDashboardTab onGoToOrders={() => setTab("orders")} refreshSignal={wsTick} />
+      ) : tab === "expert" ? (
+        <AdminExpertTab refreshSignal={wsTick} />
       ) : tab === "users" ? (
         <AdminUsersTab />
       ) : tab === "notice" ? (
@@ -218,7 +246,10 @@ function AdminPanel({ onLogout }) {
       ) : tab === "prices" ? (
         <AdminPricesTab />
       ) : tab === "kyc" ? (
-        <AdminKycTab />
+        <AdminKycTab
+          refreshSignal={wsTick}
+          onPendingChange={(n) => setKycPendingCount(n)}
+        />
       ) : tab === "transfers" ? (
         <AdminTransfersTab />
       ) : tab === "admins" ? (
@@ -390,15 +421,56 @@ function AdminPanel({ onLogout }) {
 
 export default function AdminPage() {
   const [loggedIn, setLoggedIn] = useState(!!getAdminToken());
+  const [identity, setIdentity] = useState(() => getAdminIdentity());
+  const [sessionReady, setSessionReady] = useState(!getAdminToken());
+
+  useEffect(() => {
+    if (!loggedIn) {
+      setSessionReady(true);
+      return undefined;
+    }
+    let cancelled = false;
+    setSessionReady(false);
+    refreshAdminSession()
+      .then((data) => {
+        if (cancelled) return;
+        setIdentity({
+          is_super: data.is_super,
+          permissions: data.permissions || [],
+          display_name: data.display_name || "",
+        });
+        setSessionReady(true);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        if (e.message === "ADMIN_SESSION_EXPIRED") {
+          clearAdminToken();
+          setLoggedIn(false);
+        }
+        setSessionReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loggedIn]);
 
   function handleLogout() {
     clearAdminToken();
     setLoggedIn(false);
   }
 
-  if (!loggedIn) {
-    return <AdminLoginPage onLoggedIn={() => setLoggedIn(true)} />;
+  function handleLoggedIn() {
+    setIdentity(getAdminIdentity());
+    setLoggedIn(true);
   }
 
-  return <AdminPanel onLogout={handleLogout} />;
+  if (!loggedIn) {
+    return <AdminLoginPage onLoggedIn={handleLoggedIn} />;
+  }
+
+  if (!sessionReady) {
+    return <p className="myorders__empty">در حال آماده‌سازی پنل…</p>;
+  }
+
+  return <AdminPanel onLogout={handleLogout} identity={identity} />;
 }

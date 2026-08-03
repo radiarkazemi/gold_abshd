@@ -1,13 +1,12 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { fetchMyOrders, fetchMyBalance, fetchReceiptBlobUrl, uploadReceipt, cancelMyOrder, fetchOrderLimits } from "../api";
+import { useEffect, useMemo, useState } from "react";
+import { formatTehranDateTime, tehranDayKey, tehranThisWeekExcludingToday, tehranTodayKey } from "../utils/tehranTime";
+import { fetchMyOrders, fetchReceiptBlobUrl, uploadReceipt, cancelMyOrder, fetchOrderLimits } from "../api";
 import {
   downloadOrderReceipt,
   downloadOrdersReceipt,
   buildOrderReceiptHtml,
   buildOrdersReceiptHtml,
 } from "../utils/printReceipt";
-import { formatCashStatus, formatGoldStatus } from "../utils/balanceFormat";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import BottomTabBar from "../components/BottomTabBar";
@@ -25,7 +24,6 @@ const STATUS_LABEL = {
 
 const FILTERS = [
   { key: null, label: "همه" },
-  { key: "pending", label: "در انتظار" },
   { key: "accepted", label: "تایید شده" },
   { key: "rejected", label: "رد شده" },
 ];
@@ -50,33 +48,24 @@ function unitPriceForOrder(order, priceLabelMode) {
 }
 
 function formatDate(iso) {
-  return new Date(iso).toLocaleString("fa-IR", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatTehranDateTime(iso);
 }
 
 export default function MyOrdersPage() {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [orders, setOrders] = useState([]);
-  const [balance, setBalance] = useState(null);
   const [filter, setFilter] = useState(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [loading, setLoading] = useState(true);
   const [uploadingId, setUploadingId] = useState(null);
   const [priceLabelMode, setPriceLabelMode] = useState("mesghal_and_gram18");
-  const [preview, setPreview] = useState(null); // { title, html, onDownload }
+  const [preview, setPreview] = useState(null);
 
   function reload() {
-    Promise.all([fetchMyOrders(), fetchMyBalance()])
-      .then(([o, b]) => {
-        setOrders(o);
-        setBalance(b);
-      })
+    fetchMyOrders()
+      .then(setOrders)
       .catch(console.error)
       .finally(() => setLoading(false));
   }
@@ -92,19 +81,36 @@ export default function MyOrdersPage() {
   }, []);
 
   const visible = orders.filter((o) => {
+    // Pending countdown orders are not listed for clients (timer removes them).
+    if (o.status === "pending") return false;
     if (filter && o.status !== filter) return false;
-    const created = new Date(o.created_at);
-    if (dateFrom && created < new Date(dateFrom)) return false;
-    if (dateTo && created > new Date(dateTo + "T23:59:59")) return false;
+    const day = tehranDayKey(o.created_at);
+    if (!day) return false;
+    if (dateFrom && day < dateFrom) return false;
+    if (dateTo && day > dateTo) return false;
     return true;
   });
 
-  function applyQuickRange(days) {
-    const to = new Date();
-    const from = new Date();
-    from.setDate(from.getDate() - days);
-    setDateFrom(from.toISOString().slice(0, 10));
-    setDateTo(to.toISOString().slice(0, 10));
+  const pdfOrders = useMemo(
+    () => visible.filter((o) => o.status === "accepted"),
+    [visible]
+  );
+
+  function applyToday() {
+    const today = tehranTodayKey();
+    setDateFrom(today);
+    setDateTo(today);
+  }
+
+  function applyThisWeek() {
+    const { from, to } = tehranThisWeekExcludingToday();
+    setDateFrom(from);
+    setDateTo(to);
+  }
+
+  function applyAll() {
+    setDateFrom("");
+    setDateTo("");
   }
 
   function clearDateRange() {
@@ -155,44 +161,6 @@ export default function MyOrdersPage() {
         </button>
       </header>
 
-      <div className="balance-card">
-        <div className="balance-card__item">
-          <span className="balance-card__label">موجودی طلا</span>
-          {balance ? (
-            (() => {
-              const gStatus = formatGoldStatus(balance.gold_balance);
-              return (
-                <span className={`balance-card__value cash-status ${gStatus.className}`}>
-                  {gStatus.amount}
-                  <span className="balance-card__unit"> گرم ۱۸</span>
-                  {gStatus.label && <span className="cash-status__label">{gStatus.label}</span>}
-                </span>
-              );
-            })()
-          ) : (
-            <span className="balance-card__value">—</span>
-          )}
-        </div>
-        <div className="balance-card__divider" />
-        <div className="balance-card__item">
-          <span className="balance-card__label">وضعیت نقدی</span>
-          {balance ? (
-            (() => {
-              const status = formatCashStatus(balance.cash_balance);
-              return (
-                <span className={`balance-card__value cash-status ${status.className}`}>
-                  {status.amount}
-                  <span className="balance-card__unit"> تومان</span>
-                  <span className="cash-status__label">{status.label}</span>
-                </span>
-              );
-            })()
-          ) : (
-            <span className="balance-card__value">—</span>
-          )}
-        </div>
-      </div>
-
       <div className="myorders__filters">
         {FILTERS.map((f) => (
           <button
@@ -207,11 +175,13 @@ export default function MyOrdersPage() {
 
       <div className="date-filter">
         <div className="date-filter__quick">
-          <button className="admin__filter" onClick={() => applyQuickRange(0)}>امروز</button>
-          <button className="admin__filter" onClick={() => applyQuickRange(1)}>دیروز تا امروز</button>
-          <button className="admin__filter" onClick={() => applyQuickRange(7)}>۷ روز اخیر</button>
+          <button type="button" className="admin__filter" onClick={applyToday}>امروز</button>
+          <button type="button" className="admin__filter" onClick={applyThisWeek}>این هفته</button>
+          <button type="button" className="admin__filter" onClick={applyAll}>کل</button>
           {(dateFrom || dateTo) && (
-            <button className="admin__filter date-filter__clear" onClick={clearDateRange}>پاک کردن</button>
+            <button type="button" className="admin__filter date-filter__clear" onClick={clearDateRange}>
+              پاک کردن
+            </button>
           )}
         </div>
         <div className="date-filter__inputs">
@@ -222,20 +192,20 @@ export default function MyOrdersPage() {
           <button
             type="button"
             className="date-filter__download-all"
-            disabled={visible.length === 0}
-            onClick={() => downloadOrdersReceipt(visible, { dateFrom, dateTo, priceLabelMode })}
+            disabled={pdfOrders.length === 0}
+            onClick={() => downloadOrdersReceipt(pdfOrders, { dateFrom, dateTo, priceLabelMode })}
           >
-            دانلود همه ({fa(visible.length)}) — PDF
+            دانلود همه ({fa(pdfOrders.length)}) — PDF
           </button>
           <button
             type="button"
             className="date-filter__download-all date-filter__download-all--ghost"
-            disabled={visible.length === 0}
+            disabled={pdfOrders.length === 0}
             onClick={() =>
               setPreview({
-                title: `مشاهده گزارش (${fa(visible.length)})`,
-                html: buildOrdersReceiptHtml(visible, { dateFrom, dateTo, priceLabelMode }),
-                onDownload: () => downloadOrdersReceipt(visible, { dateFrom, dateTo, priceLabelMode }),
+                title: `مشاهده گزارش (${fa(pdfOrders.length)})`,
+                html: buildOrdersReceiptHtml(pdfOrders, { dateFrom, dateTo, priceLabelMode }),
+                onDownload: () => downloadOrdersReceipt(pdfOrders, { dateFrom, dateTo, priceLabelMode }),
               })
             }
           >
@@ -360,7 +330,6 @@ export default function MyOrdersPage() {
                   مشاهده در برنامه
                 </button>
               </div>
-
             </div>
           ))}
         </div>

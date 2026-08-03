@@ -8,6 +8,9 @@ class KycStatusOut(BaseModel):
     kyc_submitted_at: datetime | None = None
     kyc_reviewed_at: datetime | None = None
     kyc_reject_reason: str | None = None
+    has_id_front: bool = False
+    has_id_back: bool = False
+    has_birth_cert: bool = False
 
 
 class KycPendingOut(BaseModel):
@@ -16,6 +19,9 @@ class KycPendingOut(BaseModel):
     full_name: str | None = None
     phone_number: str
     kyc_submitted_at: datetime | None = None
+    has_id_front: bool = False
+    has_id_back: bool = False
+    has_birth_cert: bool = False
 
 
 class KycReviewIn(BaseModel):

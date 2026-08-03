@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { usePriceFeed } from "../hooks/usePriceFeed";
 import { submitOrder, fetchSettlementLabel, fetchTradingStatus } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
+import { logoUrl } from "../brandAssets";
 import PriceCardRow from "../components/PriceCardRow";
 import OrderModal from "../components/OrderModal";
 import NoticeCard from "../components/NoticeCard";
@@ -11,7 +13,8 @@ import BottomTabBar from "../components/BottomTabBar";
 import RefreshBar from "../components/RefreshBar";
 
 export default function TraderPage() {
-  const { cards, prevCards, connected, priceLabelMode, tradingBanned } = usePriceFeed();
+  const { cards, prevCards, connected, priceLabelMode, tradingBanned, kycApproved, kycStatus } =
+    usePriceFeed();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [activeOrder, setActiveOrder] = useState(null); // { card, side } | null
@@ -21,6 +24,8 @@ export default function TraderPage() {
   const [settlement, setSettlement] = useState(null);
   const [tradingOnline, setTradingOnline] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  const ordersLocked = tradingBanned || !kycApproved;
 
   async function handleManualRefresh() {
     setRefreshKey((k) => k + 1);
@@ -44,7 +49,7 @@ export default function TraderPage() {
   }, []);
 
   function openModal(card, side) {
-    if (!tradingOnline || tradingBanned) return;
+    if (!tradingOnline || ordersLocked) return;
     setResult(null);
     setError("");
     setActiveOrder({ card, side });
@@ -86,7 +91,10 @@ export default function TraderPage() {
           <span className="app__status-dot" />
           {tradingOnline ? "مدیر آنلاین" : "مدیر آفلاین"}
         </span>
-        <h1 className="app__title">آبشده قصر طلا</h1>
+        <h1 className="app__title">
+          <img className="app__logo" src={logoUrl} alt="" width="36" height="36" />
+          آبشده قصر طلا
+        </h1>
         <button className="theme-toggle-btn" onClick={toggleTheme} aria-label="تغییر پوسته">
           {theme === "dark" ? "☀" : "☾"}
         </button>
@@ -107,6 +115,16 @@ export default function TraderPage() {
             امکان خرید و فروش برای این حساب غیرفعال شده است. مشاهده قیمت‌ها همچنان فعال است.
           </p>
         )}
+        {!tradingBanned && !kycApproved && (
+          <p className="trading-offline-note">
+            {kycStatus === "pending"
+              ? "مدارک احراز هویت در حال بررسی است؛ تا تایید مدیریت امکان ثبت سفارش ندارید. "
+              : "برای ثبت سفارش باید احراز هویت را تکمیل کنید. "}
+            <Link to="/kyc" className="trading-offline-note__link">
+              رفتن به احراز هویت
+            </Link>
+          </p>
+        )}
 
         {!primaryCard && otherCards.length === 0 ? (
           <p className="price-updated-note">در حال دریافت قیمت…</p>
@@ -117,7 +135,7 @@ export default function TraderPage() {
                 card={primaryCard}
                 prevCard={prevByItemId[primaryCard.goldbridge_item_id]}
                 onOrder={openModal}
-                disabled={!tradingOnline}
+                disabled={!tradingOnline || ordersLocked}
                 priceLabelMode={priceLabelMode}
               />
             )}
@@ -129,7 +147,7 @@ export default function TraderPage() {
                     card={card}
                     prevCard={prevByItemId[card.goldbridge_item_id]}
                     onOrder={openModal}
-                    disabled={!tradingOnline}
+                    disabled={!tradingOnline || ordersLocked}
                     priceLabelMode={priceLabelMode}
                   />
                 ))}

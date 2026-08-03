@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { formatTehranDateTime } from "../utils/tehranTime";
 import { fetchAdminTransfers, decideTransfer, fetchTransferReceiptBlobUrlAsAdmin } from "../api";
 
 function fa(n) {
@@ -6,8 +7,7 @@ function fa(n) {
 }
 
 function formatDate(iso) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("fa-IR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return formatTehranDateTime(iso);
 }
 
 const STATUS_LABEL = { pending: "در انتظار", accepted: "تایید شده", rejected: "رد شده" };

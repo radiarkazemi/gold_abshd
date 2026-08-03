@@ -77,6 +77,17 @@
   color: var(--gold-bright);
   margin: 0;
   letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app__logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .app__status {
@@ -115,11 +126,14 @@
 .app__main {
   flex: 1;
   width: 100%;
+  max-width: 720px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding: 16px 16px 60px;
+  padding: 12px 12px 24px;
+  box-sizing: border-box;
+  min-height: 0;
 }
 
 .placeholder-page {
@@ -238,7 +252,25 @@
   }
 
   .app__main {
-    padding: 10px 12px 52px;
+    padding: 8px 10px 16px;
+  }
+
+  .refresh-bar {
+    margin-bottom: 8px;
+  }
+
+  .price-card-row {
+    margin-top: 2px;
+    gap: 4px;
+  }
+
+  .secondary-cards-grid {
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .recent-orders {
+    margin-top: 10px;
   }
 }
 
@@ -249,7 +281,27 @@
   }
 
   .app__main {
-    padding-inline: 12px;
+    padding-inline: 10px;
+  }
+}
+
+@media (max-width: 420px) {
+  .app__header {
+    padding: 12px 10px 6px;
+  }
+
+  .app__title {
+    font-size: 15px;
+    gap: 6px;
+  }
+
+  .app__logo {
+    width: 30px;
+    height: 30px;
+  }
+
+  .app__main {
+    padding-inline: 8px;
   }
 }
 
@@ -274,4 +326,9 @@
 
 .static-page__gap {
   height: 14px;
+}
+.trading-offline-note__link {
+  color: var(--gold-bright);
+  font-weight: 800;
+  text-decoration: underline;
 }

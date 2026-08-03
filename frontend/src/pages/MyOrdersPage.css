@@ -323,7 +323,11 @@
 }
 
 .myorders--with-tabbar {
-  padding-bottom: calc(78px + env(safe-area-inset-bottom));
+  padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+  width: 100%;
+  max-width: 720px;
+  margin-inline: auto;
+  box-sizing: border-box;
 }
 
 .jalali-input {

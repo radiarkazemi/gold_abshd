@@ -15,9 +15,17 @@ export function AuthProvider({ children }) {
     }
     fetchMe()
       .then(setUser)
-      .catch(() => {
-        clearToken();
-        setUser(null);
+      .catch((err) => {
+        // Only clear the session on real auth failures — not network blips
+        // ("Failed to fetch"), which would otherwise kick users to login.
+        const msg = String(err?.message || "");
+        const isNetwork =
+          err?.name === "TypeError" ||
+          /failed to fetch|networkerror|load failed|network request failed/i.test(msg);
+        if (!isNetwork) {
+          clearToken();
+          setUser(null);
+        }
       })
       .finally(() => setLoading(false));
   }, []);

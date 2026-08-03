@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { fetchAdminPriceCards, setPriceCardEnabled, setPriceCardOrderable, setPriceCardOverride } from "../api";
+import { TEHRAN_TZ } from "../utils/tehranTime";
+import {
+  fetchAdminPriceCards,
+  setPriceCardEnabled,
+  setPriceCardOrderable,
+  setPriceCardOverride,
+  setPriceCardManualPrice,
+  setPriceCardRoleCommission,
+} from "../api";
 
 function fa(n, opts) {
   if (n == null) return "—";
@@ -7,6 +15,182 @@ function fa(n, opts) {
 }
 
 const TYPE_LABEL = { 1: "طلا (گرم/عیار)", 2: "سکه" };
+
+function ManualPriceEditor({ card, busy, onSave }) {
+  const [useManual, setUseManual] = useState(!!card.use_manual_price);
+  const [buy, setBuy] = useState(card.manual_buy != null ? String(card.manual_buy) : "");
+  const [sell, setSell] = useState(card.manual_sell != null ? String(card.manual_sell) : "");
+
+  useEffect(() => {
+    setUseManual(!!card.use_manual_price);
+    setBuy(card.manual_buy != null ? String(card.manual_buy) : "");
+    setSell(card.manual_sell != null ? String(card.manual_sell) : "");
+  }, [card.goldbridge_item_id, card.use_manual_price, card.manual_buy, card.manual_sell]);
+
+  return (
+    <div className="price-cards-admin__manual">
+      <label className="price-cards-admin__toggle">
+        <input
+          type="checkbox"
+          checked={useManual}
+          disabled={busy}
+          onChange={(e) => setUseManual(e.target.checked)}
+        />
+        قیمت دستی (وقتی goldbridge غیرفعال است / به‌جای فید)
+      </label>
+      <div className="price-cards-admin__manual-inputs">
+        <label>
+          خرید (مثقال)
+          <input
+            type="number"
+            inputMode="decimal"
+            value={buy}
+            disabled={busy || !useManual}
+            onChange={(e) => setBuy(e.target.value)}
+            placeholder="مثلاً ۳۴۵۰۰۰۰۰"
+          />
+        </label>
+        <label>
+          فروش (مثقال)
+          <input
+            type="number"
+            inputMode="decimal"
+            value={sell}
+            disabled={busy || !useManual}
+            onChange={(e) => setSell(e.target.value)}
+            placeholder="مثلاً ۳۴۴۰۰۰۰۰"
+          />
+        </label>
+      </div>
+      <button
+        type="button"
+        className="price-cards-admin__save-btn"
+        disabled={busy}
+        onClick={() =>
+          onSave({
+            useManualPrice: useManual,
+            manualBuy: buy === "" ? null : Number(buy),
+            manualSell: sell === "" ? null : Number(sell),
+          })
+        }
+      >
+        ذخیره قیمت دستی
+      </button>
+      {card.price_source === "manual" && (
+        <p className="price-cards-admin__manual-note">در حال نمایش قیمت دستی به مشتری</p>
+      )}
+    </div>
+  );
+}
+
+function RoleCommissionEditor({ card, busy, onSave }) {
+  const rows = card.role_commissions || [];
+  const [drafts, setDrafts] = useState({});
+  const manualMode = !!card.use_manual_price || card.price_source === "manual";
+
+  useEffect(() => {
+    const next = {};
+    for (const r of rows) {
+      next[r.role_id] = {
+        commission_type: r.commission_type || "fixed",
+        commission_value: String(r.commission_value ?? 0),
+        can_order: r.can_order !== false,
+      };
+    }
+    setDrafts(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card.goldbridge_item_id, JSON.stringify(rows)]);
+
+  if (!rows.length) {
+    return <p className="price-cards-admin__hint">هنوز دسته‌بندی کاربری تعریف نشده.</p>;
+  }
+
+  return (
+    <div className="price-cards-admin__commissions">
+      <div className="price-cards-admin__commissions-title">کمیسیون و دسترسی هر دسته‌بندی برای این کارت</div>
+      {manualMode && (
+        <p className="price-cards-admin__manual-note">
+          حالت قیمت دستی فعال است — با سوییچ «مجاز به سفارش» مشخص کنید کدام دسته‌بندی می‌تواند با این قیمت سفارش بدهد.
+        </p>
+      )}
+      {rows.map((r) => {
+        const draft = drafts[r.role_id] || {
+          commission_type: r.commission_type,
+          commission_value: String(r.commission_value ?? 0),
+          can_order: r.can_order !== false,
+        };
+        return (
+          <div key={r.role_id} className="price-cards-admin__commission-row">
+            <div className="price-cards-admin__commission-role">
+              <span>{r.role_name}</span>
+              {r.is_override ? (
+                <em className="is-override">سفارشی</em>
+              ) : (
+                <em>پیش‌فرض نقش</em>
+              )}
+            </div>
+            <label className="price-cards-admin__toggle">
+              <input
+                type="checkbox"
+                checked={draft.can_order !== false}
+                disabled={busy}
+                onChange={(e) =>
+                  setDrafts((prev) => ({
+                    ...prev,
+                    [r.role_id]: { ...draft, can_order: e.target.checked },
+                  }))
+                }
+              />
+              مجاز به سفارش{manualMode ? " با قیمت دستی" : ""}
+            </label>
+            <div className="price-cards-admin__commission-fields">
+              <select
+                value={draft.commission_type}
+                disabled={busy}
+                onChange={(e) =>
+                  setDrafts((prev) => ({
+                    ...prev,
+                    [r.role_id]: { ...draft, commission_type: e.target.value },
+                  }))
+                }
+              >
+                <option value="fixed">ثابت (تومان)</option>
+                <option value="percentage">درصدی</option>
+              </select>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={draft.commission_value}
+                disabled={busy}
+                onChange={(e) =>
+                  setDrafts((prev) => ({
+                    ...prev,
+                    [r.role_id]: { ...draft, commission_value: e.target.value },
+                  }))
+                }
+              />
+              <button
+                type="button"
+                className="price-cards-admin__save-btn"
+                disabled={busy}
+                onClick={() =>
+                  onSave({
+                    roleId: r.role_id,
+                    commissionType: draft.commission_type,
+                    commissionValue: Number(draft.commission_value || 0),
+                    canOrder: draft.can_order !== false,
+                  })
+                }
+              >
+                ذخیره
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function AdminPricesTab() {
   const [cards, setCards] = useState(null);
@@ -71,6 +255,30 @@ export default function AdminPricesTab() {
     }
   }
 
+  async function saveManual(card, payload) {
+    setBusyId(card.goldbridge_item_id);
+    try {
+      const updated = await setPriceCardManualPrice(card.goldbridge_item_id, payload);
+      setCards(updated);
+    } catch (e) {
+      alert(e.message || "خطا در ذخیره قیمت دستی");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function saveCommission(card, payload) {
+    setBusyId(card.goldbridge_item_id);
+    try {
+      const updated = await setPriceCardRoleCommission(card.goldbridge_item_id, payload);
+      setCards(updated);
+    } catch (e) {
+      alert(e.message || "خطا در ذخیره کمیسیون");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   if (error && !cards) {
     return <p className="myorders__empty">{error}</p>;
   }
@@ -87,7 +295,7 @@ export default function AdminPricesTab() {
         <div className="admin-prices__meta">
           {lastFetched && (
             <span className="admin-prices__fetched">
-              دریافت شد: {lastFetched.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              دریافت شد: {lastFetched.toLocaleTimeString("fa-IR", { timeZone: TEHRAN_TZ, hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </span>
           )}
         </div>
@@ -101,8 +309,8 @@ export default function AdminPricesTab() {
 
       <p className="price-cards-admin__hint">
         «نمایش به مشتری» یعنی قیمت این کارت روی صفحه اصلی نشان داده می‌شود.
-        دکمه‌های «خرید» و «فروش» مستقل از هم هستند - می‌توانید فقط یک طرف را برای هر کارت فعال کنید،
-        قیمت طرف دیگر همچنان نمایش داده می‌شود ولی امکان سفارش ندارد.
+        دکمه‌های «خرید» و «فروش» مستقل از هم هستند. کمیسیون هر دسته‌بندی روی همین کارت قابل تنظیم روزانه است؛
+        قیمت دستی وقتی فید goldbridge قطع یا غیرفعال است استفاده می‌شود.
       </p>
 
       <div className="admin-prices__grid">
@@ -127,6 +335,9 @@ export default function AdminPricesTab() {
             <div className="admin-price-card__flags">
               <span className={`admin-price-card__flag ${c.active ? "is-on" : "is-off"}`}>
                 {c.active ? "فعال در goldbridge" : "غیرفعال در goldbridge"}
+              </span>
+              <span className={`admin-price-card__flag ${c.price_source === "manual" ? "is-on" : "is-off"}`}>
+                منبع: {c.price_source === "manual" ? "دستی" : c.price_source === "live" ? "زنده" : "ناموجود"}
               </span>
               <span className={`admin-price-card__flag ${c.allow_buy ? "is-on" : "is-off"}`}>
                 خرید {c.allow_buy ? "مجاز در منبع" : "غیرمجاز در منبع"}
@@ -164,13 +375,13 @@ export default function AdminPricesTab() {
                 </button>
               </div>
 
-              {c.orderable_buy && !c.allow_buy && !c.override_source_restriction && (
+              {c.orderable_buy && !c.allow_buy && !c.override_source_restriction && c.price_source !== "manual" && (
                 <p className="price-cards-admin__blocked-note">
                   ⚠ خرید توسط شما فعال شده اما چون منبع (goldbridge) خرید این آیتم را غیرمجاز اعلام کرده،
                   برای مشتری غیرفعال نمایش داده می‌شود.
                 </p>
               )}
-              {c.orderable_sell && !c.allow_sell && !c.override_source_restriction && (
+              {c.orderable_sell && !c.allow_sell && !c.override_source_restriction && c.price_source !== "manual" && (
                 <p className="price-cards-admin__blocked-note">
                   ⚠ فروش توسط شما فعال شده اما چون منبع (goldbridge) فروش این آیتم را غیرمجاز اعلام کرده،
                   برای مشتری غیرفعال نمایش داده می‌شود.
@@ -191,6 +402,18 @@ export default function AdminPricesTab() {
                   فعال است: حتی اگر منبع این آیتم را غیرمجاز اعلام کند، تنظیمات بالای شما ملاک است.
                 </p>
               )}
+
+              <ManualPriceEditor
+                card={c}
+                busy={busyId === c.goldbridge_item_id}
+                onSave={(payload) => saveManual(c, payload)}
+              />
+
+              <RoleCommissionEditor
+                card={c}
+                busy={busyId === c.goldbridge_item_id}
+                onSave={(payload) => saveCommission(c, payload)}
+              />
             </div>
 
             <div className="admin-price-card__footer">

@@ -23,8 +23,12 @@ logging.basicConfig(
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from datetime import datetime, date
+import json
 
 from app.rate_limit import limiter
 from app.price_service import price_service
@@ -51,9 +55,36 @@ from app.routers import (
     kyc,
     transfers,
     admin_price_cards,
+    admin_expert,
 )
 
-app = FastAPI(title="آبشده قصر طلا - Gold Trading Server")
+
+def _utc_iso(dt: datetime) -> str:
+    """Naive DB datetimes are UTC — always emit Z so clients agree."""
+    if dt.tzinfo is None:
+        return dt.isoformat() + "Z"
+    return dt.isoformat()
+
+
+class UTCJSONResponse(JSONResponse):
+    def render(self, content) -> bytes:
+        encoded = jsonable_encoder(
+            content,
+            custom_encoder={
+                datetime: _utc_iso,
+                date: lambda d: d.isoformat(),
+            },
+        )
+        return json.dumps(
+            encoded,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=None,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+
+app = FastAPI(title="آبشده قصر طلا - Gold Trading Server", default_response_class=UTCJSONResponse)
 
 # Rate limiting on sensitive auth endpoints only (OTP request/verify, admin
 # login) - everything else is unaffected. Keyed by IP address. This is
@@ -213,3 +244,4 @@ app.include_router(admin_accounts.router)
 app.include_router(kyc.router)
 app.include_router(transfers.router)
 app.include_router(admin_price_cards.router)
+app.include_router(admin_expert.router)

@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { useTheme } from "../context/ThemeContext";
+import { logoUrl } from "../brandAssets";
 
 const NAV_ITEMS = [
   { key: "dashboard", label: "داشبورد", icon: "◆" },
+  { key: "expert", label: "میز کارشناس", icon: "▣", badgeKey: "pending" },
   { key: "orders", label: "سفارش‌ها", icon: "▤", badgeKey: "pending" },
   { key: "phone-order", label: "حواله تلفنی", icon: "☎" },
   { key: "users", label: "کاربران", icon: "◈" },
   { key: "add-user", label: "کاربر جدید", icon: "+" },
   { key: "roles", label: "دسته‌بندی‌ها", icon: "≡" },
   { key: "prices", label: "قیمت‌ها", icon: "⛁" },
-  { key: "kyc", label: "احراز هویت", icon: "🪪" },
+  { key: "kyc", label: "احراز هویت", icon: "🪪", badgeKey: "kyc" },
   { key: "transfers", label: "ثبت حواله", icon: "↺" },
   { key: "calendar", label: "تقویم", icon: "▦" },
   { key: "notice", label: "اطلاعیه", icon: "!" },
@@ -21,6 +23,7 @@ const SUPER_ONLY_NAV_ITEM = { key: "admins", label: "مدیران", icon: "🛡"
 
 const TITLES = {
   dashboard: "داشبورد",
+  expert: "میز کارشناس",
   orders: "سفارش‌ها",
   "phone-order": "حواله تلفنی",
   users: "کاربران",
@@ -34,9 +37,18 @@ const TITLES = {
   admins: "مدیران",
 };
 
-const MOBILE_PRIMARY = ["dashboard", "orders", "users"];
+const MOBILE_PRIMARY = ["dashboard", "expert", "orders"];
 
-export default function AdminShell({ activeTab, onTabChange, pendingCount, connected, onLogout, children, identity }) {
+export default function AdminShell({
+  activeTab,
+  onTabChange,
+  pendingCount,
+  kycPendingCount = 0,
+  connected,
+  onLogout,
+  children,
+  identity,
+}) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { theme, toggleTheme } = useTheme();
 
@@ -51,7 +63,14 @@ export default function AdminShell({ activeTab, onTabChange, pendingCount, conne
     setDrawerOpen(false);
   }
 
+  function badgeFor(item) {
+    if (item.badgeKey === "pending" && pendingCount > 0) return pendingCount;
+    if (item.badgeKey === "kyc" && kycPendingCount > 0) return kycPendingCount;
+    return null;
+  }
+
   function renderNavButton(item, keySuffix = "") {
+    const badge = badgeFor(item);
     return (
       <button
         key={item.key + keySuffix}
@@ -60,8 +79,10 @@ export default function AdminShell({ activeTab, onTabChange, pendingCount, conne
       >
         <span className="admin-nav__icon">{item.icon}</span>
         <span className="admin-nav__label">{item.label}</span>
-        {item.badgeKey === "pending" && pendingCount > 0 && (
-          <span className="admin-nav__badge">{pendingCount}</span>
+        {badge != null && (
+          <span className={`admin-nav__badge${item.badgeKey === "kyc" ? " admin-nav__badge--kyc" : ""}`}>
+            {badge}
+          </span>
         )}
       </button>
     );
@@ -73,8 +94,11 @@ export default function AdminShell({ activeTab, onTabChange, pendingCount, conne
     <div className="admin-shell">
       <aside className="admin-shell__sidebar">
         <div className="admin-shell__brand">
-          <span className="admin-shell__brand-title">آبشده قصر طلا</span>
-          <span className="admin-shell__brand-sub">پنل مدیریت</span>
+          <img className="admin-shell__logo" src={logoUrl} alt="" width="40" height="40" />
+          <div className="admin-shell__brand-text">
+            <span className="admin-shell__brand-title">آبشده قصر طلا</span>
+            <span className="admin-shell__brand-sub">پنل مدیریت</span>
+          </div>
         </div>
 
         <nav className="admin-nav">
@@ -119,8 +143,11 @@ export default function AdminShell({ activeTab, onTabChange, pendingCount, conne
         <div className="side-menu__backdrop" onClick={() => setDrawerOpen(false)}>
           <div className="admin-shell__drawer" onClick={(e) => e.stopPropagation()}>
             <div className="admin-shell__brand" style={{ marginBottom: 22, paddingBottom: 16, borderBottom: "1px solid var(--hairline)" }}>
-              <span className="admin-shell__brand-title">آبشده قصر طلا</span>
-              <span className="admin-shell__brand-sub">پنل مدیریت</span>
+              <img className="admin-shell__logo" src={logoUrl} alt="" width="40" height="40" />
+              <div className="admin-shell__brand-text">
+                <span className="admin-shell__brand-title">آبشده قصر طلا</span>
+                <span className="admin-shell__brand-sub">پنل مدیریت</span>
+              </div>
             </div>
             <nav className="admin-nav" style={{ flex: 1, overflowY: "auto" }}>
               {navItems.map((item) => renderNavButton(item, "-drawer"))}

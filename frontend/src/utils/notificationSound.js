@@ -34,3 +34,33 @@ export function playNotificationSound() {
         console.warn("Notification sound could not play:", e);
     }
 }
+
+/** Distinct two-tone chime for KYC requests (different from order alerts). */
+export function playKycNotificationSound() {
+    try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioContextClass();
+
+        function tone(freq, startTime, duration, peakGain = 0.45) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "sine";
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.001, startTime);
+            gain.gain.exponentialRampToValueAtTime(peakGain, startTime + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(startTime);
+            osc.stop(startTime + duration);
+        }
+
+        const now = ctx.currentTime;
+        // soft descending then soft rising — easy to tell apart from order triplet
+        tone(988, now, 0.16, 0.4);
+        tone(740, now + 0.18, 0.2, 0.42);
+        tone(880, now + 0.4, 0.28, 0.48);
+    } catch (e) {
+        console.warn("KYC notification sound could not play:", e);
+    }
+}

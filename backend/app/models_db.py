@@ -134,10 +134,13 @@ class User(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # KYC (احراز هویت) - customer submits a document photo for review;
-    # admin approves or rejects. "none" until the customer submits once.
-    kyc_status = Column(String, nullable=False, default="none")  # none | pending | approved | rejected
-    kyc_document_path = Column(String, nullable=True)
+    # KYC (احراز هویت) — three document photos required before trading.
+    # Status: none → pending → approved | rejected
+    kyc_status = Column(String, nullable=False, default="none")
+    kyc_document_path = Column(String, nullable=True)  # legacy single-doc path
+    kyc_id_front_path = Column(String, nullable=True)
+    kyc_id_back_path = Column(String, nullable=True)
+    kyc_birth_cert_path = Column(String, nullable=True)
     kyc_submitted_at = Column(DateTime, nullable=True)
     kyc_reviewed_at = Column(DateTime, nullable=True)
     kyc_reject_reason = Column(String, nullable=True)
@@ -398,7 +401,38 @@ class PriceCard(Base):
     # order (see services/price_cards.get_enabled_cards_for_broadcast).
     override_source_restriction = Column(Boolean, default=False, nullable=False)
     sort_order = Column(Integer, default=0, nullable=False)
+    # When True (or when live goldbridge prices are missing), customers
+    # see and trade against manual_buy / manual_sell instead of the feed.
+    use_manual_price = Column(Boolean, default=False, nullable=False)
+    manual_buy = Column(Float, nullable=True)   # مثقال۱۷ تومان
+    manual_sell = Column(Float, nullable=True)  # مثقال۱۷ تومان
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PriceCardCommission(Base):
+    """
+    Per-card × per-role commission override. When missing, the role's
+    default commission_type/value applies. Lets admin set e.g. 20000
+    Toman on one card for «عمده» today and 10000 tomorrow without
+    changing the role-wide default.
+    """
+
+    __tablename__ = "price_card_commissions"
+    __table_args__ = (
+        UniqueConstraint("goldbridge_item_id", "role_id", name="uq_card_role_commission"),
+    )
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    goldbridge_item_id = Column(Integer, nullable=False, index=True)
+    role_id = Column(UUID(as_uuid=False), ForeignKey("roles.id"), nullable=False)
+    commission_type = Column(Enum(CommissionTypeEnum), nullable=False, default=CommissionTypeEnum.fixed)
+    commission_value = Column(Float, nullable=False, default=0)
+    # When the card is on manual prices, admin can deny specific roles
+    # from placing orders against that manual quote. Ignored for live feed.
+    can_order = Column(Boolean, nullable=False, default=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    role = relationship("Role")
 
 
 class AdminUser(Base):
@@ -465,3 +499,49 @@ class AdminActivityLog(Base):
     action = Column(String, nullable=False)
     detail = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class TehranDealer(Base):
+    """
+    آبشده‌فروش‌های تهران - counterparties the expert desk hedges
+    unmatched customer buy/sell weight with (e.g. فرشاد گلد، منیری).
+    """
+
+    __tablename__ = "tehran_dealers"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    name = Column(String, unique=True, nullable=False)
+    phone = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    sort_order = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ExpertHedgeSideEnum(str, enum.Enum):
+    # Our action with the Tehran dealer:
+    buy_from_dealer = "buy_from_dealer"    # خرید از آبشده تهران (cover customer buys)
+    sell_to_dealer = "sell_to_dealer"      # فروش به آبشده تهران (cover customer sells)
+
+
+class ExpertHedge(Base):
+    """
+    A hedge / assignment of customer-order weight (or a free-standing
+    desk trade) against a Tehran melted-gold dealer.
+    """
+
+    __tablename__ = "expert_hedges"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    dealer_id = Column(UUID(as_uuid=False), ForeignKey("tehran_dealers.id"), nullable=False, index=True)
+    side = Column(Enum(ExpertHedgeSideEnum), nullable=False)
+    weight_gram18 = Column(Float, nullable=False)
+    # Deal price with Tehran (مثقال ۱۷) — what we actually bought/sold at.
+    price_mesghal17 = Column(Float, nullable=True)
+    related_order_id = Column(UUID(as_uuid=False), ForeignKey("orders.id"), nullable=True, index=True)
+    note = Column(Text, nullable=True)
+    created_by = Column(String, nullable=True)  # admin username
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    dealer = relationship("TehranDealer")
+    order = relationship("Order")

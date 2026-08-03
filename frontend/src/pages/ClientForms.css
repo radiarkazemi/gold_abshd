@@ -91,6 +91,23 @@
 }
 
 /* --- KYC --- */
+.kyc-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+}
+
+.kyc-hero__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
 .kyc-status {
   display: inline-block;
   padding: 6px 16px;
@@ -120,12 +137,40 @@
   font-size: 12.5px;
   color: var(--sell-bright);
   margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: rgba(207, 100, 70, 0.1);
+  border: 1px solid rgba(207, 100, 70, 0.28);
 }
 
 .kyc-page__done {
   font-size: 13px;
   color: var(--text-muted);
   margin: 0;
+}
+
+.kyc-page__progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gold-bright);
+}
+
+.kyc-page__progress-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(201, 162, 39, 0.15);
+  overflow: hidden;
+}
+
+.kyc-page__progress-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold-dim), var(--gold-bright));
+  border-radius: 999px;
+  transition: width 220ms ease;
 }
 
 /* --- Register transfer --- */
@@ -200,4 +245,148 @@
 .register-transfer__status--rejected {
   color: var(--sell-bright);
   border-color: var(--sell);
+}
+/* --- Reygiri external systems links --- */
+.reygiri-page {
+  width: 100%;
+  max-width: 480px;
+  margin: 8px auto 0;
+  padding: 0 4px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.reygiri-page__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.reygiri-page__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reygiri-page__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 16px 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--gold-dim);
+  background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+  text-align: right;
+  box-shadow: 0 8px 20px -16px rgba(0, 0, 0, 0.45);
+  min-height: 72px;
+  justify-content: center;
+}
+
+.reygiri-page__btn:active {
+  border-color: var(--gold-bright);
+  background: var(--surface-raised);
+}
+
+.reygiri-page__btn-label {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--gold-bright);
+}
+
+.reygiri-page__btn-url {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-family: var(--font-display);
+  direction: ltr;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.kyc-page__slots {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kyc-page__slot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px dashed var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.kyc-page__slot.is-filled {
+  border-style: solid;
+  border-color: rgba(76, 154, 114, 0.45);
+  background: rgba(76, 154, 114, 0.06);
+}
+
+.kyc-page__slot-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gold-bright);
+}
+
+.kyc-page__slot-hint {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.kyc-page__slot input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.kyc-page__slot {
+  position: relative;
+}
+
+.kyc-page__slot-preview {
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #111;
+  margin-top: 4px;
+}
+
+.kyc-page__slot-file {
+  font-size: 11.5px;
+  color: var(--buy-bright);
+  overflow-wrap: anywhere;
+}
+
+.kyc-page__slot-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 88px;
+  margin-top: 4px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px dashed var(--hairline);
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+  padding: 12px;
+}
+
+.admin-accounts__actions--wrap {
+  flex-wrap: wrap;
+  gap: 8px;
 }

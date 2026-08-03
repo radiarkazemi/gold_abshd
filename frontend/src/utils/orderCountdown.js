@@ -1,5 +1,7 @@
 /** Shared countdown helpers for order pending windows. */
 
+import { parseServerDate } from "./tehranTime";
+
 export function formatMMSS(totalSeconds) {
   const safe = Math.max(0, Math.floor(Number(totalSeconds) || 0));
   const m = Math.floor(safe / 60);
@@ -13,13 +15,8 @@ export function formatMMSS(totalSeconds) {
  * admin/client surface shares the same absolute end time.
  */
 export function deadlineMsFromIso(iso) {
-  if (!iso) return null;
-  let s = String(iso).trim();
-  if (!s) return null;
-  if (s.includes(" ") && !s.includes("T")) s = s.replace(" ", "T");
-  if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) s = `${s}Z`;
-  const ms = Date.parse(s);
-  return Number.isNaN(ms) ? null : ms;
+  const d = parseServerDate(iso);
+  return d ? d.getTime() : null;
 }
 
 /**
@@ -50,4 +47,4 @@ export function localDeadlineMsFromOrder(order, nowMs = Date.now()) {
 }
 
 /** Default pending window length for circular progress (matches server default). */
-export const DEFAULT_PENDING_SECONDS = 60;
+export const DEFAULT_PENDING_SECONDS = 120;

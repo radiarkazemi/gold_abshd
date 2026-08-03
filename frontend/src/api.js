@@ -1,5 +1,14 @@
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
-const WS_BASE = API_BASE.replace(/^http/, "ws");
+// Empty string = same-origin (production behind nginx /api proxy).
+// Local `.env` sets VITE_API_BASE=http://localhost:8000 for vite dev.
+const API_BASE =
+  import.meta.env.VITE_API_BASE !== undefined && import.meta.env.VITE_API_BASE !== null
+    ? String(import.meta.env.VITE_API_BASE).replace(/\/$/, "")
+    : import.meta.env.DEV
+      ? "http://localhost:8000"
+      : "";
+const WS_BASE = API_BASE
+  ? API_BASE.replace(/^http/, "ws")
+  : `${typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws"}://${typeof window !== "undefined" ? window.location.host : "localhost"}`;
 import { getDeviceId, getDeviceInfo } from "./utils/deviceId";
 import { decodePayload } from "./utils/payloadCodec";
 const TOKEN_KEY = "goldapp_token";
@@ -80,15 +89,38 @@ export async function adminVerify(adminUserId, code, registrationKey) {
   return data;
 }
 
+/** Refresh admin JWT + identity from DB (picks up is_super / new scopes). */
+export async function refreshAdminSession() {
+  const res = await fetch(`${API_BASE}/api/admin/auth/me`, {
+    headers: { ...adminAuthHeaders() },
+  });
+  if (res.status === 401) {
+    clearAdminToken();
+    const err = new Error("ADMIN_SESSION_EXPIRED");
+    throw err;
+  }
+  if (!res.ok) throw new Error("Failed to refresh admin session");
+  const data = await res.json();
+  if (data.token) setAdminToken(data.token);
+  setAdminIdentity({
+    is_super: data.is_super,
+    permissions: data.permissions || [],
+    display_name: data.display_name || "",
+  });
+  return data;
+}
+
 export async function fetchKycStatus() {
   const res = await fetch(`${API_BASE}/api/kyc/status`, { headers: { ...authHeaders() } });
   if (!res.ok) throw new Error("Failed to fetch KYC status");
   return res.json();
 }
 
-export async function submitKyc(file) {
+export async function submitKyc({ idFront, idBack, birthCert }) {
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("id_front", idFront);
+  formData.append("id_back", idBack);
+  formData.append("birth_cert", birthCert);
   const res = await fetch(`${API_BASE}/api/kyc/submit`, {
     method: "POST",
     headers: { ...authHeaders() },
@@ -96,7 +128,11 @@ export async function submitKyc(file) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "ارسال مدرک با خطا مواجه شد");
+    const detail = err.detail;
+    const msg = Array.isArray(detail)
+      ? detail.map((d) => d.msg || d).join(" · ")
+      : detail || "ارسال مدارک با خطا مواجه شد";
+    throw new Error(msg);
   }
   return res.json();
 }
@@ -142,8 +178,12 @@ export async function reviewKyc(userId, approve, rejectReason) {
   return res.json();
 }
 
-export async function fetchKycDocumentBlobUrlAsAdmin(userId) {
-  const res = await fetch(`${API_BASE}/api/admin/kyc/${userId}/document`, { headers: { ...adminAuthHeaders() } });
+export async function fetchKycDocumentBlobUrlAsAdmin(userId, kind = "id_front") {
+  const path =
+    kind && kind !== "id_front"
+      ? `${API_BASE}/api/admin/kyc/${userId}/document/${kind}`
+      : `${API_BASE}/api/admin/kyc/${userId}/document`;
+  const res = await fetch(path, { headers: { ...adminAuthHeaders() } });
   if (!res.ok) throw new Error("Failed to fetch document");
   const blob = await res.blob();
   return { url: URL.createObjectURL(blob), contentType: blob.type };
@@ -395,6 +435,93 @@ export async function decideOrder(orderId, status) {
   return res.json();
 }
 
+export async function fetchExpertDesk() {
+  const res = await fetch(`${API_BASE}/api/admin/expert/desk`, { headers: { ...adminAuthHeaders() } });
+  if (res.status === 401 || res.status === 403) {
+    clearAdminToken();
+    throw new Error("ADMIN_SESSION_EXPIRED");
+  }
+  if (!res.ok) throw new Error("Failed to fetch expert desk");
+  return res.json();
+}
+
+export async function fetchExpertTehranReport(day) {
+  const q = new URLSearchParams({ day });
+  const res = await fetch(`${API_BASE}/api/admin/expert/tehran-report?${q}`, {
+    headers: { ...adminAuthHeaders() },
+  });
+  if (res.status === 401 || res.status === 403) {
+    clearAdminToken();
+    throw new Error("ADMIN_SESSION_EXPIRED");
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to fetch Tehran report");
+  }
+  return res.json();
+}
+
+export async function createTehranDealer({ name, phone, notes, sortOrder = 0 }) {
+  const res = await fetch(`${API_BASE}/api/admin/expert/dealers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({ name, phone: phone || null, notes: notes || null, sort_order: sortOrder }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to create dealer");
+  }
+  return res.json();
+}
+
+export async function updateTehranDealer(dealerId, payload) {
+  const res = await fetch(`${API_BASE}/api/admin/expert/dealers/${dealerId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({
+      name: payload.name,
+      phone: payload.phone,
+      notes: payload.notes,
+      is_active: payload.isActive,
+      sort_order: payload.sortOrder,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to update dealer");
+  }
+  return res.json();
+}
+
+export async function createExpertHedge({ dealerId, relatedOrderId, side, weightGram18, priceMesghal17, note }) {
+  const res = await fetch(`${API_BASE}/api/admin/expert/hedges`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({
+      dealer_id: dealerId,
+      related_order_id: relatedOrderId || null,
+      side: side || null,
+      weight_gram18: weightGram18 == null || weightGram18 === "" ? null : Number(weightGram18),
+      price_mesghal17: priceMesghal17 == null || priceMesghal17 === "" ? null : Number(priceMesghal17),
+      note: note || null,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to create hedge");
+  }
+  return res.json();
+}
+
+export async function deleteExpertHedge(hedgeId) {
+  const res = await fetch(`${API_BASE}/api/admin/expert/hedges/${hedgeId}`, {
+    method: "DELETE",
+    headers: { ...adminAuthHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to delete hedge");
+  return res.json();
+}
+
 export async function fetchAdminUsers(search) {
   const url = new URL(`${API_BASE}/api/admin/users`);
   if (search) url.searchParams.set("search", search);
@@ -448,6 +575,41 @@ export async function setPriceCardOrderable(goldbridgeItemId, orderableBuy, orde
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "Failed to update orderable state");
+  }
+  return res.json();
+}
+
+export async function setPriceCardManualPrice(goldbridgeItemId, { useManualPrice, manualBuy, manualSell }) {
+  const res = await fetch(`${API_BASE}/api/admin/price-cards/${goldbridgeItemId}/manual-price`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({
+      use_manual_price: !!useManualPrice,
+      manual_buy: manualBuy == null || manualBuy === "" ? null : Number(manualBuy),
+      manual_sell: manualSell == null || manualSell === "" ? null : Number(manualSell),
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to update manual price");
+  }
+  return res.json();
+}
+
+export async function setPriceCardRoleCommission(goldbridgeItemId, { roleId, commissionType, commissionValue, canOrder = true }) {
+  const res = await fetch(`${API_BASE}/api/admin/price-cards/${goldbridgeItemId}/role-commission`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({
+      role_id: roleId,
+      commission_type: commissionType,
+      commission_value: Number(commissionValue),
+      can_order: !!canOrder,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to update card commission");
   }
   return res.json();
 }

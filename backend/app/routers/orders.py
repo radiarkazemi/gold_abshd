@@ -19,6 +19,7 @@ from app.services.orders import (
 )
 from app.services.trading_status import is_trading_online
 from app.services import price_cards
+from app.services.kyc import require_kyc_approved
 
 router = APIRouter(tags=["orders"])
 
@@ -39,20 +40,31 @@ async def submit_order(
             status_code=403,
             detail="برای این حساب امکان خرید و فروش غیرفعال شده است.",
         )
+    require_kyc_approved(current_user)
 
     card = price_cards.get_card_state(db, order_in.goldbridge_item_id)
     if not card or not card.is_enabled:
         raise HTTPException(status_code=404, detail="این کارت قیمت در دسترس نیست.")
 
-    raw_item = price_cards.get_raw_item(order_in.goldbridge_item_id)
+    # Prefer live goldbridge quote; fall back to admin manual prices when
+    # the feed is down / card is on manual mode (see resolve_effective_item).
+    raw_item = price_cards.resolve_effective_item(
+        card, price_cards.get_raw_item(order_in.goldbridge_item_id)
+    )
     if not raw_item or raw_item.get("buy") is None or raw_item.get("sell") is None:
         raise HTTPException(status_code=503, detail="قیمت لحظه‌ای در دسترس نیست، لطفا کمی صبر کنید.")
+
+    if not price_cards.resolve_can_order_for_user(db, current_user, card, raw_item):
+        raise HTTPException(
+            status_code=403,
+            detail="دسته‌بندی شما مجاز به ثبت سفارش روی قیمت دستی این کارت نیست.",
+        )
 
     # Two independent layers, combined via effective_orderable: this
     # app's own per-side admin toggle, AND (unless the admin has set
     # override_source_restriction) goldbridge's own allow_buy/allow_sell
-    # for the item. Same function used for the customer-facing
-    # broadcast, so this can never disagree with what's displayed.
+    # for the item. Manual prices skip the goldbridge allow flags.
+    # Same function used for the customer-facing broadcast.
     buy_ok, sell_ok = price_cards.effective_orderable(card, raw_item)
     if order_in.side == "buy" and not buy_ok:
         raise HTTPException(status_code=403, detail="خرید این کارت در حال حاضر مجاز نیست.")
@@ -148,6 +160,7 @@ async def retry_my_order_at_new_price(
             status_code=403,
             detail="برای این حساب امکان خرید و فروش غیرفعال شده است.",
         )
+    require_kyc_approved(current_user)
     order = resubmit_order_at_new_price_db(db, order_id, current_user)
     await manager.broadcast_to_admins({"type": "new_order", "order": order_to_dict(db, order)})
     return order_to_customer_out(order)
