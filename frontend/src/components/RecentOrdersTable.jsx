@@ -84,23 +84,21 @@ export default function RecentOrdersTable({ limit = 5, refreshSignal }) {
             <span className="recent-orders__totals-label">مجموع خریدها</span>
             <span className="recent-orders__totals-value">
               {fa(totals.buy, { maximumFractionDigits: 3 })}
-              <span className="recent-orders__totals-unit"> گرم</span>
+              <span className="recent-orders__totals-unit">گرم</span>
             </span>
           </div>
-          <span className="recent-orders__totals-sep" aria-hidden="true" />
           <div className="recent-orders__totals-item recent-orders__totals-item--sell">
             <span className="recent-orders__totals-label">مجموع فروش‌ها</span>
             <span className="recent-orders__totals-value">
               {fa(totals.sell, { maximumFractionDigits: 3 })}
-              <span className="recent-orders__totals-unit"> گرم</span>
+              <span className="recent-orders__totals-unit">گرم</span>
             </span>
           </div>
-          <span className="recent-orders__totals-sep" aria-hidden="true" />
           <div className={`recent-orders__totals-item recent-orders__totals-item--net ${netClass}`}>
             <span className="recent-orders__totals-label">تفاضل خرید و فروش</span>
             <span className="recent-orders__totals-value">
               {fa(Math.abs(totals.net), { maximumFractionDigits: 3 })}
-              <span className="recent-orders__totals-unit"> گرم</span>
+              <span className="recent-orders__totals-unit">گرم</span>
             </span>
           </div>
         </div>
