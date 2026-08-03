@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { adminLogin, adminVerify, setAdminToken } from "../api";
-import { ensureNotificationPermission, registerNotifyServiceWorker } from "../utils/desktopNotify";
+import { ensureNotificationPermission, registerNotifyServiceWorker, subscribeAdminPush } from "../utils/desktopNotify";
 import { logoUrl } from "../brandAssets";
 
 export default function AdminLoginPage({ onLoggedIn }) {
@@ -32,8 +32,9 @@ export default function AdminLoginPage({ onLoggedIn }) {
         setStep("verify");
       } else {
         setAdminToken(res.token);
-        registerNotifyServiceWorker();
-        await ensureNotificationPermission();
+        await registerNotifyServiceWorker();
+        const perm = await ensureNotificationPermission();
+        if (perm === "granted") await subscribeAdminPush();
         onLoggedIn();
       }
     } catch (err) {
@@ -50,8 +51,9 @@ export default function AdminLoginPage({ onLoggedIn }) {
     try {
       const res = await adminVerify(pending.admin_user_id, code, pending.is_first_activation ? registrationKey : undefined);
       setAdminToken(res.token);
-      registerNotifyServiceWorker();
-      await ensureNotificationPermission();
+      await registerNotifyServiceWorker();
+      const perm = await ensureNotificationPermission();
+      if (perm === "granted") await subscribeAdminPush();
       onLoggedIn();
     } catch (err) {
       setError(err.message || "تایید کد با خطا مواجه شد");

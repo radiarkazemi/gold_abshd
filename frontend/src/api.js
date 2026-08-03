@@ -1,6 +1,6 @@
 // Empty string = same-origin (production behind nginx /api proxy).
 // Local `.env` sets VITE_API_BASE=http://localhost:8000 for vite dev.
-const API_BASE =
+export const API_BASE =
   import.meta.env.VITE_API_BASE !== undefined && import.meta.env.VITE_API_BASE !== null
     ? String(import.meta.env.VITE_API_BASE).replace(/\/$/, "")
     : import.meta.env.DEV
@@ -66,7 +66,7 @@ export function getAdminIdentity() {
   }
 }
 
-function adminAuthHeaders() {
+export function adminAuthHeaders() {
   const token = getAdminToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }

@@ -4,11 +4,14 @@
  * - Windows / desktop: Action Center notification — especially useful
  *   when the browser window is minimized or in the background.
  * - Mobile web / installed PWA: native device notification banner.
+ * - Web Push: delivers alerts when the admin tab is suspended (phone
+ *   locked / PWA backgrounded) — see subscribeAdminPush().
  *
  * Requires Notification permission (requested after admin login).
  */
 
 import { icon192Url, APP_BUILD_V, BRAND_V } from "../brandAssets";
+import { API_BASE, adminAuthHeaders } from "../api";
 
 const PERMISSION_ASKED_KEY = "goldapp_admin_notify_asked";
 
@@ -24,7 +27,6 @@ export function notificationPermission() {
 function isMobileClient() {
   if (typeof navigator === "undefined") return false;
   if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "")) return true;
-  // iPadOS desktop UA still has touch
   return navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent || "");
 }
 
@@ -65,11 +67,31 @@ function orderSummary(order) {
   return `${side} — ${name} ${code}`.trim() + (value ? `\n${value}` : "");
 }
 
+function showOsNotification(title, options) {
+  try {
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.ready
+        .then((reg) => reg.showNotification(title, options))
+        .catch(() => {
+          // eslint-disable-next-line no-new
+          new Notification(title, options);
+        });
+    } else {
+      // eslint-disable-next-line no-new
+      new Notification(title, options);
+    }
+    return true;
+  } catch (e) {
+    console.warn("System notification failed:", e);
+    return false;
+  }
+}
+
 /**
  * Fire an OS notification for a new order.
  * - Desktop: only when the tab/window is not visible (browser minimized
  *   or another app focused) — while looking at the panel, sound/flash is enough.
- * - Mobile: always, as a native device notification.
+ * - Mobile: always, as a native device notification (with sound).
  */
 export function notifyNewOrder(order) {
   if (!notificationsSupported()) return false;
@@ -90,30 +112,13 @@ export function notifyNewOrder(order) {
     renotify: true,
     requireInteraction: false,
     silent: false,
+    vibrate: [220, 100, 220, 100, 320],
     icon: icon192Url,
     badge: icon192Url,
-    data: { orderId: order?.id, type: "new_order" },
+    data: { orderId: order?.id, type: "new_order", url: "/admin-hs-panel" },
   };
 
-  try {
-    // Service worker path is more reliable on mobile PWAs and when the
-    // page is backgrounded on desktop.
-    if (navigator.serviceWorker) {
-      navigator.serviceWorker.ready
-        .then((reg) => reg.showNotification(title, options))
-        .catch(() => {
-          // eslint-disable-next-line no-new
-          new Notification(title, options);
-        });
-    } else {
-      // eslint-disable-next-line no-new
-      new Notification(title, options);
-    }
-    return true;
-  } catch (e) {
-    console.warn("System notification failed:", e);
-    return false;
-  }
+  return showOsNotification(title, options);
 }
 
 /**
@@ -142,28 +147,13 @@ export function notifyNewKyc(user) {
     renotify: true,
     requireInteraction: false,
     silent: false,
+    vibrate: [180, 80, 180],
     icon: icon192Url,
     badge: icon192Url,
-    data: { userId: user?.user_id, type: "new_kyc" },
+    data: { userId: user?.user_id, type: "new_kyc", url: "/admin-hs-panel" },
   };
 
-  try {
-    if (navigator.serviceWorker) {
-      navigator.serviceWorker.ready
-        .then((reg) => reg.showNotification(title, options))
-        .catch(() => {
-          // eslint-disable-next-line no-new
-          new Notification(title, options);
-        });
-    } else {
-      // eslint-disable-next-line no-new
-      new Notification(title, options);
-    }
-    return true;
-  } catch (e) {
-    console.warn("KYC system notification failed:", e);
-    return false;
-  }
+  return showOsNotification(title, options);
 }
 
 /** Register a tiny SW used to display notifications while backgrounded. */
@@ -176,5 +166,58 @@ export async function registerNotifyServiceWorker() {
   } catch (e) {
     console.warn("Notify service worker registration failed:", e);
     return null;
+  }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+/**
+ * Subscribe this admin device to Web Push so orders still alert with
+ * sound when the phone is locked / the PWA is backgrounded.
+ */
+export async function subscribeAdminPush() {
+  if (typeof window === "undefined") return false;
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return false;
+  if (!notificationsSupported() || Notification.permission !== "granted") return false;
+
+  try {
+    const reg = (await registerNotifyServiceWorker()) || (await navigator.serviceWorker.ready);
+    if (!reg?.pushManager) return false;
+
+    const keyRes = await fetch(`${API_BASE}/api/admin/push/vapid-public-key`, {
+      headers: { ...adminAuthHeaders() },
+    });
+    if (!keyRes.ok) return false;
+    const { public_key: publicKey } = await keyRes.json();
+    if (!publicKey) return false;
+
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      });
+    }
+
+    const json = sub.toJSON();
+    const res = await fetch(`${API_BASE}/api/admin/push/subscribe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+      body: JSON.stringify({
+        endpoint: json.endpoint,
+        keys: { p256dh: json.keys?.p256dh, auth: json.keys?.auth },
+      }),
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn("Admin push subscribe failed:", e);
+    return false;
   }
 }
