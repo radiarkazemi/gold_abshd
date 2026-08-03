@@ -1,6 +1,7 @@
 import PriceButton from "./PriceButton";
 
 export default function PriceCardRow({ card, prevCard, onOrder, disabled, priceLabelMode }) {
+  const effectiveMode = card?.price_label_mode || priceLabelMode;
   return (
     <div className={`price-card-row ${card.is_primary ? "price-card-row--primary" : "price-card-row--secondary"}`}>
       <div className="price-card-row__name">{card.name}</div>
@@ -11,15 +12,15 @@ export default function PriceCardRow({ card, prevCard, onOrder, disabled, priceL
           prevCard={prevCard}
           onClick={(side) => onOrder(card, side)}
           disabled={disabled}
-          priceLabelMode={priceLabelMode}
-    />
+          priceLabelMode={effectiveMode}
+        />
         <PriceButton
           side="sell"
           card={card}
           prevCard={prevCard}
           onClick={(side) => onOrder(card, side)}
           disabled={disabled}
-          priceLabelMode={priceLabelMode}
+          priceLabelMode={effectiveMode}
         />
       </div>
     </div>

@@ -26,6 +26,33 @@ logger = logging.getLogger(__name__)
 GOLD_ITEM_TYPE = 1
 COIN_ITEM_TYPE = 2
 
+# Synthetic app-only cards that mirror another goldbridge item's price.
+# Kept in a high id range so they never collide with real goldbridge ids.
+SPECIAL_CARD_MOTAFEREGHE_ID = 900001       # متفرقه — sell only, گرم۱۸
+SPECIAL_CARD_NAGHD_KARTKHAN_ID = 900002    # نقد کارتخوان — buy only, مثقال۱۷
+DEFAULT_PRICE_SOURCE_ITEM_ID = 1
+
+SPECIAL_MIRRORED_CARDS = (
+    {
+        "goldbridge_item_id": SPECIAL_CARD_MOTAFEREGHE_ID,
+        "display_name": "متفرقه",
+        "price_source_item_id": DEFAULT_PRICE_SOURCE_ITEM_ID,
+        "price_label_mode": "gram18_only",
+        "orderable_buy": False,
+        "orderable_sell": True,
+        "sort_order": 100,
+    },
+    {
+        "goldbridge_item_id": SPECIAL_CARD_NAGHD_KARTKHAN_ID,
+        "display_name": "نقد کارتخوان",
+        "price_source_item_id": DEFAULT_PRICE_SOURCE_ITEM_ID,
+        "price_label_mode": "mesghal17_only",
+        "orderable_buy": True,
+        "orderable_sell": False,
+        "sort_order": 101,
+    },
+)
+
 _latest_items: dict[int, dict] = {}   # goldbridge_item_id -> cleaned item
 _latest_updated_at: str | None = None
 _lock = asyncio.Lock()
@@ -45,7 +72,61 @@ def get_updated_at() -> str | None:
 
 def is_coin_item(goldbridge_item_id: int) -> bool:
     item = _latest_items.get(goldbridge_item_id)
-    return bool(item and item["type"] == COIN_ITEM_TYPE)
+    if item:
+        return bool(item["type"] == COIN_ITEM_TYPE)
+    # Synthetic mirrored cards are always gold (type=1).
+    if goldbridge_item_id in (
+        SPECIAL_CARD_MOTAFEREGHE_ID,
+        SPECIAL_CARD_NAGHD_KARTKHAN_ID,
+    ):
+        return False
+    return False
+
+
+def is_special_mirrored_card(goldbridge_item_id: int) -> bool:
+    return goldbridge_item_id in (
+        SPECIAL_CARD_MOTAFEREGHE_ID,
+        SPECIAL_CARD_NAGHD_KARTKHAN_ID,
+    )
+
+
+def ensure_special_mirrored_cards(db: Session | None = None) -> None:
+    """Idempotently create متفرقه / نقد کارتخوان rows (mirror item id 1)."""
+    from app.db import SessionLocal
+    from app.models_db import PriceCard
+
+    owns_session = db is None
+    if owns_session:
+        db = SessionLocal()
+    try:
+        for spec in SPECIAL_MIRRORED_CARDS:
+            card = (
+                db.query(PriceCard)
+                .filter(PriceCard.goldbridge_item_id == spec["goldbridge_item_id"])
+                .first()
+            )
+            if not card:
+                card = PriceCard(goldbridge_item_id=spec["goldbridge_item_id"])
+                db.add(card)
+            # Keep the intended product rules in sync on every boot/poll.
+            card.display_name = spec["display_name"]
+            card.price_source_item_id = spec["price_source_item_id"]
+            card.price_label_mode = spec["price_label_mode"]
+            card.orderable_buy = spec["orderable_buy"]
+            card.orderable_sell = spec["orderable_sell"]
+            card.override_source_restriction = True
+            card.is_enabled = True
+            if card.sort_order is None or card.sort_order == 0:
+                card.sort_order = spec["sort_order"]
+            # Mirrored cards always follow the source feed — not own manuals.
+            card.use_manual_price = False
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        if owns_session:
+            db.close()
 
 
 _bootstrap_attempted = False
@@ -143,6 +224,10 @@ async def poll_all_items():
                     _latest_updated_at = datetime.now(timezone.utc).isoformat()
 
                 _maybe_bootstrap_default_card(cleaned)
+                try:
+                    ensure_special_mirrored_cards()
+                except Exception as seed_err:
+                    logger.warning(f"[price-cards] special card seed failed: {seed_err}")
 
                 backoff = settings.PRICE_API_POLL_SECONDS
             except Exception as e:
@@ -163,7 +248,7 @@ def item_price_with_commission(item: dict, side: str, commission_type: str, comm
 
 def resolve_effective_item(card, item: dict | None) -> dict | None:
     """
-    Pick live goldbridge prices or admin manual prices for a card.
+    Pick live goldbridge prices, mirrored source prices, or admin manuals.
 
     Live quotes are used whenever buy/sell exist - goldbridge's own
     `active` flag is informational only (shown in admin UI) and must
@@ -173,11 +258,21 @@ def resolve_effective_item(card, item: dict | None) -> dict | None:
     Manual wins when the admin explicitly enables use_manual_price, or
     as a fallback when the live feed has no buy/sell at all but manuals
     are filled in.
+
+    Mirrored cards (price_source_item_id) copy buy/sell from the source
+    item while keeping this card's own goldbridge_item_id for orders /
+    commissions.
     """
+    source_item = item
+    if card and getattr(card, "price_source_item_id", None):
+        mirrored = _latest_items.get(int(card.price_source_item_id))
+        if mirrored:
+            source_item = mirrored
+
     has_live_prices = bool(
-        item
-        and item.get("buy") is not None
-        and item.get("sell") is not None
+        source_item
+        and source_item.get("buy") is not None
+        and source_item.get("sell") is not None
     )
     manuals_ok = bool(
         card
@@ -188,7 +283,7 @@ def resolve_effective_item(card, item: dict | None) -> dict | None:
         not has_live_prices and manuals_ok
     )
     if use_manual:
-        base = dict(item) if item else {
+        base = dict(source_item) if source_item else {
             "goldbridge_item_id": card.goldbridge_item_id,
             "name": card.display_name or f"#{card.goldbridge_item_id}",
             "type": GOLD_ITEM_TYPE,
@@ -198,14 +293,28 @@ def resolve_effective_item(card, item: dict | None) -> dict | None:
             "allow_sell": True,
             "active": True,
         }
+        base["goldbridge_item_id"] = card.goldbridge_item_id
+        if card.display_name:
+            base["name"] = card.display_name
         base["buy"] = float(card.manual_buy)
         base["sell"] = float(card.manual_sell)
         base["price_source"] = "manual"
         base["active"] = True
         return base
     if has_live_prices:
-        out = dict(item)
-        out["price_source"] = "live"
+        out = dict(source_item)
+        if card:
+            out["goldbridge_item_id"] = card.goldbridge_item_id
+            if card.display_name:
+                out["name"] = card.display_name
+        if card and getattr(card, "price_source_item_id", None):
+            out["price_source"] = "mirrored"
+            out["mirrored_from"] = int(card.price_source_item_id)
+            # Mirrored cards ignore goldbridge allow flags for the source.
+            out["allow_buy"] = True
+            out["allow_sell"] = True
+        else:
+            out["price_source"] = "live"
         return out
     return None
 
@@ -216,10 +325,15 @@ def effective_orderable(card, item: dict) -> tuple[bool, bool]:
     """
     The final (buy, sell) orderable state after combining this app's
     own toggle with goldbridge's own allow_buy/allow_sell - unless
-    override_source_restriction is set OR prices are manual, in which
-    case this app's toggle alone decides.
+    override_source_restriction is set OR prices are manual/mirrored,
+    in which case this app's toggle alone decides.
     """
-    if card.override_source_restriction or (item or {}).get("price_source") == "manual":
+    source = (item or {}).get("price_source")
+    if (
+        card.override_source_restriction
+        or source == "manual"
+        or source == "mirrored"
+    ):
         return bool(card.orderable_buy), bool(card.orderable_sell)
     return (
         bool(card.orderable_buy) and item.get("allow_buy", False),
@@ -252,9 +366,11 @@ def _role_commissions_for_card(db: Session, goldbridge_item_id: int, roles: list
 
 
 def list_admin_cards(db: Session) -> list[dict]:
-    """Every known goldbridge item + enabled manual-only cards, with
+    """Every known goldbridge item + enabled/mirrored/manual-only cards, with
     admin toggles, manuals, and per-role commission overrides."""
     from app.models_db import PriceCard, Role
+
+    ensure_special_mirrored_cards(db)
 
     existing = {c.goldbridge_item_id: c for c in db.query(PriceCard).all()}
     roles = db.query(Role).order_by(Role.name).all()
@@ -276,6 +392,8 @@ def list_admin_cards(db: Session) -> list[dict]:
             "use_manual_price": bool(card.use_manual_price) if card else False,
             "manual_buy": card.manual_buy if card else None,
             "manual_sell": card.manual_sell if card else None,
+            "price_source_item_id": card.price_source_item_id if card else None,
+            "price_label_mode": card.price_label_mode if card else None,
             "live_buy": item.get("buy"),
             "live_sell": item.get("sell"),
             "buy": effective["buy"] if effective else item.get("buy"),
@@ -288,25 +406,55 @@ def list_admin_cards(db: Session) -> list[dict]:
     for item_id, card in existing.items():
         if item_id in seen:
             continue
-        if not card.is_enabled and not card.use_manual_price:
+        # Always include mirrored specials + any enabled/manual extras.
+        is_mirrored = bool(getattr(card, "price_source_item_id", None))
+        if not card.is_enabled and not card.use_manual_price and not is_mirrored:
             continue
         effective = resolve_effective_item(card, None)
         if not effective:
+            # Still show the admin row so commissions can be set before feed is up.
+            result.append({
+                "goldbridge_item_id": item_id,
+                "name": card.display_name or f"#{item_id}",
+                "display_name": card.display_name or f"#{item_id}",
+                "type": GOLD_ITEM_TYPE,
+                "ayar": None,
+                "item_weight": None,
+                "buy": None,
+                "sell": None,
+                "live_buy": None,
+                "live_sell": None,
+                "allow_buy": True,
+                "allow_sell": True,
+                "active": False,
+                "is_enabled": bool(card.is_enabled),
+                "orderable_buy": bool(card.orderable_buy),
+                "orderable_sell": bool(card.orderable_sell),
+                "override_source_restriction": bool(card.override_source_restriction),
+                "use_manual_price": bool(card.use_manual_price),
+                "manual_buy": card.manual_buy,
+                "manual_sell": card.manual_sell,
+                "price_source_item_id": card.price_source_item_id,
+                "price_label_mode": card.price_label_mode,
+                "price_source": "unavailable",
+                "sort_order": card.sort_order,
+                "role_commissions": _role_commissions_for_card(db, item_id, roles),
+            })
             continue
         result.append({
             "goldbridge_item_id": item_id,
-            "name": card.display_name or f"#{item_id}",
-            "display_name": card.display_name or f"#{item_id}",
+            "name": card.display_name or effective.get("name") or f"#{item_id}",
+            "display_name": card.display_name or effective.get("name") or f"#{item_id}",
             "type": effective.get("type", GOLD_ITEM_TYPE),
-            "ayar": None,
-            "item_weight": None,
+            "ayar": effective.get("ayar"),
+            "item_weight": effective.get("item_weight"),
             "buy": effective["buy"],
             "sell": effective["sell"],
             "live_buy": None,
             "live_sell": None,
             "allow_buy": True,
             "allow_sell": True,
-            "active": False,
+            "active": True,
             "is_enabled": bool(card.is_enabled),
             "orderable_buy": bool(card.orderable_buy),
             "orderable_sell": bool(card.orderable_sell),
@@ -314,7 +462,9 @@ def list_admin_cards(db: Session) -> list[dict]:
             "use_manual_price": bool(card.use_manual_price),
             "manual_buy": card.manual_buy,
             "manual_sell": card.manual_sell,
-            "price_source": "manual",
+            "price_source_item_id": card.price_source_item_id,
+            "price_label_mode": card.price_label_mode,
+            "price_source": effective.get("price_source", "mirrored"),
             "sort_order": card.sort_order,
             "role_commissions": _role_commissions_for_card(db, item_id, roles),
         })
@@ -346,9 +496,10 @@ def set_card_enabled(db: Session, goldbridge_item_id: int, is_enabled: bool,
 
 def set_card_orderable_sides(db: Session, goldbridge_item_id: int, orderable_buy: bool, orderable_sell: bool):
     card = _get_or_create_card(db, goldbridge_item_id)
-    if goldbridge_item_id not in _latest_items:
-        if not (card.manual_buy is not None and card.manual_sell is not None):
-            raise ValueError("این آیتم در حال حاضر از goldbridge دریافت نشده است")
+    has_source = goldbridge_item_id in _latest_items or bool(getattr(card, "price_source_item_id", None))
+    has_manuals = card.manual_buy is not None and card.manual_sell is not None
+    if not has_source and not has_manuals:
+        raise ValueError("این آیتم در حال حاضر از goldbridge دریافت نشده است")
 
     card.orderable_buy = orderable_buy
     card.orderable_sell = orderable_sell
@@ -507,6 +658,8 @@ def build_broadcast_payload(db: Session) -> dict:
 def get_enabled_cards_for_broadcast(db: Session) -> list[dict]:
     from app.models_db import PriceCard
 
+    ensure_special_mirrored_cards(db)
+
     cards = (
         db.query(PriceCard)
         .filter(PriceCard.is_enabled == True)  # noqa: E712
@@ -534,5 +687,7 @@ def get_enabled_cards_for_broadcast(db: Session) -> list[dict]:
             "gram18_buy_price": mesghal17_to_gram18(item["buy"]) if is_gold else None,
             "gram18_sell_price": mesghal17_to_gram18(item["sell"]) if is_gold else None,
             "price_source": item.get("price_source", "live"),
+            "price_label_mode": card.price_label_mode,
+            "price_source_item_id": card.price_source_item_id,
         })
     return result

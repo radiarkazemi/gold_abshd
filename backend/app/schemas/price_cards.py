@@ -22,8 +22,10 @@ class AdminPriceCardOut(BaseModel):
     use_manual_price: bool = False
     manual_buy: float | None = None
     manual_sell: float | None = None
-    price_source: str = "live"     # "live" | "manual" | "unavailable"
+    price_source: str = "live"     # "live" | "manual" | "mirrored" | "unavailable"
     sort_order: int = 0
+    price_source_item_id: int | None = None
+    price_label_mode: str | None = None
     # Role commission overrides for this card: [{role_id, role_name, commission_type, commission_value}]
     role_commissions: list[dict] = []
 
@@ -71,3 +73,6 @@ class CustomerPriceCardOut(BaseModel):
     gram18_buy_price: float | None = None
     gram18_sell_price: float | None = None
     price_source: str = "live"
+    # When set, overrides the user's role price_label_mode for THIS card only.
+    price_label_mode: str | None = None
+    price_source_item_id: int | None = None

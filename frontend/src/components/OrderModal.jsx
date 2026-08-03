@@ -288,7 +288,8 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
 
   const shownError = localError || error;
   const total = computedTotal();
-  const gram18OnlyDisplay = !isCoin && limits?.price_label_mode === "gram18_only";
+  const effectiveLabelMode = card?.price_label_mode || limits?.price_label_mode || "mesghal_and_gram18";
+  const gram18OnlyDisplay = !isCoin && effectiveLabelMode === "gram18_only";
   const retryCount = liveOrder?.retry_count ?? 0;
   const maxRetries = liveOrder?.max_retries ?? FALLBACK_MAX_RETRIES;
   const rejectedForPriceChange =
