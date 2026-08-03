@@ -47,12 +47,17 @@ else
   echo "goldapp_staging already exists"
 fi
 
-echo "==> Python venv + deps"
+echo "==> Python venv + deps (match production freeze for parity)"
 cd "$STAGING_ROOT/backend"
 if [[ ! -x venv/bin/python ]]; then
   python3 -m venv venv
 fi
 ./venv/bin/pip install -q -r requirements.txt
+if [[ -x /opt/ghasrtala/gold_abshd/backend/venv/bin/pip ]]; then
+  /opt/ghasrtala/gold_abshd/backend/venv/bin/pip freeze > /tmp/prod-requirements-freeze.txt
+  ./venv/bin/pip install -q -r /tmp/prod-requirements-freeze.txt || true
+fi
+./venv/bin/python -c "import jdatetime, fastapi; print('deps ok')"
 
 echo "==> Staging .env from production (isolated DB/secrets/paths)"
 if [[ ! -f "$STAGING_ROOT/backend/.env" ]]; then
