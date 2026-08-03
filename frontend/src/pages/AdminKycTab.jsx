@@ -12,8 +12,13 @@ function formatDate(iso) {
   return formatTehranDateTime(iso);
 }
 
+function statusLabel(status) {
+  if (status === "approved") return "تایید شده";
+  return "در انتظار";
+}
+
 export default function AdminKycTab({ refreshSignal = 0, onPendingChange }) {
-  const [pending, setPending] = useState(null);
+  const [items, setItems] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -56,12 +61,13 @@ export default function AdminKycTab({ refreshSignal = 0, onPendingChange }) {
     fetchAdminKycPending()
       .then((data) => {
         const list = Array.isArray(data) ? data : [];
-        setPending(list);
-        onPendingChange?.(list.length);
+        setItems(list);
+        const pendingCount = list.filter((row) => row.kyc_status !== "approved").length;
+        onPendingChange?.(pendingCount);
         loadThumbs(list);
       })
       .catch(() => {
-        setPending([]);
+        setItems([]);
         onPendingChange?.(0);
       });
   }
@@ -98,114 +104,134 @@ export default function AdminKycTab({ refreshSignal = 0, onPendingChange }) {
     }
   }
 
-  if (!pending) return <p className="myorders__empty">در حال بارگذاری…</p>;
+  if (!items) return <p className="myorders__empty">در حال بارگذاری…</p>;
+
+  const pendingCount = items.filter((row) => row.kyc_status !== "approved").length;
 
   return (
     <div className="admin-kyc">
       <div className="admin-kyc__header">
         <h3 className="dashboard__section-title">درخواست‌های احراز هویت</h3>
-        {pending.length > 0 && (
-          <span className="admin-kyc__count">{pending.length.toLocaleString("fa-IR")} در انتظار</span>
+        {pendingCount > 0 && (
+          <span className="admin-kyc__count">{pendingCount.toLocaleString("fa-IR")} در انتظار</span>
         )}
       </div>
 
-      {pending.length === 0 ? (
-        <p className="myorders__empty">درخواستی در انتظار بررسی وجود ندارد.</p>
+      {items.length === 0 ? (
+        <p className="myorders__empty">درخواستی برای نمایش وجود ندارد.</p>
       ) : (
         <div className="admin-kyc__list">
-          {pending.map((p) => (
-            <article key={p.user_id} className="admin-kyc__card">
-              <header className="admin-kyc__card-head">
-                <div className="admin-kyc__identity">
-                  <span className="admin-kyc__name">{p.full_name || "بدون نام"}</span>
-                  <span className="admin-kyc__phone" dir="ltr">
-                    {p.phone_number}
-                  </span>
-                </div>
-                <span className="admin-kyc__code">#{p.user_code}</span>
-              </header>
-
-              <p className="admin-kyc__meta">ارسال: {formatDate(p.kyc_submitted_at)}</p>
-
-              <div className="admin-kyc__docs">
-                {DOC_SLOTS.map((doc) => {
-                  const thumb = thumbs[`${p.user_id}:${doc.kind}`];
-                  const isPdf = thumb?.contentType?.includes("pdf");
-                  return (
-                    <button
-                      key={doc.kind}
-                      type="button"
-                      className="admin-kyc__doc"
-                      disabled={!p[doc.hasKey]}
-                      onClick={() => {
-                        if (!thumb) return;
-                        if (isPdf) {
-                          window.open(thumb.url, "_blank");
-                        } else {
-                          setLightbox({ url: thumb.url, label: `${p.full_name || ""} — ${doc.label}` });
-                        }
-                      }}
+          {items.map((p) => {
+            const isApproved = p.kyc_status === "approved";
+            return (
+              <article
+                key={p.user_id}
+                className={`admin-kyc__card${isApproved ? " admin-kyc__card--approved" : ""}`}
+              >
+                <header className="admin-kyc__card-head">
+                  <div className="admin-kyc__identity">
+                    <span className="admin-kyc__name">{p.full_name || "بدون نام"}</span>
+                    <span className="admin-kyc__phone" dir="ltr">
+                      {p.phone_number}
+                    </span>
+                  </div>
+                  <div className="admin-kyc__head-meta">
+                    <span
+                      className={`admin-kyc__tag${isApproved ? " admin-kyc__tag--verified" : " admin-kyc__tag--pending"}`}
                     >
-                      <span className="admin-kyc__doc-label">{doc.label}</span>
-                      {thumb && !isPdf ? (
-                        <img className="admin-kyc__doc-thumb" src={thumb.url} alt={doc.label} />
-                      ) : (
-                        <span className="admin-kyc__doc-fallback">
-                          {p[doc.hasKey] ? (isPdf ? "PDF" : "…") : "—"}
-                        </span>
-                      )}
+                      {statusLabel(p.kyc_status)}
+                    </span>
+                    <span className="admin-kyc__code">#{p.user_code}</span>
+                  </div>
+                </header>
+
+                <p className="admin-kyc__meta">ارسال: {formatDate(p.kyc_submitted_at)}</p>
+                {isApproved && p.kyc_reviewed_at && (
+                  <p className="admin-kyc__meta">تایید: {formatDate(p.kyc_reviewed_at)}</p>
+                )}
+
+                <div className="admin-kyc__docs">
+                  {DOC_SLOTS.map((doc) => {
+                    const thumb = thumbs[`${p.user_id}:${doc.kind}`];
+                    const isPdf = thumb?.contentType?.includes("pdf");
+                    return (
+                      <button
+                        key={doc.kind}
+                        type="button"
+                        className="admin-kyc__doc"
+                        disabled={!p[doc.hasKey]}
+                        onClick={() => {
+                          if (!thumb) return;
+                          if (isPdf) {
+                            window.open(thumb.url, "_blank");
+                          } else {
+                            setLightbox({ url: thumb.url, label: `${p.full_name || ""} — ${doc.label}` });
+                          }
+                        }}
+                      >
+                        <span className="admin-kyc__doc-label">{doc.label}</span>
+                        {thumb && !isPdf ? (
+                          <img className="admin-kyc__doc-thumb" src={thumb.url} alt={doc.label} />
+                        ) : (
+                          <span className="admin-kyc__doc-fallback">
+                            {p[doc.hasKey] ? (isPdf ? "PDF" : "…") : "—"}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="admin-kyc__actions">
+                  {!isApproved && (
+                    <button
+                      type="button"
+                      className="admin-kyc__btn admin-kyc__btn--approve"
+                      disabled={busyId === p.user_id}
+                      onClick={() => handleApprove(p.user_id)}
+                    >
+                      تایید هویت
                     </button>
-                  );
-                })}
-              </div>
-
-              <div className="admin-kyc__actions">
-                <button
-                  type="button"
-                  className="admin-kyc__btn admin-kyc__btn--approve"
-                  disabled={busyId === p.user_id}
-                  onClick={() => handleApprove(p.user_id)}
-                >
-                  تایید هویت
-                </button>
-                <button
-                  type="button"
-                  className="admin-kyc__btn admin-kyc__btn--reject"
-                  onClick={() => setRejectingId(p.user_id)}
-                >
-                  رد درخواست
-                </button>
-              </div>
-
-              {rejectingId === p.user_id && (
-                <div className="admin-kyc__reject-box">
-                  <input
-                    placeholder="دلیل رد (اختیاری)"
-                    value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
-                  />
+                  )}
                   <button
                     type="button"
                     className="admin-kyc__btn admin-kyc__btn--reject"
-                    disabled={busyId === p.user_id}
-                    onClick={() => handleReject(p.user_id)}
+                    onClick={() => setRejectingId(p.user_id)}
                   >
-                    ثبت رد
-                  </button>
-                  <button
-                    type="button"
-                    className="admin-kyc__btn admin-kyc__btn--ghost"
-                    onClick={() => {
-                      setRejectingId(null);
-                      setRejectReason("");
-                    }}
-                  >
-                    انصراف
+                    {isApproved ? "لغو تایید / رد" : "رد درخواست"}
                   </button>
                 </div>
-              )}
-            </article>
-          ))}
+
+                {rejectingId === p.user_id && (
+                  <div className="admin-kyc__reject-box">
+                    <input
+                      placeholder="دلیل رد (اختیاری)"
+                      value={rejectReason}
+                      onChange={(e) => setRejectReason(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="admin-kyc__btn admin-kyc__btn--reject"
+                      disabled={busyId === p.user_id}
+                      onClick={() => handleReject(p.user_id)}
+                    >
+                      ثبت رد
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-kyc__btn admin-kyc__btn--ghost"
+                      onClick={() => {
+                        setRejectingId(null);
+                        setRejectReason("");
+                      }}
+                    >
+                      انصراف
+                    </button>
+                  </div>
+                )}
+              </article>
+            );
+          })}
         </div>
       )}
 

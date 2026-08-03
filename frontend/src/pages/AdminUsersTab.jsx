@@ -280,12 +280,7 @@ function UserDetail({ userId, onClose, onChanged }) {
             </div>
 
             {detail.role && (
-              <div className="user-detail__role-tag">
-                {detail.role.name} —{" "}
-                {detail.role.commission_type === "fixed"
-                  ? `${fa(detail.role.commission_value)} تومان کمیسیون`
-                  : `${detail.role.commission_value}٪ کمیسیون`}
-              </div>
+              <div className="user-detail__role-tag">{detail.role.name}</div>
             )}
 
             <div className="balance-card">

@@ -139,11 +139,7 @@ export default function AdminAddUserTab() {
           {roles.length === 0 && <option value="">ابتدا یک دسته‌بندی بسازید</option>}
           {roles.map((r) => (
             <option key={r.id} value={r.id}>
-              {r.name} (
-              {r.commission_type === "fixed"
-                ? `${r.commission_value.toLocaleString("fa-IR")} تومان`
-                : `${r.commission_value}٪`}
-              )
+              {r.name}
             </option>
           ))}
         </select>

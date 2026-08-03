@@ -1407,11 +1407,50 @@
   gap: 12px;
 }
 
+.admin-kyc__card--approved {
+  border-color: rgba(46, 160, 110, 0.45);
+}
+
 .admin-kyc__card-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+}
+
+.admin-kyc__head-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.admin-kyc__tag {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.admin-kyc__tag--verified {
+  color: #1f7a4c;
+  background: rgba(46, 160, 110, 0.16);
+  border: 1px solid rgba(46, 160, 110, 0.4);
+}
+
+.admin-kyc__tag--pending {
+  color: #9a6b00;
+  background: rgba(212, 160, 23, 0.16);
+  border: 1px solid rgba(212, 160, 23, 0.4);
+}
+
+.role-row__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
 }
 
 .admin-kyc__identity {

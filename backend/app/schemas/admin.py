@@ -23,8 +23,9 @@ class RoleOut(BaseModel):
 
 class RoleCreateIn(BaseModel):
     name: str
-    commission_type: str  # "fixed" | "percentage"
-    commission_value: float
+    # Fees are managed per-card on قیمت‌ها; role commission kept as unused fallback (default 0).
+    commission_type: str = "fixed"  # "fixed" | "percentage"
+    commission_value: float = 0
     min_weight: Optional[float] = None
     max_weight: Optional[float] = None
     min_amount: Optional[float] = None
@@ -33,8 +34,9 @@ class RoleCreateIn(BaseModel):
 
 
 class RoleUpdateIn(BaseModel):
-    commission_type: str
-    commission_value: float
+    # Optional so category edits can update limits/price_label without touching fees.
+    commission_type: Optional[str] = None
+    commission_value: Optional[float] = None
     min_weight: Optional[float] = None
     max_weight: Optional[float] = None
     min_amount: Optional[float] = None
