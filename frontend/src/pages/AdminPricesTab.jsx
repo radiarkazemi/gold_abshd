@@ -444,7 +444,10 @@ export default function AdminPricesTab() {
 
               {isMirrored && (
                 <p className="price-cards-admin__manual-note">
-                  قیمت این کارت همیشه از آیتم id:{c.price_source_item_id || 1} گرفته می‌شود.
+                  {c.goldbridge_item_id === 900001
+                    ? "متفرقه: قیمت پایه = بخریدِ id:1 — گرم ۱۸ = (قیمت + کارمزد) ÷ ۴٫۳۹ برای بفروشید."
+                    : `قیمت این کارت همیشه از آیتم id:${c.price_source_item_id || 1} گرفته می‌شود.`}
+                  {" "}
                   کارمزد/اختلاف هر دسته‌بندی را پایین تنظیم کنید.
                 </p>
               )}

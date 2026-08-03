@@ -19,7 +19,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.gold_conversion import mesghal17_to_gram18
+from app.gold_conversion import mesghal17_to_gram18, motaferaghe_to_gram18
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +91,12 @@ def is_special_mirrored_card(goldbridge_item_id: int) -> bool:
 
 
 def ensure_special_mirrored_cards(db: Session | None = None) -> None:
-    """Idempotently create متفرقه / نقد کارتخوان rows (mirror item id 1)."""
+    """Idempotently create متفرقه / نقد کارتخوان rows (mirror item id 1).
+
+    Product identity fields stay synced; admin-controlled visibility
+    (`is_enabled`) and side toggles are only set on first create so
+    «نمایش به مشتری» unticks persist.
+    """
     from app.db import SessionLocal
     from app.models_db import PriceCard
 
@@ -105,21 +110,23 @@ def ensure_special_mirrored_cards(db: Session | None = None) -> None:
                 .filter(PriceCard.goldbridge_item_id == spec["goldbridge_item_id"])
                 .first()
             )
-            if not card:
+            is_new = card is None
+            if is_new:
                 card = PriceCard(goldbridge_item_id=spec["goldbridge_item_id"])
                 db.add(card)
-            # Keep the intended product rules in sync on every boot/poll.
+                card.is_enabled = True
+                card.orderable_buy = spec["orderable_buy"]
+                card.orderable_sell = spec["orderable_sell"]
+                card.sort_order = spec["sort_order"]
+            # Always keep product identity / pricing rules in sync.
             card.display_name = spec["display_name"]
             card.price_source_item_id = spec["price_source_item_id"]
             card.price_label_mode = spec["price_label_mode"]
-            card.orderable_buy = spec["orderable_buy"]
-            card.orderable_sell = spec["orderable_sell"]
             card.override_source_restriction = True
-            card.is_enabled = True
-            if card.sort_order is None or card.sort_order == 0:
-                card.sort_order = spec["sort_order"]
             # Mirrored cards always follow the source feed — not own manuals.
             card.use_manual_price = False
+            if card.sort_order is None or card.sort_order == 0:
+                card.sort_order = spec["sort_order"]
         db.commit()
     except Exception:
         db.rollback()
@@ -128,6 +135,9 @@ def ensure_special_mirrored_cards(db: Session | None = None) -> None:
         if owns_session:
             db.close()
 
+
+def is_motaferaghe_card(goldbridge_item_id: int | None) -> bool:
+    return goldbridge_item_id == SPECIAL_CARD_MOTAFEREGHE_ID
 
 _bootstrap_attempted = False
 
@@ -274,6 +284,10 @@ def resolve_effective_item(card, item: dict | None) -> dict | None:
         and source_item.get("buy") is not None
         and source_item.get("sell") is not None
     )
+    # متفرقه only needs the source BUY quote (used for its بفروشید side).
+    is_motaferaghe = bool(card and is_motaferaghe_card(card.goldbridge_item_id))
+    if is_motaferaghe and source_item and source_item.get("buy") is not None:
+        has_live_prices = True
     manuals_ok = bool(
         card
         and card.manual_buy is not None
@@ -315,6 +329,14 @@ def resolve_effective_item(card, item: dict | None) -> dict | None:
             out["allow_sell"] = True
         else:
             out["price_source"] = "live"
+        if is_motaferaghe:
+            # متفرقه بفروشید always uses id:1 بخرید price as the base quote.
+            buy = float(source_item["buy"])
+            out["buy"] = buy
+            out["sell"] = buy
+            out["pricing_mode"] = "motaferaghe_sell"
+            if out.get("sell") is None:
+                out["sell"] = buy
         return out
     return None
 
@@ -673,6 +695,22 @@ def get_enabled_cards_for_broadcast(db: Session) -> list[dict]:
             continue
         is_gold = item.get("type", GOLD_ITEM_TYPE) == GOLD_ITEM_TYPE
         buy_ok, sell_ok = effective_orderable(card, item)
+        buy = item["buy"]
+        sell = item["sell"]
+        if is_gold and is_motaferaghe_card(card.goldbridge_item_id):
+            # Raw (pre-commission) گرم۱۸ uses the متفرقه divisor; commission
+            # is applied client/server as (price + commission) / 4.39.
+            gram18_buy = motaferaghe_to_gram18(buy)
+            gram18_sell = motaferaghe_to_gram18(sell)
+            pricing_mode = "motaferaghe_sell"
+        elif is_gold:
+            gram18_buy = mesghal17_to_gram18(buy)
+            gram18_sell = mesghal17_to_gram18(sell)
+            pricing_mode = None
+        else:
+            gram18_buy = None
+            gram18_sell = None
+            pricing_mode = None
         result.append({
             "goldbridge_item_id": card.goldbridge_item_id,
             "name": card.display_name or item.get("name") or f"#{card.goldbridge_item_id}",
@@ -682,12 +720,13 @@ def get_enabled_cards_for_broadcast(db: Session) -> list[dict]:
             "is_primary": i == 0,
             "orderable_buy": buy_ok,
             "orderable_sell": sell_ok,
-            "buy_price": item["buy"],
-            "sell_price": item["sell"],
-            "gram18_buy_price": mesghal17_to_gram18(item["buy"]) if is_gold else None,
-            "gram18_sell_price": mesghal17_to_gram18(item["sell"]) if is_gold else None,
+            "buy_price": buy,
+            "sell_price": sell,
+            "gram18_buy_price": gram18_buy,
+            "gram18_sell_price": gram18_sell,
             "price_source": item.get("price_source", "live"),
             "price_label_mode": card.price_label_mode,
             "price_source_item_id": card.price_source_item_id,
+            "pricing_mode": pricing_mode,
         })
     return result
