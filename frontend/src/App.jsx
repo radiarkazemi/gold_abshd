@@ -14,6 +14,7 @@ import AboutPage from "./pages/AboutPage";
 import ReygiriLinksPage from "./pages/ReygiriLinksPage";
 import NoticeModal from "./components/NoticeModal";
 import UpdatePrompt from "./components/UpdatePrompt";
+import StagingBanner from "./components/StagingBanner";
 import "./components/PriceButton.css";
 import "./components/OrderModal.css";
 import "./components/SideMenu.css";
@@ -56,6 +57,7 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <BrowserRouter>
+          <StagingBanner />
           <UpdatePrompt />
           <Routes>
             <Route path="/" element={<Protected><TraderPage /></Protected>} />

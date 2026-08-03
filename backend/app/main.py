@@ -115,7 +115,17 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-Goldapp-Env"] = settings.APP_ENV or "development"
     return response
+
+
+@app.get("/api/health")
+async def health():
+    return {
+        "ok": True,
+        "env": settings.APP_ENV,
+        "staging": settings.IS_STAGING,
+    }
 
 
 @app.on_event("startup")

@@ -91,7 +91,10 @@ def get_current_admin(authorization: str | None = Header(default=None)) -> dict:
         raise HTTPException(
             status_code=401, detail="ابتدا به عنوان ادمین وارد شوید")
     token = authorization.removeprefix("Bearer ").strip()
-    return _decode_admin_token(token)
+    admin = _decode_admin_token(token)
+    from app.staging_gate import assert_staging_admin_allowed
+    assert_staging_admin_allowed(admin.get("username"))
+    return admin
 
 
 def require_permission(scope: str):
@@ -129,4 +132,7 @@ def verify_admin_ws_token(token: str | None) -> dict:
     if not token:
         raise HTTPException(
             status_code=401, detail="ابتدا به عنوان ادمین وارد شوید")
-    return _decode_admin_token(token)
+    admin = _decode_admin_token(token)
+    from app.staging_gate import assert_staging_admin_allowed
+    assert_staging_admin_allowed(admin.get("username"))
+    return admin

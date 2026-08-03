@@ -1,0 +1,28 @@
+[Unit]
+Description=goldapp STAGING backend (FastAPI/uvicorn) — isolated from production
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/ghasrtala/gold_abshd_staging/backend
+EnvironmentFile=/opt/ghasrtala/gold_abshd_staging/backend/.env
+ExecStart=/opt/ghasrtala/gold_abshd_staging/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001 --workers 1
+Restart=on-failure
+RestartSec=3
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/ghasrtala/gold_abshd_staging/backend/uploads
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

@@ -159,6 +159,26 @@ class Settings:
     MAX_RECEIPT_SIZE_MB: int = int(os.getenv("GOLDAPP_MAX_RECEIPT_SIZE_MB", "5"))
     ALLOWED_RECEIPT_EXTENSIONS: set = {".jpg", ".jpeg", ".png", ".pdf", ".webp"}
 
+    # Runtime environment: "production" | "staging" | "development"
+    # Staging uses a separate DB/process and is locked down to allowlisted
+    # super-admins only (see GOLDAPP_STAGING_ALLOWED_ADMINS).
+    APP_ENV: str = os.getenv("GOLDAPP_APP_ENV", "development").strip().lower()
+
+    # Comma-separated admin usernames allowed to use staging (login + APIs).
+    # Ignored unless APP_ENV=staging.
+    _staging_admins_raw: str = os.getenv(
+        "GOLDAPP_STAGING_ALLOWED_ADMINS",
+        "radiar,sasanHKH",
+    )
+
+    @property
+    def IS_STAGING(self) -> bool:
+        return self.APP_ENV == "staging"
+
+    @property
+    def STAGING_ALLOWED_ADMINS(self) -> set[str]:
+        return {a.strip() for a in self._staging_admins_raw.split(",") if a.strip()}
+
     @property
     def DATABASE_URL(self) -> str:
         return (

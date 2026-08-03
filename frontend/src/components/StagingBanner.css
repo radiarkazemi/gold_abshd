@@ -1,0 +1,12 @@
+.staging-banner {
+  position: sticky;
+  top: 0;
+  z-index: 2000;
+  background: #7a4b00;
+  color: #ffe8b8;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+  letter-spacing: 0.01em;
+}

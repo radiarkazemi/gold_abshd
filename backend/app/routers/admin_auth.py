@@ -17,6 +17,7 @@ from app.services.admin_accounts import (
     log_activity,
     mark_login,
 )
+from app.staging_gate import assert_staging_admin_allowed
 
 router = APIRouter(prefix="/api/admin/auth", tags=["admin-auth"])
 
@@ -31,6 +32,8 @@ async def admin_login(request: Request, payload: AdminLoginIn, db: Session = Dep
     admin = verify_sub_admin_password(db, payload.username, payload.password)
     if not admin:
         raise HTTPException(status_code=401, detail="نام کاربری یا رمز عبور اشتباه است")
+
+    assert_staging_admin_allowed(admin.username)
 
     if admin.is_super:
         # Super-admin skips OTP entirely - unchanged behavior from before.
@@ -72,6 +75,8 @@ async def admin_verify(request: Request, payload: AdminVerifyIn, db: Session = D
     sub_admin = get_sub_admin(db, payload.admin_user_id)
     if not sub_admin or not sub_admin.is_active:
         raise HTTPException(status_code=404, detail="حساب پیدا نشد")
+
+    assert_staging_admin_allowed(sub_admin.username)
 
     try:
         sub_admin = verify_login_otp(db, sub_admin, payload.code, payload.registration_key)
