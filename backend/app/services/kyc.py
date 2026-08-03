@@ -220,24 +220,47 @@ def get_kyc_document_path(
 
 
 def list_pending_kyc(db: Session) -> list[User]:
+    """Pending + approved KYC rows for the admin verify tab.
+
+    Approved stays visible so admins can reject (revoke) after approval.
+    Pending is sorted first.
+    """
+    from sqlalchemy import case
+
     return (
         db.query(User)
-        .filter(User.kyc_status == "pending")
-        .order_by(User.kyc_submitted_at.asc())
+        .filter(User.kyc_status.in_(("pending", "approved")))
+        .order_by(
+            case((User.kyc_status == "pending", 0), else_=1),
+            User.kyc_submitted_at.asc().nullslast(),
+            User.created_at.asc(),
+        )
         .all()
     )
+
+
+def count_pending_kyc(db: Session) -> int:
+    return db.query(User).filter(User.kyc_status == "pending").count()
 
 
 def review_kyc(db: Session, user_id: str, approve: bool, reject_reason: str | None = None) -> User:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="کاربر پیدا نشد")
-    if user.kyc_status != "pending":
-        raise HTTPException(status_code=400, detail="این درخواست در وضعیت در انتظار بررسی نیست")
 
-    user.kyc_status = "approved" if approve else "rejected"
+    if approve:
+        if user.kyc_status not in ("pending", "rejected"):
+            raise HTTPException(status_code=400, detail="این درخواست قابل تایید نیست")
+        user.kyc_status = "approved"
+        user.kyc_reject_reason = None
+    else:
+        # Allow reject from pending OR already-approved (revoke verification)
+        if user.kyc_status not in ("pending", "approved"):
+            raise HTTPException(status_code=400, detail="این درخواست قابل رد نیست")
+        user.kyc_status = "rejected"
+        user.kyc_reject_reason = (reject_reason or "").strip() or None
+
     user.kyc_reviewed_at = datetime.utcnow()
-    user.kyc_reject_reason = None if approve else (reject_reason or "")
     db.commit()
     db.refresh(user)
     return user

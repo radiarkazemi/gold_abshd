@@ -782,15 +782,22 @@ export async function createRole(name, commissionType, commissionValue, extra = 
 }
 
 export async function updateRoleCommission(roleId, commissionType, commissionValue, extra = {}) {
+  const body = {
+    min_weight: extra.minWeight ?? null,
+    max_weight: extra.maxWeight ?? null,
+    min_amount: extra.minAmount ?? null,
+    max_amount: extra.maxAmount ?? null,
+    price_label_mode: extra.priceLabelMode ?? null,
+  };
+  // Omit fee fields when null so backend keeps existing role commission
+  // (fees are managed per-card on قیمت‌ها).
+  if (commissionType != null) body.commission_type = commissionType;
+  if (commissionValue != null) body.commission_value = commissionValue;
+
   const res = await fetch(`${API_BASE}/api/admin/roles/${roleId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
-    body: JSON.stringify({
-      commission_type: commissionType, commission_value: commissionValue,
-      min_weight: extra.minWeight ?? null, max_weight: extra.maxWeight ?? null,
-      min_amount: extra.minAmount ?? null, max_amount: extra.maxAmount ?? null,
-      price_label_mode: extra.priceLabelMode ?? null,
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

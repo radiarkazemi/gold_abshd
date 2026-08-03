@@ -102,7 +102,9 @@ def create_role(
 
 
 def update_role_commission(
-    db: Session, role_id: str, commission_type: str, commission_value: float,
+    db: Session, role_id: str,
+    commission_type: str | None = None,
+    commission_value: float | None = None,
     min_weight: float | None = None, max_weight: float | None = None,
     min_amount: float | None = None, max_amount: float | None = None,
     price_label_mode: str | None = None,
@@ -110,20 +112,29 @@ def update_role_commission(
     role = db.query(Role).filter(Role.id == role_id).first()
     if not role:
         raise HTTPException(status_code=404, detail="نقش پیدا نشد")
-    if commission_type not in ("fixed", "percentage"):
+
+    # Preserve existing commission when omitted (fees live on قیمت‌ها per card).
+    next_type = commission_type if commission_type is not None else (
+        role.commission_type.value if hasattr(role.commission_type, "value") else str(role.commission_type)
+    )
+    next_value = float(commission_value) if commission_value is not None else float(role.commission_value or 0)
+    if next_type not in ("fixed", "percentage"):
         raise HTTPException(status_code=400, detail="نوع کمیسیون نامعتبر است")
+
     min_amount, max_amount = _current_role_amount_limits(
         db,
-        commission_type,
-        commission_value,
+        next_type,
+        next_value,
         min_weight,
         max_weight,
         min_amount,
         max_amount,
     )
 
-    role.commission_type = CommissionTypeEnum(commission_type)
-    role.commission_value = commission_value
+    if commission_type is not None:
+        role.commission_type = CommissionTypeEnum(next_type)
+    if commission_value is not None:
+        role.commission_value = next_value
     role.min_weight = min_weight
     role.max_weight = max_weight
     role.min_amount = min_amount
