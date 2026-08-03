@@ -78,6 +78,12 @@ async def submit_order(
 
     await manager.broadcast_to_admins({"type": "new_order", "order": order_to_dict(db, order)})
 
+    try:
+        from app.services import admin_push
+        admin_push.notify_new_order(db, order_to_dict(db, order))
+    except Exception:
+        pass
+
     return order_to_customer_out(order)
 
 
@@ -137,6 +143,11 @@ async def retry_my_order(
     """
     order = retry_pending_order_db(db, order_id, current_user.id)
     await manager.broadcast_to_admins({"type": "new_order", "order": order_to_dict(db, order)})
+    try:
+        from app.services import admin_push
+        admin_push.notify_new_order(db, order_to_dict(db, order))
+    except Exception:
+        pass
     return order_to_customer_out(order)
 
 
@@ -163,6 +174,11 @@ async def retry_my_order_at_new_price(
     require_kyc_approved(current_user)
     order = resubmit_order_at_new_price_db(db, order_id, current_user)
     await manager.broadcast_to_admins({"type": "new_order", "order": order_to_dict(db, order)})
+    try:
+        from app.services import admin_push
+        admin_push.notify_new_order(db, order_to_dict(db, order))
+    except Exception:
+        pass
     return order_to_customer_out(order)
 
 

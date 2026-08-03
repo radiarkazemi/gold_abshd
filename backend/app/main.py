@@ -56,6 +56,7 @@ from app.routers import (
     transfers,
     admin_price_cards,
     admin_expert,
+    admin_push,
 )
 
 
@@ -247,3 +248,4 @@ app.include_router(kyc.router)
 app.include_router(transfers.router)
 app.include_router(admin_price_cards.router)
 app.include_router(admin_expert.router)
+app.include_router(admin_push.router)

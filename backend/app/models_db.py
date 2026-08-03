@@ -490,6 +490,25 @@ class AdminUser(Base):
     activated_at = Column(DateTime, nullable=True)
 
 
+class AdminPushSubscription(Base):
+    """
+    Web Push subscriptions for admin devices (mobile PWA / desktop).
+    Used to deliver order/KYC alerts with OS sound when the admin panel
+    is backgrounded or the phone is locked — WebSocket alone cannot.
+    """
+
+    __tablename__ = "admin_push_subscriptions"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    admin_username = Column(String, nullable=False, index=True)
+    endpoint = Column(Text, unique=True, nullable=False)
+    p256dh = Column(Text, nullable=False)
+    auth = Column(Text, nullable=False)
+    user_agent = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class AdminActivityLog(Base):
     """
     Audit trail of admin actions, so the super-admin can see what each
