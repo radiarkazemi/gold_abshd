@@ -76,3 +76,5 @@ class CustomerPriceCardOut(BaseModel):
     # When set, overrides the user's role price_label_mode for THIS card only.
     price_label_mode: str | None = None
     price_source_item_id: int | None = None
+    # "motaferaghe_sell" => (id1 buy + commission) / 4.39 for گرم۱۸ بفروشید
+    pricing_mode: str | None = None
