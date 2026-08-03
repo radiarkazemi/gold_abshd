@@ -23,6 +23,7 @@ import {
   notifyNewOrder,
   notifyNewKyc,
   registerNotifyServiceWorker,
+  subscribeAdminPush,
 } from "../utils/desktopNotify";
 import { orderGoldWeight, orderTotalMoney, summarizeOrders } from "../utils/orderCalc";
 import { formatCashStatus } from "../utils/balanceFormat";
@@ -106,7 +107,11 @@ function AdminPanel({ onLogout, identity }) {
 
   function refreshKycPendingCount() {
     fetchAdminKycPending()
-      .then((data) => setKycPendingCount(Array.isArray(data) ? data.length : 0))
+      .then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        // API returns pending + approved; badge must count pending only.
+        setKycPendingCount(list.filter((row) => row.kyc_status === "pending").length);
+      })
       .catch(() => {});
   }
 
@@ -139,9 +144,15 @@ function AdminPanel({ onLogout, identity }) {
 
   useEffect(() => {
     // OS notifications: Windows Action Center when the browser is
-    // minimized/backgrounded, and native mobile notifications.
-    registerNotifyServiceWorker();
-    ensureNotificationPermission();
+    // minimized/backgrounded, and native mobile notifications + Web Push
+    // so locked phones still get order alerts with sound.
+    (async () => {
+      await registerNotifyServiceWorker();
+      const perm = await ensureNotificationPermission();
+      if (perm === "granted") {
+        await subscribeAdminPush();
+      }
+    })();
   }, []);
 
   useEffect(() => {

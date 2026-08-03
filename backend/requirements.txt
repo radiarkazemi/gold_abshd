@@ -12,4 +12,9 @@ pysocks==1.7.1
 python-multipart==0.0.9
 Pillow==10.4.0
 slowapi==0.1.9
+<<<<<<< HEAD
 jdatetime==5.0.0
+=======
+pywebpush==2.0.1
+cryptography>=42.0.0
+>>>>>>> a6e35c8 (Fix KYC sidebar badge; add admin Web Push for mobile order sound)

@@ -39,18 +39,19 @@ async def submit_my_kyc(
         "birth_cert": (birth_cert, await birth_cert.read()),
     }
     user = submit_kyc(db, current_user, files)
-    await manager.broadcast_to_admins(
-        {
-            "type": "new_kyc",
-            "user": {
-                "user_id": user.id,
-                "user_code": user.user_code,
-                "full_name": user.full_name,
-                "phone_number": user.phone_number,
-                "kyc_submitted_at": user.kyc_submitted_at.isoformat() if user.kyc_submitted_at else None,
-            },
-        }
-    )
+    kyc_user_payload = {
+        "user_id": user.id,
+        "user_code": user.user_code,
+        "full_name": user.full_name,
+        "phone_number": user.phone_number,
+        "kyc_submitted_at": user.kyc_submitted_at.isoformat() if user.kyc_submitted_at else None,
+    }
+    await manager.broadcast_to_admins({"type": "new_kyc", "user": kyc_user_payload})
+    try:
+        from app.services import admin_push
+        admin_push.notify_new_kyc(db, kyc_user_payload)
+    except Exception:
+        pass
     return KycStatusOut(**status_payload(user))
 
 
