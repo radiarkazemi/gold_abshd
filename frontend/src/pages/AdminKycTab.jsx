@@ -22,39 +22,19 @@ export default function AdminKycTab({ refreshSignal = 0, onPendingChange }) {
   const [busyId, setBusyId] = useState(null);
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
-  const [thumbs, setThumbs] = useState({});
   const [lightbox, setLightbox] = useState(null);
-  const thumbUrlsRef = useRef([]);
+  const [openingDoc, setOpeningDoc] = useState(null);
+  const lightboxUrlRef = useRef(null);
 
-  function revokeThumbs() {
-    thumbUrlsRef.current.forEach((u) => {
+  function revokeLightbox() {
+    if (lightboxUrlRef.current) {
       try {
-        URL.revokeObjectURL(u);
+        URL.revokeObjectURL(lightboxUrlRef.current);
       } catch {
         /* ignore */
       }
-    });
-    thumbUrlsRef.current = [];
-  }
-
-  async function loadThumbs(list) {
-    revokeThumbs();
-    const next = {};
-    await Promise.all(
-      list.flatMap((p) =>
-        DOC_SLOTS.map(async (doc) => {
-          if (!p[doc.hasKey]) return;
-          try {
-            const { url, contentType } = await fetchKycDocumentBlobUrlAsAdmin(p.user_id, doc.kind);
-            thumbUrlsRef.current.push(url);
-            next[`${p.user_id}:${doc.kind}`] = { url, contentType };
-          } catch {
-            /* missing doc */
-          }
-        })
-      )
-    );
-    setThumbs(next);
+      lightboxUrlRef.current = null;
+    }
   }
 
   function reload() {
@@ -64,7 +44,6 @@ export default function AdminKycTab({ refreshSignal = 0, onPendingChange }) {
         setItems(list);
         const pendingCount = list.filter((row) => row.kyc_status !== "approved").length;
         onPendingChange?.(pendingCount);
-        loadThumbs(list);
       })
       .catch(() => {
         setItems([]);
@@ -74,9 +53,36 @@ export default function AdminKycTab({ refreshSignal = 0, onPendingChange }) {
 
   useEffect(() => {
     reload();
-    return () => revokeThumbs();
+    return () => revokeLightbox();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshSignal]);
+
+  async function openDoc(userId, fullName, doc) {
+    const key = `${userId}:${doc.kind}`;
+    setOpeningDoc(key);
+    try {
+      const { url, contentType } = await fetchKycDocumentBlobUrlAsAdmin(userId, doc.kind);
+      if (contentType?.includes("pdf")) {
+        window.open(url, "_blank");
+        // Keep blob alive briefly for the new tab; revoke later.
+        setTimeout(() => {
+          try {
+            URL.revokeObjectURL(url);
+          } catch {
+            /* ignore */
+          }
+        }, 60_000);
+        return;
+      }
+      revokeLightbox();
+      lightboxUrlRef.current = url;
+      setLightbox({ url, label: `${fullName || ""} — ${doc.label}` });
+    } catch {
+      alert("بارگذاری مدرک با خطا مواجه شد");
+    } finally {
+      setOpeningDoc(null);
+    }
+  }
 
   async function handleApprove(userId) {
     setBusyId(userId);
@@ -120,7 +126,7 @@ export default function AdminKycTab({ refreshSignal = 0, onPendingChange }) {
       {items.length === 0 ? (
         <p className="myorders__empty">درخواستی برای نمایش وجود ندارد.</p>
       ) : (
-        <div className="admin-kyc__list">
+        <div className="admin-kyc__grid">
           {items.map((p) => {
             const isApproved = p.kyc_status === "approved";
             return (
@@ -150,33 +156,19 @@ export default function AdminKycTab({ refreshSignal = 0, onPendingChange }) {
                   <p className="admin-kyc__meta">تایید: {formatDate(p.kyc_reviewed_at)}</p>
                 )}
 
-                <div className="admin-kyc__docs">
+                <div className="admin-kyc__docs admin-kyc__docs--links">
                   {DOC_SLOTS.map((doc) => {
-                    const thumb = thumbs[`${p.user_id}:${doc.kind}`];
-                    const isPdf = thumb?.contentType?.includes("pdf");
+                    const key = `${p.user_id}:${doc.kind}`;
+                    const available = p[doc.hasKey];
                     return (
                       <button
                         key={doc.kind}
                         type="button"
-                        className="admin-kyc__doc"
-                        disabled={!p[doc.hasKey]}
-                        onClick={() => {
-                          if (!thumb) return;
-                          if (isPdf) {
-                            window.open(thumb.url, "_blank");
-                          } else {
-                            setLightbox({ url: thumb.url, label: `${p.full_name || ""} — ${doc.label}` });
-                          }
-                        }}
+                        className="admin-kyc__doc-link"
+                        disabled={!available || openingDoc === key}
+                        onClick={() => openDoc(p.user_id, p.full_name, doc)}
                       >
-                        <span className="admin-kyc__doc-label">{doc.label}</span>
-                        {thumb && !isPdf ? (
-                          <img className="admin-kyc__doc-thumb" src={thumb.url} alt={doc.label} />
-                        ) : (
-                          <span className="admin-kyc__doc-fallback">
-                            {p[doc.hasKey] ? (isPdf ? "PDF" : "…") : "—"}
-                          </span>
-                        )}
+                        {openingDoc === key ? "…" : doc.label}
                       </button>
                     );
                   })}
@@ -236,11 +228,25 @@ export default function AdminKycTab({ refreshSignal = 0, onPendingChange }) {
       )}
 
       {lightbox && (
-        <div className="admin-kyc__lightbox" onClick={() => setLightbox(null)} role="presentation">
+        <div
+          className="admin-kyc__lightbox"
+          onClick={() => {
+            setLightbox(null);
+            revokeLightbox();
+          }}
+          role="presentation"
+        >
           <div className="admin-kyc__lightbox-inner" onClick={(e) => e.stopPropagation()} role="dialog">
             <p className="admin-kyc__lightbox-label">{lightbox.label}</p>
             <img src={lightbox.url} alt={lightbox.label} />
-            <button type="button" className="admin-kyc__btn admin-kyc__btn--ghost" onClick={() => setLightbox(null)}>
+            <button
+              type="button"
+              className="admin-kyc__btn admin-kyc__btn--ghost"
+              onClick={() => {
+                setLightbox(null);
+                revokeLightbox();
+              }}
+            >
               بستن
             </button>
           </div>

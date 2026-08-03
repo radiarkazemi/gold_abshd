@@ -3,7 +3,20 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.jsx";
 import { APP_BUILD_V, BRAND_V } from "./brandAssets.js";
-import { signalAppUpdateAvailable } from "./components/UpdatePrompt.jsx";
+import { signalAppUpdateAvailable, APPLIED_UPDATE_KEY } from "./components/UpdatePrompt.jsx";
+
+// Strip one-shot cache-bust query from soft-update navigations.
+if (typeof window !== "undefined") {
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("_upd")) {
+      url.searchParams.delete("_upd");
+      window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+    }
+  } catch {
+    /* ignore */
+  }
+}
 
 // Register SW with the deploy build id so every code release can be detected.
 // Do NOT auto-reload — show an in-app update prompt instead (keeps login).
@@ -38,9 +51,25 @@ if (typeof window !== "undefined") {
       const res = await fetch(`/version.json?_=${Date.now()}`, { cache: "no-store" });
       if (!res.ok) return;
       const data = await res.json();
-      if (data?.build && data.build !== knownBuild) {
-        signalAppUpdateAvailable();
+      const remote = data?.build;
+      if (!remote) return;
+      if (remote === knownBuild) {
+        // Running build matches server — clear any prior update attempt.
+        try {
+          sessionStorage.removeItem(APPLIED_UPDATE_KEY);
+        } catch {
+          /* ignore */
+        }
+        return;
       }
+      // Avoid infinite banner if version.json was manually bumped ahead of the
+      // baked APP_BUILD_V (or a reload still served a stale bundle).
+      try {
+        if (sessionStorage.getItem(APPLIED_UPDATE_KEY) === remote) return;
+      } catch {
+        /* ignore */
+      }
+      window.dispatchEvent(new CustomEvent("app-update-available", { detail: { build: remote } }));
     } catch {
       // offline / transient — ignore
     } finally {
