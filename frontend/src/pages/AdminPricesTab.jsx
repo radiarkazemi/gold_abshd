@@ -309,16 +309,34 @@ export default function AdminPricesTab() {
 
       <p className="price-cards-admin__hint">
         «نمایش به مشتری» یعنی قیمت این کارت روی صفحه اصلی نشان داده می‌شود.
-        دکمه‌های «خرید» و «فروش» مستقل از هم هستند. کمیسیون هر دسته‌بندی روی همین کارت قابل تنظیم روزانه است؛
-        قیمت دستی وقتی فید goldbridge قطع یا غیرفعال است استفاده می‌شود.
+        دکمه‌های «خرید» و «فروش» مستقل از هم هستند. کمیسیون هر دسته‌بندی روی همین کارت قابل تنظیم روزانه است.
+        کارت‌های «متفرقه» و «نقد کارتخوان» قیمت را از آیتم id:1 می‌گیرند؛ کارمزد/اختلاف را از همین صفحه برای هر دسته‌بندی تنظیم کنید.
       </p>
 
       <div className="admin-prices__grid">
-        {cards.map((c) => (
-          <div key={c.goldbridge_item_id} className={`admin-price-card ${!c.active ? "admin-price-card--inactive" : ""}`}>
+        {cards.map((c) => {
+          const isMirrored = !!c.price_source_item_id || c.price_source === "mirrored";
+          const sourceLabel =
+            c.price_source === "manual"
+              ? "دستی"
+              : c.price_source === "mirrored" || isMirrored
+                ? `آینه id:${c.price_source_item_id || 1}`
+                : c.price_source === "live"
+                  ? "زنده"
+                  : "ناموجود";
+          const labelModeFa =
+            c.price_label_mode === "gram18_only"
+              ? "نمایش: گرم ۱۸"
+              : c.price_label_mode === "mesghal17_only"
+                ? "نمایش: مثقال ۱۷"
+                : c.price_label_mode === "mesghal_and_gram18"
+                  ? "نمایش: مثقال + گرم"
+                  : null;
+          return (
+          <div key={c.goldbridge_item_id} className={`admin-price-card ${!c.active && !isMirrored ? "admin-price-card--inactive" : ""}`}>
             <div className="admin-price-card__top">
               <span className="admin-price-card__name">{c.display_name}</span>
-              <span className="admin-price-card__type">{TYPE_LABEL[c.type] || "—"}</span>
+              <span className="admin-price-card__type">{TYPE_LABEL[c.type] || (isMirrored ? "طلا (گرم/عیار)" : "—")}</span>
             </div>
 
             <div className="admin-price-card__values">
@@ -333,18 +351,29 @@ export default function AdminPricesTab() {
             </div>
 
             <div className="admin-price-card__flags">
-              <span className={`admin-price-card__flag ${c.active ? "is-on" : "is-off"}`}>
-                {c.active ? "فعال در goldbridge" : "غیرفعال در goldbridge"}
+              {isMirrored ? (
+                <span className="admin-price-card__flag is-on">کارت ویژه (آینه قیمت)</span>
+              ) : (
+                <span className={`admin-price-card__flag ${c.active ? "is-on" : "is-off"}`}>
+                  {c.active ? "فعال در goldbridge" : "غیرفعال در goldbridge"}
+                </span>
+              )}
+              <span className={`admin-price-card__flag ${c.price_source !== "unavailable" ? "is-on" : "is-off"}`}>
+                منبع: {sourceLabel}
               </span>
-              <span className={`admin-price-card__flag ${c.price_source === "manual" ? "is-on" : "is-off"}`}>
-                منبع: {c.price_source === "manual" ? "دستی" : c.price_source === "live" ? "زنده" : "ناموجود"}
-              </span>
-              <span className={`admin-price-card__flag ${c.allow_buy ? "is-on" : "is-off"}`}>
-                خرید {c.allow_buy ? "مجاز در منبع" : "غیرمجاز در منبع"}
-              </span>
-              <span className={`admin-price-card__flag ${c.allow_sell ? "is-on" : "is-off"}`}>
-                فروش {c.allow_sell ? "مجاز در منبع" : "غیرمجاز در منبع"}
-              </span>
+              {labelModeFa && (
+                <span className="admin-price-card__flag is-on">{labelModeFa}</span>
+              )}
+              {!isMirrored && (
+                <>
+                  <span className={`admin-price-card__flag ${c.allow_buy ? "is-on" : "is-off"}`}>
+                    خرید {c.allow_buy ? "مجاز در منبع" : "غیرمجاز در منبع"}
+                  </span>
+                  <span className={`admin-price-card__flag ${c.allow_sell ? "is-on" : "is-off"}`}>
+                    فروش {c.allow_sell ? "مجاز در منبع" : "غیرمجاز در منبع"}
+                  </span>
+                </>
+              )}
             </div>
 
             <div className="price-cards-admin__actions">
@@ -375,39 +404,50 @@ export default function AdminPricesTab() {
                 </button>
               </div>
 
-              {c.orderable_buy && !c.allow_buy && !c.override_source_restriction && c.price_source !== "manual" && (
+              {c.orderable_buy && !c.allow_buy && !c.override_source_restriction && c.price_source !== "manual" && !isMirrored && (
                 <p className="price-cards-admin__blocked-note">
                   ⚠ خرید توسط شما فعال شده اما چون منبع (goldbridge) خرید این آیتم را غیرمجاز اعلام کرده،
                   برای مشتری غیرفعال نمایش داده می‌شود.
                 </p>
               )}
-              {c.orderable_sell && !c.allow_sell && !c.override_source_restriction && c.price_source !== "manual" && (
+              {c.orderable_sell && !c.allow_sell && !c.override_source_restriction && c.price_source !== "manual" && !isMirrored && (
                 <p className="price-cards-admin__blocked-note">
                   ⚠ فروش توسط شما فعال شده اما چون منبع (goldbridge) فروش این آیتم را غیرمجاز اعلام کرده،
                   برای مشتری غیرفعال نمایش داده می‌شود.
                 </p>
               )}
 
-              <label className="price-cards-admin__toggle price-cards-admin__toggle--override">
-                <input
-                  type="checkbox"
-                  checked={c.override_source_restriction}
-                  disabled={busyId === c.goldbridge_item_id}
-                  onChange={() => toggleOverride(c)}
-                />
-                نادیده گرفتن محدودیت منبع (goldbridge) - تصمیم من نهایی باشد
-              </label>
-              {c.override_source_restriction && (
-                <p className="price-cards-admin__override-note">
-                  فعال است: حتی اگر منبع این آیتم را غیرمجاز اعلام کند، تنظیمات بالای شما ملاک است.
-                </p>
+              {!isMirrored && (
+                <>
+                  <label className="price-cards-admin__toggle price-cards-admin__toggle--override">
+                    <input
+                      type="checkbox"
+                      checked={c.override_source_restriction}
+                      disabled={busyId === c.goldbridge_item_id}
+                      onChange={() => toggleOverride(c)}
+                    />
+                    نادیده گرفتن محدودیت منبع (goldbridge) - تصمیم من نهایی باشد
+                  </label>
+                  {c.override_source_restriction && (
+                    <p className="price-cards-admin__override-note">
+                      فعال است: حتی اگر منبع این آیتم را غیرمجاز اعلام کند، تنظیمات بالای شما ملاک است.
+                    </p>
+                  )}
+
+                  <ManualPriceEditor
+                    card={c}
+                    busy={busyId === c.goldbridge_item_id}
+                    onSave={(payload) => saveManual(c, payload)}
+                  />
+                </>
               )}
 
-              <ManualPriceEditor
-                card={c}
-                busy={busyId === c.goldbridge_item_id}
-                onSave={(payload) => saveManual(c, payload)}
-              />
+              {isMirrored && (
+                <p className="price-cards-admin__manual-note">
+                  قیمت این کارت همیشه از آیتم id:{c.price_source_item_id || 1} گرفته می‌شود.
+                  کارمزد/اختلاف هر دسته‌بندی را پایین تنظیم کنید.
+                </p>
+              )}
 
               <RoleCommissionEditor
                 card={c}
@@ -420,7 +460,8 @@ export default function AdminPricesTab() {
               <span>id: {c.goldbridge_item_id}</span>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

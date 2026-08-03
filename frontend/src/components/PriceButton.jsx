@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 
 const LABELS = {
-  buy: { fa: "بخرید", eyebrow: "قیمت خرید" },
-  sell: { fa: "بفروشید", eyebrow: "قیمت فروش" },
+  buy: { fa: "بخرید", eyebrow: "قیمت خرید", unavailable: "نداریم" },
+  sell: { fa: "بفروشید", eyebrow: "قیمت فروش", unavailable: "نداریم" },
 };
 
 function formatToman(value) {
@@ -16,7 +16,9 @@ export default function PriceButton({ side, card, prevCard, onClick, disabled, p
   const key = side === "buy" ? "buy_price" : "sell_price";
   const gram18Key = side === "buy" ? "gram18_buy_price" : "gram18_sell_price";
   const isCoin = card?.unit === "count";
-  const gram18Only = !isCoin && priceLabelMode === "gram18_only";
+  const mode = card?.price_label_mode || priceLabelMode;
+  const gram18Only = !isCoin && mode === "gram18_only";
+  const mesghalOnly = !isCoin && mode === "mesghal17_only";
   // When gram18Only, گرم۱۸ IS the primary displayed price - مثقال۱۷ never
   // appears anywhere on this button for that user.
   const primaryKey = gram18Only ? gram18Key : key;
@@ -44,7 +46,7 @@ export default function PriceButton({ side, card, prevCard, onClick, disabled, p
         onClick={() => !clickDisabled && onClick(side)}
         disabled={clickDisabled}
       >
-        {meta.fa}
+        {sideOrderable ? meta.fa : meta.unavailable}
       </button>
 
       <span className="price-panel__value">
@@ -56,6 +58,8 @@ export default function PriceButton({ side, card, prevCard, onClick, disabled, p
         <span className="price-panel__unit-qualifier">به ازای هر عدد</span>
       ) : gram18Only ? (
         <span className="price-panel__unit-qualifier">بر اساس گرم ۱۸</span>
+      ) : mesghalOnly ? (
+        <span className="price-panel__unit-qualifier">بر اساس مثقال ۱۷</span>
       ) : (
         card?.[gram18Key] != null && (
           <span className="price-panel__unit-badge price-panel__unit-badge--gram18">
@@ -63,10 +67,6 @@ export default function PriceButton({ side, card, prevCard, onClick, disabled, p
             {formatToman(card[gram18Key])}
           </span>
         )
-      )}
-
-      {!sideOrderable && !disabled && (
-        <span className="price-panel__no-order-note">غیرفعال</span>
       )}
     </div>
   );

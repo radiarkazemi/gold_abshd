@@ -406,6 +406,13 @@ class PriceCard(Base):
     use_manual_price = Column(Boolean, default=False, nullable=False)
     manual_buy = Column(Float, nullable=True)   # مثقال۱۷ تومان
     manual_sell = Column(Float, nullable=True)  # مثقال۱۷ تومان
+    # Mirror another goldbridge item's live buy/sell (e.g. متفرقه / نقد کارتخوان → id 1).
+    # When set, resolve_effective_item copies prices from that source id.
+    price_source_item_id = Column(Integer, nullable=True)
+    # Optional per-card price display override for ALL users of this card.
+    # None = inherit the user's role price_label_mode.
+    # "mesghal_and_gram18" | "gram18_only" | "mesghal17_only"
+    price_label_mode = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
