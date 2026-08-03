@@ -1,5 +1,14 @@
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
-const WS_BASE = API_BASE.replace(/^http/, "ws");
+// Empty string = same-origin (production behind nginx /api proxy).
+// Local `.env` sets VITE_API_BASE=http://localhost:8000 for vite dev.
+const API_BASE =
+  import.meta.env.VITE_API_BASE !== undefined && import.meta.env.VITE_API_BASE !== null
+    ? String(import.meta.env.VITE_API_BASE).replace(/\/$/, "")
+    : import.meta.env.DEV
+      ? "http://localhost:8000"
+      : "";
+const WS_BASE = API_BASE
+  ? API_BASE.replace(/^http/, "ws")
+  : `${typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws"}://${typeof window !== "undefined" ? window.location.host : "localhost"}`;
 import { getDeviceId, getDeviceInfo } from "./utils/deviceId";
 import { decodePayload } from "./utils/payloadCodec";
 const TOKEN_KEY = "goldapp_token";
