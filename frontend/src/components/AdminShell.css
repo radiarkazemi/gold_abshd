@@ -132,6 +132,11 @@
   border-radius: 999px;
 }
 
+.admin-nav__badge--kyc {
+  background: #2f6fed;
+  color: #eef4ff;
+}
+
 .admin-shell__footer {
   border-top: 1px solid var(--hairline);
   padding-top: 14px;

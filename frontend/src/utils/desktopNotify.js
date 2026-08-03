@@ -116,6 +116,56 @@ export function notifyNewOrder(order) {
   }
 }
 
+/**
+ * OS notification for a new KYC verification request.
+ * Distinct title/tag from order notifications so admins can tell them apart.
+ */
+export function notifyNewKyc(user) {
+  if (!notificationsSupported()) return false;
+  if (Notification.permission !== "granted") return false;
+
+  const mobile = isMobileClient();
+  if (!mobile && typeof document !== "undefined" && !document.hidden) {
+    return false;
+  }
+
+  const name = user?.full_name || "مشتری";
+  const code = user?.user_code != null ? `#${user.user_code}` : "";
+  const phone = user?.phone_number ? `\n${user.phone_number}` : "";
+  const title = "درخواست احراز هویت — آبشده قصر طلا";
+  const body = `${name} ${code}`.trim() + phone;
+  const options = {
+    body,
+    dir: "rtl",
+    lang: "fa",
+    tag: user?.user_id ? `kyc-${user.user_id}` : "new-kyc",
+    renotify: true,
+    requireInteraction: false,
+    silent: false,
+    icon: icon192Url,
+    badge: icon192Url,
+    data: { userId: user?.user_id, type: "new_kyc" },
+  };
+
+  try {
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.ready
+        .then((reg) => reg.showNotification(title, options))
+        .catch(() => {
+          // eslint-disable-next-line no-new
+          new Notification(title, options);
+        });
+    } else {
+      // eslint-disable-next-line no-new
+      new Notification(title, options);
+    }
+    return true;
+  } catch (e) {
+    console.warn("KYC system notification failed:", e);
+    return false;
+  }
+}
+
 /** Register a tiny SW used to display notifications while backgrounded. */
 export async function registerNotifyServiceWorker() {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {

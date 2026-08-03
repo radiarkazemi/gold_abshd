@@ -50,6 +50,49 @@ def _unlink(path: str | None) -> None:
             pass
 
 
+def _compress_image_bytes(content: bytes) -> tuple[bytes, str]:
+    """Downscale + JPEG-compress photos so KYC uploads stay small on disk."""
+    try:
+        from io import BytesIO
+        from PIL import Image, ImageOps
+    except ImportError:
+        return content, ""
+
+    try:
+        im = Image.open(BytesIO(content))
+    except Exception:
+        return content, ""
+
+    try:
+        im = ImageOps.exif_transpose(im)
+    except Exception:
+        pass
+
+    if im.mode in ("RGBA", "P"):
+        background = Image.new("RGB", im.size, (255, 255, 255))
+        if im.mode == "P":
+            im = im.convert("RGBA")
+        background.paste(im, mask=im.split()[-1] if im.mode == "RGBA" else None)
+        im = background
+    elif im.mode != "RGB":
+        im = im.convert("RGB")
+
+    max_edge = 1600
+    w, h = im.size
+    longest = max(w, h)
+    if longest > max_edge:
+        scale = max_edge / float(longest)
+        im = im.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS)
+
+    out = BytesIO()
+    im.save(out, format="JPEG", quality=72, optimize=True, progressive=True)
+    compressed = out.getvalue()
+    # Keep original only if somehow smaller (rare)
+    if len(compressed) >= len(content) and content[:3] == b"\xff\xd8\xff":
+        return content, ".jpg"
+    return compressed, ".jpg"
+
+
 def _validate_and_store(user_id: str, slot: str, file: UploadFile, content: bytes) -> str:
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in settings.ALLOWED_RECEIPT_EXTENSIONS:
@@ -67,11 +110,24 @@ def _validate_and_store(user_id: str, slot: str, file: UploadFile, content: byte
             detail=f"حجم فایل نباید بیشتر از {settings.MAX_RECEIPT_SIZE_MB} مگابایت باشد",
         )
 
+    store_ext = ext
+    store_bytes = content
+    if ext in (".jpg", ".jpeg", ".png", ".webp"):
+        compressed, new_ext = _compress_image_bytes(content)
+        if new_ext:
+            store_bytes = compressed
+            store_ext = new_ext
+
+    # Hard cap after compression (~1.5MB per image)
+    hard_cap = 1_500_000
+    if store_ext != ".pdf" and len(store_bytes) > hard_cap:
+        raise HTTPException(status_code=400, detail="حجم تصویر پس از فشرده‌سازی هنوز زیاد است؛ لطفا عکس واضح‌تر و سبک‌تری بگیرید")
+
     os.makedirs(KYC_UPLOAD_DIR, exist_ok=True)
-    filename = f"{user_id}_{slot}_{uuid.uuid4().hex[:8]}{ext}"
+    filename = f"{user_id}_{slot}_{uuid.uuid4().hex[:8]}{store_ext}"
     filepath = os.path.join(KYC_UPLOAD_DIR, filename)
     with open(filepath, "wb") as f:
-        f.write(content)
+        f.write(store_bytes)
     return filepath
 
 

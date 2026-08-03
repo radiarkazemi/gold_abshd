@@ -15,6 +15,7 @@ from app.services.kyc import (
     review_kyc,
     status_payload,
 )
+from app.ws_manager import manager
 
 router = APIRouter(tags=["kyc"])
 
@@ -38,6 +39,18 @@ async def submit_my_kyc(
         "birth_cert": (birth_cert, await birth_cert.read()),
     }
     user = submit_kyc(db, current_user, files)
+    await manager.broadcast_to_admins(
+        {
+            "type": "new_kyc",
+            "user": {
+                "user_id": user.id,
+                "user_code": user.user_code,
+                "full_name": user.full_name,
+                "phone_number": user.phone_number,
+                "kyc_submitted_at": user.kyc_submitted_at.isoformat() if user.kyc_submitted_at else None,
+            },
+        }
+    )
     return KycStatusOut(**status_payload(user))
 
 

@@ -1354,6 +1354,256 @@
   animation: fadeIn 200ms ease;
 }
 
+.new-kyc-flash {
+  background: rgba(47, 111, 237, 0.16);
+  color: #7eb0ff;
+  border: 1px solid #2f6fed;
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 16px;
+  animation: fadeIn 200ms ease;
+}
+
+/* --- Admin KYC review --- */
+.admin-kyc {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.admin-kyc__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-kyc__count {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7eb0ff;
+  background: rgba(47, 111, 237, 0.14);
+  border: 1px solid rgba(47, 111, 237, 0.35);
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+.admin-kyc__list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.admin-kyc__card {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-kyc__card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.admin-kyc__identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-kyc__name {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.admin-kyc__phone {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-family: var(--font-display);
+}
+
+.admin-kyc__code {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gold-bright);
+  background: rgba(201, 162, 39, 0.12);
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.admin-kyc__meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.admin-kyc__docs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.admin-kyc__doc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+  min-height: 110px;
+}
+
+.admin-kyc__doc:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.admin-kyc__doc-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.admin-kyc__doc-thumb {
+  width: 100%;
+  height: 88px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #111;
+}
+
+.admin-kyc__doc-fallback {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--text-faint);
+  min-height: 72px;
+}
+
+.admin-kyc__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-kyc__btn {
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.admin-kyc__btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.admin-kyc__btn--approve {
+  background: rgba(76, 154, 114, 0.2);
+  color: var(--buy-bright);
+  border: 1px solid var(--buy);
+}
+
+.admin-kyc__btn--reject {
+  background: rgba(207, 100, 70, 0.16);
+  color: var(--sell-bright);
+  border: 1px solid var(--sell);
+}
+
+.admin-kyc__btn--ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--hairline);
+}
+
+.admin-kyc__reject-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.admin-kyc__reject-box input {
+  flex: 1 1 180px;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.admin-kyc__lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.admin-kyc__lightbox-inner {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  max-width: min(920px, 96vw);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+}
+
+.admin-kyc__lightbox-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.admin-kyc__lightbox-inner img {
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #0a0a0a;
+}
+
+@media (max-width: 640px) {
+  .admin-kyc__docs {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-kyc__doc-thumb {
+    height: 140px;
+  }
+}
+
 /* --- Order totals summary bar --- */
 .order-totals {
   display: grid;
