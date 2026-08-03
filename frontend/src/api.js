@@ -6,7 +6,7 @@ export const API_BASE =
     : import.meta.env.DEV
       ? "http://localhost:8000"
       : "";
-const WS_BASE = API_BASE
+export const WS_BASE = API_BASE
   ? API_BASE.replace(/^http/, "ws")
   : `${typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws"}://${typeof window !== "undefined" ? window.location.host : "localhost"}`;
 
@@ -984,5 +984,3 @@ export function openPriceSocket(onPrice, onEvent) {
   };
   return ws;
 }
-
-export { API_BASE, WS_BASE };
