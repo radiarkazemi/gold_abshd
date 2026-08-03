@@ -226,6 +226,12 @@ def _patch_price_cards_table():
             "ALTER TABLE price_cards ADD COLUMN IF NOT EXISTS manual_sell DOUBLE PRECISION"
         ))
         conn.execute(text(
+            "ALTER TABLE price_cards ADD COLUMN IF NOT EXISTS price_source_item_id INTEGER"
+        ))
+        conn.execute(text(
+            "ALTER TABLE price_cards ADD COLUMN IF NOT EXISTS price_label_mode VARCHAR"
+        ))
+        conn.execute(text(
             "ALTER TABLE price_card_commissions ADD COLUMN IF NOT EXISTS can_order BOOLEAN NOT NULL DEFAULT true"
         ))
         # Carry over whatever the old single-flag value was, if that

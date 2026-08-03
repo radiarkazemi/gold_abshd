@@ -136,6 +136,8 @@ async def startup_event():
     db = SessionLocal()
     try:
         ensure_super_admin_seeded(db)
+        from app.services.price_cards import ensure_special_mirrored_cards
+        ensure_special_mirrored_cards(db)
     finally:
         db.close()
 
