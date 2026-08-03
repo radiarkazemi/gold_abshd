@@ -46,7 +46,7 @@ from app.models_db import (
     TransactionReasonEnum,
 )
 from app.config import settings
-from app.gold_conversion import mesghal17_to_gram18
+from app.gold_conversion import mesghal17_to_gram18, motaferaghe_to_gram18
 from app.schemas.order import OrderOut
 from app.services.order_limits import get_effective_limits
 from app.services import price_cards
@@ -54,6 +54,34 @@ from app.services import price_cards
 
 def _new_pending_deadline() -> datetime:
     return datetime.utcnow() + timedelta(seconds=settings.ORDER_PENDING_SECONDS)
+
+
+def _price_gold_order(
+    raw_item: dict,
+    side: str,
+    goldbridge_item_id: int,
+    commission_type: str,
+    commission_value: float,
+    user: User,
+) -> tuple[float, float, float]:
+    """Return (mesghal17_raw, mesghal17_final, price_at_submit_gram18_or_coin).
+
+    متفرقه بفروشید: base = id:1 buy, final_mesghal = base + commission,
+    gram18 = final_mesghal / 4.39.
+    """
+    if price_cards.is_motaferaghe_card(goldbridge_item_id):
+        # Always price from the mirrored BUY quote (sell side of this card).
+        raw = float(raw_item["buy"])
+        commission = commission_amount(raw, commission_type, commission_value)
+        # Special: commission is ADDED even for بفروشید.
+        final_mesghal = raw + commission
+        return raw, final_mesghal, motaferaghe_to_gram18(final_mesghal)
+
+    raw = float(raw_item["buy"] if side == "buy" else raw_item["sell"])
+    final_mesghal = apply_pricing_formula(
+        raw_item["buy"], raw_item["sell"], side, user, commission_type, commission_value
+    )
+    return raw, final_mesghal, mesghal17_to_gram18(final_mesghal)
 
 
 def enrich_order_out(order: Order, extra: dict | None = None) -> OrderOut:
@@ -174,11 +202,9 @@ def create_order(db: Session, user: User, side: str, amount_type: str, value: fl
         if amount_type == "count":
             raise HTTPException(status_code=400, detail="این کارت بر اساس وزن یا مبلغ سفارش داده می‌شود، نه تعداد")
 
-        mesghal17_raw_price = raw_item["buy"] if side == "buy" else raw_item["sell"]
-        mesghal17_price = apply_pricing_formula(
-            raw_item["buy"], raw_item["sell"], side, user, commission_type, commission_value
+        mesghal17_raw_price, mesghal17_price, price_at_submit = _price_gold_order(
+            raw_item, side, goldbridge_item_id, commission_type, commission_value, user
         )
-        price_at_submit = mesghal17_to_gram18(mesghal17_price)
         final_price = mesghal17_price
 
         limits = get_effective_limits(db, user)
@@ -476,14 +502,16 @@ def resubmit_order_at_new_price(db: Session, order_id: str, user: User) -> Order
     commission_type, commission_value = price_cards.resolve_commission_for_user(
         db, user, order.goldbridge_item_id
     )
-    mesghal17_raw_price = raw_item["buy"] if side == "buy" else raw_item["sell"]
-    final_price = apply_pricing_formula(
-        raw_item["buy"], raw_item["sell"], side, user, commission_type, commission_value
-    )
     if is_coin:
+        mesghal17_raw_price = raw_item["buy"] if side == "buy" else raw_item["sell"]
+        final_price = apply_pricing_formula(
+            raw_item["buy"], raw_item["sell"], side, user, commission_type, commission_value
+        )
         price_at_submit = final_price
     else:
-        price_at_submit = mesghal17_to_gram18(final_price)
+        mesghal17_raw_price, final_price, price_at_submit = _price_gold_order(
+            raw_item, side, order.goldbridge_item_id, commission_type, commission_value, user
+        )
 
     order.price_at_submit = price_at_submit
     order.mesghal17_price_at_submit = final_price
