@@ -11,7 +11,7 @@ export default function SideMenu({ userPhone, onLogout }) {
   const items = [
     { label: "خانه", to: "/" },
     { label: "سفارش‌های من", to: "/my-orders" },
-    { label: "مانده حساب", to: "/balance" },
+    // { label: "مانده حساب", to: "/balance" }, // temporarily hidden from client
     { label: "احراز هویت", to: "/kyc" },
     { label: "ارسال فیش واریز", to: "/upload-receipt" },
     { label: "ثبت حواله", to: "/register-transfer" },

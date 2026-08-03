@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatTehranDateTime, tehranDayKey, tehranThisWeekExcludingToday, tehranTodayKey } from "../utils/tehranTime";
-import { fetchMyOrders, fetchMyBalance, fetchReceiptBlobUrl, uploadReceipt, cancelMyOrder, fetchOrderLimits } from "../api";
+import { fetchMyOrders, fetchReceiptBlobUrl, uploadReceipt, cancelMyOrder, fetchOrderLimits } from "../api";
 import {
   downloadOrderReceipt,
   downloadOrdersReceipt,
   buildOrderReceiptHtml,
   buildOrdersReceiptHtml,
 } from "../utils/printReceipt";
-import { formatCashStatus, formatGoldStatus } from "../utils/balanceFormat";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import BottomTabBar from "../components/BottomTabBar";
@@ -25,7 +24,6 @@ const STATUS_LABEL = {
 
 const FILTERS = [
   { key: null, label: "همه" },
-  { key: "pending", label: "در انتظار" },
   { key: "accepted", label: "تایید شده" },
   { key: "rejected", label: "رد شده" },
 ];
@@ -57,7 +55,6 @@ export default function MyOrdersPage() {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [orders, setOrders] = useState([]);
-  const [balance, setBalance] = useState(null);
   const [filter, setFilter] = useState(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -67,11 +64,8 @@ export default function MyOrdersPage() {
   const [preview, setPreview] = useState(null);
 
   function reload() {
-    Promise.all([fetchMyOrders(), fetchMyBalance()])
-      .then(([o, b]) => {
-        setOrders(o);
-        setBalance(b);
-      })
+    fetchMyOrders()
+      .then(setOrders)
       .catch(console.error)
       .finally(() => setLoading(false));
   }
@@ -87,6 +81,8 @@ export default function MyOrdersPage() {
   }, []);
 
   const visible = orders.filter((o) => {
+    // Pending countdown orders are not listed for clients (timer removes them).
+    if (o.status === "pending") return false;
     if (filter && o.status !== filter) return false;
     const day = tehranDayKey(o.created_at);
     if (!day) return false;
@@ -164,44 +160,6 @@ export default function MyOrdersPage() {
           {theme === "dark" ? "☀" : "☾"}
         </button>
       </header>
-
-      <div className="balance-card">
-        <div className="balance-card__item">
-          <span className="balance-card__label">موجودی طلا</span>
-          {balance ? (
-            (() => {
-              const gStatus = formatGoldStatus(balance.gold_balance);
-              return (
-                <span className={`balance-card__value cash-status ${gStatus.className}`}>
-                  {gStatus.amount}
-                  <span className="balance-card__unit"> گرم ۱۸</span>
-                  {gStatus.label && <span className="cash-status__label">{gStatus.label}</span>}
-                </span>
-              );
-            })()
-          ) : (
-            <span className="balance-card__value">—</span>
-          )}
-        </div>
-        <div className="balance-card__divider" />
-        <div className="balance-card__item">
-          <span className="balance-card__label">وضعیت نقدی</span>
-          {balance ? (
-            (() => {
-              const status = formatCashStatus(balance.cash_balance);
-              return (
-                <span className={`balance-card__value cash-status ${status.className}`}>
-                  {status.amount}
-                  <span className="balance-card__unit"> تومان</span>
-                  <span className="cash-status__label">{status.label}</span>
-                </span>
-              );
-            })()
-          ) : (
-            <span className="balance-card__value">—</span>
-          )}
-        </div>
-      </div>
 
       <div className="myorders__filters">
         {FILTERS.map((f) => (

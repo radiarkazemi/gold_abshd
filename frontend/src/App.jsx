@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import TraderPage from "./pages/TraderPage";
@@ -12,6 +12,7 @@ import RegisterTransferPage from "./pages/RegisterTransferPage";
 import TermsPage from "./pages/TermsPage";
 import AboutPage from "./pages/AboutPage";
 import NoticeModal from "./components/NoticeModal";
+import UpdatePrompt from "./components/UpdatePrompt";
 import "./components/PriceButton.css";
 import "./components/OrderModal.css";
 import "./components/SideMenu.css";
@@ -22,6 +23,7 @@ import "./components/JalaliDateInput.css";
 import "./components/RefreshBar.css";
 import "./components/BottomTabBar.css";
 import "./components/BalanceStrip.css";
+import "./components/UpdatePrompt.css";
 import "./pages/AdminPage.css";
 import "./components/AdminShell.css";
 import "./pages/LoginPage.css";
@@ -33,12 +35,16 @@ import "./App.css";
 // protected by real username/password login, not just URL obscurity.
 const ADMIN_PATH = "/admin-hs-panel";
 
+// Temporarily hide client حساب page (BalancePage code kept for later).
+const CLIENT_BALANCE_VISIBLE = false;
+
 function Protected({ children }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="app-loading">در حال بارگذاری…</div>;
   if (!user) return <LoginPage />;
   return (
     <>
+      <UpdatePrompt />
       <NoticeModal />
       {children}
     </>
@@ -53,7 +59,16 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Protected><TraderPage /></Protected>} />
             <Route path="/my-orders" element={<Protected><MyOrdersPage /></Protected>} />
-            <Route path="/balance" element={<Protected><BalancePage /></Protected>} />
+            <Route
+              path="/balance"
+              element={
+                CLIENT_BALANCE_VISIBLE ? (
+                  <Protected><BalancePage /></Protected>
+                ) : (
+                  <Protected><Navigate to="/" replace /></Protected>
+                )
+              }
+            />
             <Route path="/kyc" element={<Protected><KycPage /></Protected>} />
             <Route path="/upload-receipt" element={<Protected><UploadReceiptPage /></Protected>} />
             <Route path="/register-transfer" element={<Protected><RegisterTransferPage /></Protected>} />

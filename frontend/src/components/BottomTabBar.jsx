@@ -29,6 +29,7 @@ function OrdersIcon() {
 }
 
 function BalanceIcon() {
+  // Kept for when client «حساب» tab is re-enabled.
   return (
     <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <rect x="3" y="6" width="18" height="13" rx="2" />
@@ -37,6 +38,7 @@ function BalanceIcon() {
     </svg>
   );
 }
+void BalanceIcon;
 
 function MoreIcon() {
   return (
@@ -57,12 +59,12 @@ export default function BottomTabBar({ userPhone, onLogout }) {
   const tabs = [
     { label: "خانه", to: "/", icon: HomeIcon },
     { label: "سفارش‌ها", to: "/my-orders", icon: OrdersIcon },
-    { label: "حساب", to: "/balance", icon: BalanceIcon },
+    // حساب tab temporarily hidden — BalancePage kept in codebase.
   ];
 
   return (
     <>
-      <nav className="bottom-tab-bar">
+      <nav className="bottom-tab-bar bottom-tab-bar--three">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const active = location.pathname === tab.to;

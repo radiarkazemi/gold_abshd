@@ -3,9 +3,10 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.jsx";
 import { APP_BUILD_V, BRAND_V } from "./brandAssets.js";
+import { signalAppUpdateAvailable } from "./components/UpdatePrompt.jsx";
 
-// Register SW with the deploy build id so every code release triggers
-// an update + reload (brand-only stamps were not enough).
+// Register SW with the deploy build id so every code release can be detected.
+// Do NOT auto-reload — show an in-app update prompt instead (keeps login).
 if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
   const swUrl = `/sw-notify.js?v=${APP_BUILD_V || BRAND_V}`;
   const ready = navigator.serviceWorker.register(swUrl, { scope: "/" }).catch(() => null);
@@ -14,17 +15,19 @@ if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
     const ping = () => reg.update().catch(() => {});
     ping();
     setInterval(ping, 5 * 60 * 1000);
-  });
-  let refreshing = false;
-  navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (refreshing) return;
-    refreshing = true;
-    window.location.reload();
+    reg.addEventListener("updatefound", () => {
+      const installing = reg.installing;
+      if (!installing) return;
+      installing.addEventListener("statechange", () => {
+        if (installing.state === "installed" && navigator.serviceWorker.controller) {
+          signalAppUpdateAvailable();
+        }
+      });
+    });
   });
 }
 
-// Poll version.json so open tabs pick up deploys even when SW is idle
-// or index.html was briefly cached by a proxy.
+// Poll version.json so open tabs learn about deploys even when SW is idle.
 if (typeof window !== "undefined") {
   const knownBuild = APP_BUILD_V;
   let checking = false;
@@ -36,7 +39,7 @@ if (typeof window !== "undefined") {
       if (!res.ok) return;
       const data = await res.json();
       if (data?.build && data.build !== knownBuild) {
-        window.location.reload();
+        signalAppUpdateAvailable();
       }
     } catch {
       // offline / transient — ignore
