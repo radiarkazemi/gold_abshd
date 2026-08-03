@@ -115,7 +115,8 @@ class ExpertDeskOut(BaseModel):
     totals: ExpertDeskTotals
     dealers: list[TehranDealerOut]
     hedges: list[ExpertHedgeOut]
-    session_hours: int = 36
+    session_day: Optional[str] = None  # Tehran YYYY-MM-DD for مانده
+    session_hours: Optional[int] = None  # legacy; desk is calendar-day based now
 
 
 class ExpertDayReportOut(BaseModel):

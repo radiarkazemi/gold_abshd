@@ -2,14 +2,16 @@
 Expert desk: live open-order board + Tehran melted-gold dealer hedges.
 
 Buy/sell cards (گرم۱۸) show PENDING (waiting) orders only.
-مانده برای تهران nets the running desk session:
-  - PENDING + ACCEPTED in the session window (rejected never count)
+مانده برای تهران nets the Tehran calendar day (Asia/Tehran midnight):
+  - PENDING (live countdown) + ACCEPTED today (rejected never count)
   - Customer BUY  → cover by buying from Tehran
   - Customer SELL → cover by selling to Tehran
   - Accepting a buy still offsets a pending sell (e.g. 20 accepted buy +
     30 pending sell → 10g مانده فروش به تهران)
   - When nothing is left open and Tehran hedges cover the remainder, all
     cards read 0.
+  - Yesterday's accepted weight does NOT carry into today's مانده after
+    Tehran midnight (use گزارش روزهای قبل for prior days).
 """
 from datetime import datetime, timedelta, date, timezone
 from zoneinfo import ZoneInfo
@@ -32,8 +34,6 @@ from app.services.orders import (
     order_customer_fields,
 )
 
-# How far back accepted orders stay on the expert desk balance.
-SESSION_HOURS = 36
 TEHRAN_TZ = ZoneInfo("Asia/Tehran")
 
 
@@ -96,8 +96,10 @@ def update_dealer(
     return row
 
 
-def _session_since() -> datetime:
-    return datetime.utcnow() - timedelta(hours=SESSION_HOURS)
+def _tehran_today_bounds_utc_naive() -> tuple[datetime, datetime]:
+    """Inclusive start / exclusive end of Tehran *today*, as naive UTC."""
+    local_today = datetime.now(TEHRAN_TZ).date()
+    return _tehran_day_bounds_utc_naive(local_today)
 
 
 def _pending_orders(db: Session) -> list[Order]:
@@ -115,28 +117,30 @@ def _pending_orders(db: Session) -> list[Order]:
     )
 
 
-def _accepted_session_orders(db: Session) -> list[Order]:
-    """Accepted orders that still belong to the running desk session."""
-    since = _session_since()
+def _accepted_today_orders(db: Session) -> list[Order]:
+    """Accepted orders whose accept time falls on Tehran today."""
+    start, end = _tehran_today_bounds_utc_naive()
     return (
         db.query(Order)
         .filter(
             Order.status == OrderStatusEnum.accepted,
-            Order.updated_at >= since,
+            Order.updated_at >= start,
+            Order.updated_at < end,
         )
         .order_by(Order.updated_at.desc())
         .all()
     )
 
 
-def _hedges_since(db: Session, since: datetime) -> list[ExpertHedge]:
+def _hedges_today(db: Session) -> list[ExpertHedge]:
+    start, end = _tehran_today_bounds_utc_naive()
     return (
         db.query(ExpertHedge)
         .options(
             joinedload(ExpertHedge.dealer),
             joinedload(ExpertHedge.order).joinedload(Order.user),
         )
-        .filter(ExpertHedge.created_at >= since)
+        .filter(ExpertHedge.created_at >= start, ExpertHedge.created_at < end)
         .order_by(ExpertHedge.created_at.desc())
         .all()
     )
@@ -209,7 +213,7 @@ def _side_bucket(orders: list[dict]) -> dict:
 def get_desk(db: Session) -> dict:
     hedge_cache: dict[str, float] = {}
     pending = [_enrich_order(db, o, hedge_cache) for o in _pending_orders(db)]
-    accepted = [_enrich_order(db, o, hedge_cache) for o in _accepted_session_orders(db)]
+    accepted = [_enrich_order(db, o, hedge_cache) for o in _accepted_today_orders(db)]
 
     pending_buy = [o for o in pending if o.get("side") == "buy"]
     pending_sell = [o for o in pending if o.get("side") == "sell"]
@@ -220,14 +224,13 @@ def get_desk(db: Session) -> dict:
     pending_buy_bucket = _side_bucket(pending_buy)
     pending_sell_bucket = _side_bucket(pending_sell)
 
-    # Tehran remainder: pending + accepted in session still net against each other.
+    # Tehran remainder: pending + accepted *today* still net against each other.
     desk_buy = pending_buy + accepted_buy
     desk_sell = pending_sell + accepted_sell
     desk_buy_bucket = _side_bucket(desk_buy)
     desk_sell_bucket = _side_bucket(desk_sell)
 
-    since = _session_since()
-    hedges = _hedges_since(db, since)
+    hedges = _hedges_today(db)
     free_buy = sum(
         float(h.weight_gram18)
         for h in hedges
@@ -311,7 +314,7 @@ def get_desk(db: Session) -> dict:
         },
         "dealers": list_dealers(db, active_only=False),
         "hedges": [_hedge_out(db, h) for h in hedges],
-        "session_hours": SESSION_HOURS,
+        "session_day": datetime.now(TEHRAN_TZ).date().isoformat(),
     }
 
 

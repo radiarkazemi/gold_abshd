@@ -74,6 +74,15 @@
   background: var(--hairline);
 }
 
+.recent-orders__summary-row--day-totals {
+  cursor: default;
+  background: var(--surface-raised);
+}
+
+.recent-orders__summary-row--day-totals .recent-orders__summary-value {
+  font-size: 14px;
+}
+
 .recent-orders__row {
   display: grid;
   grid-template-columns: 1fr 1.3fr 1.5fr 1fr;

@@ -11,7 +11,12 @@ export default function ReceiptPreviewModal({ title = "مشاهده رسید", h
       if (e.key === "Escape") onClose?.();
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
   }, [onClose]);
 
   if (!html) return null;
@@ -27,18 +32,18 @@ export default function ReceiptPreviewModal({ title = "مشاهده رسید", h
       >
         <div className="receipt-preview-sheet__top">
           <h2 className="receipt-preview-sheet__title">{title}</h2>
-          <div className="receipt-preview-sheet__actions">
-            {onDownload && (
-              <button type="button" className="receipt-preview-sheet__btn" onClick={onDownload}>
-                دانلود PDF
-              </button>
-            )}
-            <button type="button" className="receipt-preview-sheet__btn receipt-preview-sheet__btn--ghost" onClick={onClose}>
-              بستن
-            </button>
-          </div>
         </div>
         <iframe className="receipt-preview-sheet__frame" title={title} srcDoc={html} />
+        <div className="receipt-preview-sheet__footer">
+          {onDownload && (
+            <button type="button" className="receipt-preview-sheet__btn" onClick={onDownload}>
+              دانلود PDF
+            </button>
+          )}
+          <button type="button" className="receipt-preview-sheet__btn receipt-preview-sheet__btn--ghost" onClick={onClose}>
+            بستن
+          </button>
+        </div>
       </div>
     </div>
   );

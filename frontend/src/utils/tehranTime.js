@@ -65,3 +65,31 @@ export function tehranTodayKey() {
 export function tehranYesterdayKey() {
   return tehranDayKey(new Date(Date.now() - 24 * 60 * 60 * 1000));
 }
+
+/** Add calendar days to a Gregorian YYYY-MM-DD key (Tehran date arithmetic). */
+export function tehranAddDays(dayKey, delta) {
+  if (!dayKey) return null;
+  const [y, m, d] = dayKey.split("-").map(Number);
+  // Noon UTC avoids DST edge cases when shifting calendar days.
+  const utc = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  utc.setUTCDate(utc.getUTCDate() + delta);
+  return utc.toISOString().slice(0, 10);
+}
+
+/**
+ * Saturday-start week range in Tehran, excluding today.
+ * Returns { from, to } as YYYY-MM-DD (to = yesterday).
+ * If today is Saturday, from may be after to (empty selection).
+ */
+export function tehranThisWeekExcludingToday() {
+  const today = tehranTodayKey();
+  const yesterday = tehranYesterdayKey();
+  // weekday short in Tehran: Sat is start of Iranian business week
+  const weekday = new Date().toLocaleDateString("en-US", {
+    timeZone: TEHRAN_TZ,
+    weekday: "short",
+  });
+  const offsetFromSaturday = { Sat: 0, Sun: 1, Mon: 2, Tue: 3, Wed: 4, Thu: 5, Fri: 6 }[weekday] ?? 0;
+  const weekStart = tehranAddDays(today, -offsetFromSaturday);
+  return { from: weekStart, to: yesterday };
+}
