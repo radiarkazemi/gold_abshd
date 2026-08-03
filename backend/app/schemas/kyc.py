@@ -18,7 +18,9 @@ class KycPendingOut(BaseModel):
     user_code: str
     full_name: str | None = None
     phone_number: str
+    kyc_status: str = "pending"  # pending | approved
     kyc_submitted_at: datetime | None = None
+    kyc_reviewed_at: datetime | None = None
     has_id_front: bool = False
     has_id_back: bool = False
     has_birth_cert: bool = False

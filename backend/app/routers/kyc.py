@@ -56,13 +56,16 @@ async def submit_my_kyc(
 
 @router.get("/api/admin/kyc/pending", response_model=list[KycPendingOut])
 async def get_pending_kyc(db: Session = Depends(get_db), _admin=Depends(require_permission("kyc"))):
+    """List pending + approved KYC (approved kept so admins can revoke)."""
     return [
         KycPendingOut(
             user_id=u.id,
             user_code=u.user_code,
             full_name=u.full_name,
             phone_number=u.phone_number,
+            kyc_status=u.kyc_status or "pending",
             kyc_submitted_at=u.kyc_submitted_at,
+            kyc_reviewed_at=u.kyc_reviewed_at,
             has_id_front=bool(u.kyc_id_front_path or u.kyc_document_path),
             has_id_back=bool(u.kyc_id_back_path),
             has_birth_cert=bool(u.kyc_birth_cert_path),
