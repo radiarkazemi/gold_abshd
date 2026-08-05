@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from datetime import datetime, time
 
 from app.db import get_db
 from app.admin_auth import require_permission
@@ -7,11 +8,15 @@ from app.models_db import Order, BalanceTransaction, User
 from app.schemas.admin import (
     UserSummaryOut, UserDetailOut, TransactionOut, BalanceAdjustIn, BlockUserIn,
     TradingBanUserIn, AdminCreateUserIn, AdminCreateUserOut, AdminUpdateUserIn,
-    TermsAcceptanceSummaryOut,
+    TermsAcceptanceSummaryOut, TermsAcceptancesReportOut,
 )
 from app.services.registration import create_user_with_key, delete_user
 from app.services.devices import list_user_devices, revoke_user_device, count_user_devices
-from app.services.terms import list_user_terms_acceptances, acceptance_to_dict
+from app.services.terms import (
+    list_user_terms_acceptances,
+    acceptance_to_dict,
+    count_user_terms_acceptances,
+)
 from app.services.orders import (
     get_user_balance,
     get_user_or_404,
@@ -112,12 +117,50 @@ async def get_user_detail(user_id: str, db: Session = Depends(get_db), _admin=De
         max_devices=user.max_devices or 1,
         devices=list_user_devices(db, user),
         registration_key=user.registration_key,
-        terms_acceptances=[
-            TermsAcceptanceSummaryOut(**acceptance_to_dict(row))
-            for row in list_user_terms_acceptances(db, user_id)
-        ],
+        terms_acceptance_count=count_user_terms_acceptances(db, user_id),
         orders=orders,
         transactions=transactions,
+    )
+
+
+@router.get("/{user_id}/terms-acceptances", response_model=TermsAcceptancesReportOut)
+async def get_user_terms_acceptances(
+    user_id: str,
+    date_from: str | None = Query(None, description="YYYY-MM-DD"),
+    date_to: str | None = Query(None, description="YYYY-MM-DD"),
+    sort: str = Query("desc", pattern="^(asc|desc)$"),
+    limit: int = Query(500, ge=1, le=2000),
+    db: Session = Depends(get_db),
+    _admin=Depends(require_permission("users")),
+):
+    user = get_user_or_404(db, user_id)
+
+    from_dt = None
+    to_dt = None
+    if date_from:
+        from_dt = datetime.strptime(date_from, "%Y-%m-%d")
+    if date_to:
+        to_dt = datetime.combine(datetime.strptime(date_to, "%Y-%m-%d").date(), time(23, 59, 59))
+
+    rows = list_user_terms_acceptances(
+        db,
+        user_id,
+        limit=limit,
+        date_from=from_dt,
+        date_to=to_dt,
+        sort=sort,
+    )
+    items = [TermsAcceptanceSummaryOut(**acceptance_to_dict(row)) for row in rows]
+    return TermsAcceptancesReportOut(
+        user_id=user.id,
+        user_code=user.user_code,
+        phone_number=user.phone_number,
+        full_name=user.full_name,
+        total=len(items),
+        sort=sort,
+        date_from=date_from,
+        date_to=date_to,
+        items=items,
     )
 
 

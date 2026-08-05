@@ -713,6 +713,21 @@ export async function fetchAdminUserDetail(userId) {
   return res.json();
 }
 
+export async function fetchUserTermsAcceptances(userId, { dateFrom, dateTo, sort = "desc" } = {}) {
+  const url = apiUrl(`/api/admin/users/${userId}/terms-acceptances`);
+  if (dateFrom) url.searchParams.set("date_from", dateFrom);
+  if (dateTo) url.searchParams.set("date_to", dateTo);
+  if (sort) url.searchParams.set("sort", sort);
+  const res = await fetch(url.toString(), {
+    headers: { ...adminAuthHeaders() },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to fetch terms signatures");
+  }
+  return res.json();
+}
+
 export async function adjustUserBalance(userId, { goldChange, cashChange, note }) {
   const res = await fetch(`${API_BASE}/api/admin/users/${userId}/adjust-balance`, {
     method: "POST",

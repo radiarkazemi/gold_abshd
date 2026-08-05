@@ -169,14 +169,29 @@ def record_terms_acceptance(
     return row
 
 
-def list_user_terms_acceptances(db: Session, user_id: str, limit: int = 50) -> list[TermsAcceptance]:
-    return (
-        db.query(TermsAcceptance)
-        .filter(TermsAcceptance.user_id == user_id)
-        .order_by(TermsAcceptance.accepted_at.desc())
-        .limit(limit)
-        .all()
-    )
+def list_user_terms_acceptances(
+    db: Session,
+    user_id: str,
+    *,
+    limit: int = 500,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    sort: str = "desc",
+) -> list[TermsAcceptance]:
+    q = db.query(TermsAcceptance).filter(TermsAcceptance.user_id == user_id)
+    if date_from is not None:
+        q = q.filter(TermsAcceptance.accepted_at >= date_from)
+    if date_to is not None:
+        q = q.filter(TermsAcceptance.accepted_at <= date_to)
+    if (sort or "").lower() == "asc":
+        q = q.order_by(TermsAcceptance.accepted_at.asc())
+    else:
+        q = q.order_by(TermsAcceptance.accepted_at.desc())
+    return q.limit(limit).all()
+
+
+def count_user_terms_acceptances(db: Session, user_id: str) -> int:
+    return db.query(TermsAcceptance).filter(TermsAcceptance.user_id == user_id).count()
 
 
 def acceptance_to_dict(row: TermsAcceptance) -> dict[str, Any]:

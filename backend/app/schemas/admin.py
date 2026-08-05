@@ -147,6 +147,18 @@ class TermsAcceptanceSummaryOut(BaseModel):
     accepted_at_client: Optional[datetime] = None
 
 
+class TermsAcceptancesReportOut(BaseModel):
+    user_id: str
+    user_code: str
+    phone_number: str
+    full_name: Optional[str] = None
+    total: int
+    sort: str = "desc"
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    items: list[TermsAcceptanceSummaryOut] = []
+
+
 class UserDetailOut(BaseModel):
     id: str
     user_code: str
@@ -166,7 +178,7 @@ class UserDetailOut(BaseModel):
     max_devices: int = 1
     devices: list[UserDeviceOut] = []
     registration_key: Optional[RegistrationKeyOut] = None
-    terms_acceptances: list[TermsAcceptanceSummaryOut] = []
+    terms_acceptance_count: int = 0
     orders: list[OrderOut]
     transactions: list[TransactionOut]
 
