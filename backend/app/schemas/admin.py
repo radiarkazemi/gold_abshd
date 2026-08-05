@@ -134,6 +134,19 @@ class UserDeviceOut(BaseModel):
         from_attributes = True
 
 
+class TermsAcceptanceSummaryOut(BaseModel):
+    id: str
+    terms_version: str
+    terms_content_hash: str
+    device_id: str
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    fingerprint: dict = {}
+    signature_hash: str
+    accepted_at: datetime
+    accepted_at_client: Optional[datetime] = None
+
+
 class UserDetailOut(BaseModel):
     id: str
     user_code: str
@@ -153,6 +166,7 @@ class UserDetailOut(BaseModel):
     max_devices: int = 1
     devices: list[UserDeviceOut] = []
     registration_key: Optional[RegistrationKeyOut] = None
+    terms_acceptances: list[TermsAcceptanceSummaryOut] = []
     orders: list[OrderOut]
     transactions: list[TransactionOut]
 

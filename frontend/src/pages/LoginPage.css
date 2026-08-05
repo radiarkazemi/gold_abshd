@@ -128,3 +128,34 @@
   font-family: var(--font-display);
   text-transform: uppercase;
 }
+
+.login__terms {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: right;
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.login__terms input {
+  margin-top: 4px;
+  flex-shrink: 0;
+  accent-color: var(--gold-dim);
+  width: 16px;
+  height: 16px;
+}
+
+.login__terms-link {
+  background: none;
+  border: none;
+  color: var(--gold-bright);
+  font-size: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}

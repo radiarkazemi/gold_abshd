@@ -365,6 +365,37 @@ function UserDetail({ userId, onClose, onChanged }) {
               )}
             </div>
 
+            <div className="reg-key-box">
+              <h3 className="adjust-form__title">
+                امضاهای دیجیتال قوانین ({(detail.terms_acceptances || []).length})
+              </h3>
+              {(detail.terms_acceptances || []).length === 0 ? (
+                <p className="myorders__empty">هنوز پذیرشی ثبت نشده</p>
+              ) : (
+                <div className="device-list">
+                  {(detail.terms_acceptances || []).map((a) => (
+                    <div key={a.id} className="device-row">
+                      <div className="device-row__info">
+                        <span className="device-row__ua">
+                          نسخه {a.terms_version} — {a.ip_address || "IP نامشخص"}
+                        </span>
+                        <span className="reg-key-box__meta">
+                          {formatDate(a.accepted_at)}
+                          {a.device_id ? ` — دستگاه: ${String(a.device_id).slice(0, 8)}…` : ""}
+                        </span>
+                        <span className="reg-key-box__meta" dir="ltr" style={{ wordBreak: "break-all" }}>
+                          hash: {a.signature_hash}
+                        </span>
+                        {a.user_agent && (
+                          <span className="reg-key-box__meta">{a.user_agent}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <form className="adjust-form" onSubmit={handleAdjust}>
               <h3 className="adjust-form__title">تنظیم دستی موجودی</h3>
               <div className="adjust-form__row">
