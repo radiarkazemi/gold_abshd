@@ -20,7 +20,7 @@ function stripToRaw(display) {
 // while the user types, but reports back a clean numeric string via
 // onChange - a native <input type="number"> can't show separators at
 // all, so this swaps to type="text" with digit-only input handling.
-export default function FormattedNumberInput({ value, onChange, className, placeholder, autoFocus, required }) {
+export default function FormattedNumberInput({ value, onChange, className, placeholder, autoFocus, required, disabled }) {
   const [display, setDisplay] = useState(formatDisplay(value));
 
   useEffect(() => {
@@ -43,6 +43,7 @@ export default function FormattedNumberInput({ value, onChange, className, place
       placeholder={placeholder}
       autoFocus={autoFocus}
       required={required}
+      disabled={disabled}
       dir="ltr"
     />
   );

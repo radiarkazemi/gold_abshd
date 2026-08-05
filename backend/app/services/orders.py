@@ -669,6 +669,51 @@ def adjust_balance(db: Session, user_id: str, gold_change: float, cash_change: f
     return txn
 
 
+def _get_admin_adjustment_or_404(db: Session, user_id: str, txn_id: str) -> BalanceTransaction:
+    get_user_or_404(db, user_id)
+    txn = (
+        db.query(BalanceTransaction)
+        .filter(BalanceTransaction.id == txn_id, BalanceTransaction.user_id == user_id)
+        .first()
+    )
+    if not txn:
+        raise HTTPException(status_code=404, detail="تراکنش پیدا نشد")
+    if txn.reason != TransactionReasonEnum.admin_adjustment:
+        raise HTTPException(
+            status_code=400,
+            detail="فقط تنظیمات دستی ادمین قابل ویرایش/حذف هستند",
+        )
+    return txn
+
+
+def update_admin_adjustment(
+    db: Session,
+    user_id: str,
+    txn_id: str,
+    gold_change: float,
+    cash_change: float,
+    note: str,
+) -> BalanceTransaction:
+    """Edit a manual admin balance row. Balance is the sum of rows, so
+    changing gold/cash here immediately changes the user's computed balance."""
+    txn = _get_admin_adjustment_or_404(db, user_id, txn_id)
+    if not gold_change and not cash_change:
+        raise HTTPException(status_code=400, detail="حداقل یکی از مقادیر طلا یا نقدی باید غیرصفر باشد")
+    txn.gold_change = gold_change or 0
+    txn.cash_change = cash_change or 0
+    txn.note = note or ""
+    db.commit()
+    db.refresh(txn)
+    return txn
+
+
+def delete_admin_adjustment(db: Session, user_id: str, txn_id: str) -> None:
+    """Remove a manual admin balance row (reverses its effect on the sum)."""
+    txn = _get_admin_adjustment_or_404(db, user_id, txn_id)
+    db.delete(txn)
+    db.commit()
+
+
 def set_user_blocked(db: Session, user_id: str, is_blocked: bool) -> User:
     user = get_user_or_404(db, user_id)
     user.is_blocked = is_blocked
