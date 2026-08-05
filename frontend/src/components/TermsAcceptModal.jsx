@@ -60,7 +60,7 @@ export default function TermsAcceptModal({ open, onAccept, onReject }) {
       >
         <div className="terms-accept__header">
           <h2 id="terms-accept-title" className="terms-accept__title">
-            قوانین و مقررات
+            شرایط و قوانین استفاده از سرویس‌ها
           </h2>
           {version && <span className="terms-accept__version">نسخه {version}</span>}
         </div>
@@ -76,7 +76,16 @@ export default function TermsAcceptModal({ open, onAccept, onReject }) {
             !error &&
             lines.map((line, i) =>
               line.trim() ? (
-                <p key={i} className="terms-accept__line">
+                <p
+                  key={i}
+                  className={
+                    line.startsWith("─")
+                      ? "terms-accept__rule"
+                      : line.startsWith("ماده ")
+                        ? "terms-accept__article"
+                        : "terms-accept__line"
+                  }
+                >
                   {line}
                 </p>
               ) : (
@@ -95,7 +104,7 @@ export default function TermsAcceptModal({ open, onAccept, onReject }) {
             className="terms-accept__btn terms-accept__btn--reject"
             onClick={onReject}
           >
-            رد
+            رد می‌کنم
           </button>
           <button
             type="button"
@@ -103,7 +112,7 @@ export default function TermsAcceptModal({ open, onAccept, onReject }) {
             disabled={!reachedBottom || loading || !!error}
             onClick={() => onAccept({ version, text })}
           >
-            پذیرش
+            مطالعه کردم و می‌پذیرم
           </button>
         </div>
       </div>
