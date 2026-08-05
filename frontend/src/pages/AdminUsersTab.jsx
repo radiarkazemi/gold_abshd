@@ -13,6 +13,8 @@ import {
 } from "../api";
 import { formatCashStatus, formatGoldStatus } from "../utils/balanceFormat";
 import FormattedNumberInput from "../components/FormattedNumberInput";
+import TermsSignaturesReportModal from "../components/TermsSignaturesReportModal";
+import "../components/TermsSignaturesReportModal.css";
 
 function fa(n, opts) {
   return Number(n).toLocaleString("fa-IR", opts);
@@ -127,6 +129,7 @@ function UserDetail({ userId, onClose, onChanged }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [signaturesOpen, setSignaturesOpen] = useState(false);
 
   function reload() {
     setLoading(true);
@@ -366,34 +369,16 @@ function UserDetail({ userId, onClose, onChanged }) {
             </div>
 
             <div className="reg-key-box">
-              <h3 className="adjust-form__title">
-                امضاهای دیجیتال قوانین ({(detail.terms_acceptances || []).length})
-              </h3>
-              {(detail.terms_acceptances || []).length === 0 ? (
-                <p className="myorders__empty">هنوز پذیرشی ثبت نشده</p>
-              ) : (
-                <div className="device-list">
-                  {(detail.terms_acceptances || []).map((a) => (
-                    <div key={a.id} className="device-row">
-                      <div className="device-row__info">
-                        <span className="device-row__ua">
-                          نسخه {a.terms_version} — {a.ip_address || "IP نامشخص"}
-                        </span>
-                        <span className="reg-key-box__meta">
-                          {formatDate(a.accepted_at)}
-                          {a.device_id ? ` — دستگاه: ${String(a.device_id).slice(0, 8)}…` : ""}
-                        </span>
-                        <span className="reg-key-box__meta" dir="ltr" style={{ wordBreak: "break-all" }}>
-                          hash: {a.signature_hash}
-                        </span>
-                        {a.user_agent && (
-                          <span className="reg-key-box__meta">{a.user_agent}</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <button
+                type="button"
+                className="sig-report-open-btn"
+                onClick={() => setSignaturesOpen(true)}
+              >
+                <span>امضای دیجیتال ورود کاربر</span>
+                <span className="sig-report-open-btn__count">
+                  {fa(detail.terms_acceptance_count || 0)} رکورد
+                </span>
+              </button>
             </div>
 
             <form className="adjust-form" onSubmit={handleAdjust}>
@@ -468,6 +453,13 @@ function UserDetail({ userId, onClose, onChanged }) {
           </>
         )}
       </div>
+      {signaturesOpen && detail && (
+        <TermsSignaturesReportModal
+          userId={userId}
+          userLabel={`${detail.full_name || "بدون نام"} — ${detail.phone_number}`}
+          onClose={() => setSignaturesOpen(false)}
+        />
+      )}
     </div>
   );
 }
