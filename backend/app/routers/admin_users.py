@@ -7,9 +7,11 @@ from app.models_db import Order, BalanceTransaction, User
 from app.schemas.admin import (
     UserSummaryOut, UserDetailOut, TransactionOut, BalanceAdjustIn, BlockUserIn,
     TradingBanUserIn, AdminCreateUserIn, AdminCreateUserOut, AdminUpdateUserIn,
+    TermsAcceptanceSummaryOut,
 )
 from app.services.registration import create_user_with_key, delete_user
 from app.services.devices import list_user_devices, revoke_user_device, count_user_devices
+from app.services.terms import list_user_terms_acceptances, acceptance_to_dict
 from app.services.orders import (
     get_user_balance,
     get_user_or_404,
@@ -110,6 +112,10 @@ async def get_user_detail(user_id: str, db: Session = Depends(get_db), _admin=De
         max_devices=user.max_devices or 1,
         devices=list_user_devices(db, user),
         registration_key=user.registration_key,
+        terms_acceptances=[
+            TermsAcceptanceSummaryOut(**acceptance_to_dict(row))
+            for row in list_user_terms_acceptances(db, user_id)
+        ],
         orders=orders,
         transactions=transactions,
     )

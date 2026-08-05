@@ -20,6 +20,11 @@ class VerifyOtpIn(BaseModel):
     device_id: str
     registration_key: str | None = None
     device_info: str | None = ""  # user-agent string, informational only
+    # Required on every login: user must accept قوانین و مقررات so we can
+    # permanently store a digital signature tied to this device/session.
+    terms_accepted: bool = False
+    terms_version: str | None = None
+    device_fingerprint: dict | None = None
 
 
 class RoleOut(BaseModel):

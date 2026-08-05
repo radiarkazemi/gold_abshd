@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -14,8 +14,21 @@ from app.auth import (
     check_device_or_require_key,
 )
 from app.models_db import User
+from app.services.terms import record_terms_acceptance
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    real_ip = request.headers.get("x-real-ip") or request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+    if request.client:
+        return request.client.host or ""
+    return ""
 
 
 @router.post("/request-otp", response_model=RequestOtpOut)
@@ -34,6 +47,12 @@ async def request_otp(request: Request, payload: RequestOtpIn, db: Session = Dep
 @router.post("/verify-otp", response_model=VerifyOtpOut)
 @limiter.limit("10/5minute")
 async def verify_otp(request: Request, payload: VerifyOtpIn, db: Session = Depends(get_db)):
+    if not payload.terms_accepted:
+        raise HTTPException(
+            status_code=400,
+            detail="پذیرش قوانین و مقررات برای ورود الزامی است",
+        )
+
     user = verify_otp_and_get_user(
         db,
         payload.phone_number,
@@ -42,6 +61,20 @@ async def verify_otp(request: Request, payload: VerifyOtpIn, db: Session = Depen
         payload.registration_key,
         payload.device_info or "",
     )
+
+    fingerprint = dict(payload.device_fingerprint or {})
+    if payload.device_info and not fingerprint.get("user_agent"):
+        fingerprint["user_agent"] = payload.device_info
+
+    record_terms_acceptance(
+        db,
+        user=user,
+        device_id=payload.device_id or "",
+        ip_address=_client_ip(request),
+        fingerprint=fingerprint,
+        terms_version=payload.terms_version,
+    )
+
     token = create_access_token(user, device_id=payload.device_id or "")
     return VerifyOtpOut(token=token, user=UserOut.model_validate(user))
 
