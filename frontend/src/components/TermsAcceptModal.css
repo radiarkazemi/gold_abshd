@@ -11,8 +11,8 @@
 
 .terms-accept {
   width: 100%;
-  max-width: 420px;
-  max-height: min(88dvh, 640px);
+  max-width: 440px;
+  max-height: min(92dvh, 720px);
   background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-lg);
@@ -47,8 +47,8 @@
 
 .terms-accept__body {
   flex: 1;
-  min-height: 180px;
-  max-height: 46dvh;
+  min-height: 220px;
+  max-height: 56dvh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: 4px 2px 12px;
@@ -60,6 +60,23 @@
   font-size: 13.5px;
   line-height: 2;
   color: var(--text-muted);
+}
+
+.terms-accept__article {
+  margin: 10px 0 6px;
+  font-size: 13.5px;
+  font-weight: 800;
+  line-height: 1.9;
+  color: var(--text);
+}
+
+.terms-accept__rule {
+  margin: 6px 0;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--hairline);
+  letter-spacing: 0;
+  overflow: hidden;
 }
 
 .terms-accept__gap {
@@ -83,17 +100,18 @@
 
 .terms-accept__actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 0.9fr 1.4fr;
   gap: 10px;
 }
 
 .terms-accept__btn {
   border: none;
   border-radius: var(--radius-sm);
-  padding: 12px 0;
-  font-size: 14px;
+  padding: 12px 8px;
+  font-size: 13px;
   font-weight: 800;
   cursor: pointer;
+  line-height: 1.4;
 }
 
 .terms-accept__btn:disabled {
