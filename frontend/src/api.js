@@ -21,7 +21,8 @@ function apiUrl(pathWithQuery) {
   return new URL(path, origin);
 }
 
-import { getDeviceId, getDeviceInfo } from "./utils/deviceId";
+import { getDeviceId, getDeviceInfo, getDeviceFingerprint } from "./utils/deviceId";
+
 import { decodePayload } from "./utils/payloadCodec";
 const TOKEN_KEY = "goldapp_token";
 
@@ -249,7 +250,10 @@ export async function requestOtp(phoneNumber, registrationKey) {
   return res.json();
 }
 
-export async function verifyOtp(phoneNumber, code, registrationKey) {
+export async function verifyOtp(phoneNumber, code, registrationKey, terms = {}) {
+  const fingerprint = getDeviceFingerprint({
+    terms_version: terms.termsVersion || null,
+  });
   const res = await fetch(`${API_BASE}/api/auth/verify-otp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -259,6 +263,9 @@ export async function verifyOtp(phoneNumber, code, registrationKey) {
       device_id: getDeviceId(),
       registration_key: registrationKey || null,
       device_info: getDeviceInfo(),
+      terms_accepted: !!terms.termsAccepted,
+      terms_version: terms.termsVersion || null,
+      device_fingerprint: fingerprint,
     }),
   });
   if (!res.ok) {
@@ -752,6 +759,22 @@ export async function updateNotice(text) {
     body: JSON.stringify({ text }),
   });
   if (!res.ok) throw new Error("Failed to update notice");
+  return res.json();
+}
+
+export async function fetchTerms() {
+  const res = await fetch(`${API_BASE}/api/terms`);
+  if (!res.ok) throw new Error("Failed to fetch terms");
+  return res.json();
+}
+
+export async function updateTerms(text) {
+  const res = await fetch(`${API_BASE}/api/admin/terms`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error("Failed to update terms");
   return res.json();
 }
 

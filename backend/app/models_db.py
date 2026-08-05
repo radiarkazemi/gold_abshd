@@ -571,3 +571,36 @@ class ExpertHedge(Base):
 
     dealer = relationship("TehranDealer")
     order = relationship("Order")
+
+
+class TermsAcceptance(Base):
+    """
+    Append-only digital signature of a user accepting قوانین و مقررات
+    at login. Each successful login that requires acceptance creates a
+    new row — never update or delete these rows; they are legal proof.
+    """
+
+    __tablename__ = "terms_acceptances"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False, index=True)
+    phone_number = Column(String, nullable=False, index=True)
+
+    # Snapshot of the terms the user signed (so later edits don't erase proof)
+    terms_version = Column(String, nullable=False)
+    terms_content_hash = Column(String, nullable=False)
+    terms_text_snapshot = Column(Text, nullable=False)
+
+    # Device / environment fingerprint for legal proof
+    device_id = Column(String, nullable=False, index=True)
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(Text, nullable=True)
+    fingerprint_json = Column(Text, nullable=False, default="{}")
+
+    # Tamper-evident hash over the acceptance payload
+    signature_hash = Column(String, nullable=False, unique=True, index=True)
+
+    accepted_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    accepted_at_client = Column(DateTime, nullable=True)
+
+    user = relationship("User")

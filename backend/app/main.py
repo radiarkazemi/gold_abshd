@@ -42,6 +42,7 @@ from app.routers import (
     auth,
     price,
     notice,
+    terms,
     calendar,
     trading_status,
     orders,
@@ -233,6 +234,7 @@ async def _legacy_single_price_broadcaster_loop():
 app.include_router(auth.router)
 app.include_router(price.router)
 app.include_router(notice.router)
+app.include_router(terms.router)
 app.include_router(calendar.router)
 app.include_router(trading_status.router)
 app.include_router(orders.router)

@@ -19,6 +19,7 @@ import "./components/OrderModal.css";
 import "./components/SideMenu.css";
 import "./components/NoticeCard.css";
 import "./components/NoticeModal.css";
+import "./components/TermsAcceptModal.css";
 import "./components/RecentOrdersTable.css";
 import "./components/JalaliDateInput.css";
 import "./components/RefreshBar.css";

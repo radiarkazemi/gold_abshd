@@ -1,0 +1,113 @@
+.terms-accept-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 100;
+}
+
+.terms-accept {
+  width: 100%;
+  max-width: 420px;
+  max-height: min(88dvh, 640px);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 18px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.55);
+}
+
+.terms-accept__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.terms-accept__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.terms-accept__version {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.terms-accept__body {
+  flex: 1;
+  min-height: 180px;
+  max-height: 46dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 2px 12px;
+  text-align: right;
+}
+
+.terms-accept__line {
+  margin: 0 0 8px;
+  font-size: 13.5px;
+  line-height: 2;
+  color: var(--text-muted);
+}
+
+.terms-accept__gap {
+  height: 8px;
+}
+
+.terms-accept__hint,
+.terms-accept__scroll-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.terms-accept__error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--sell-bright);
+  text-align: center;
+}
+
+.terms-accept__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.terms-accept__btn {
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 12px 0;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.terms-accept__btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.terms-accept__btn--accept {
+  background: var(--gold-dim);
+  color: #1a1508;
+}
+
+.terms-accept__btn--reject {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  color: var(--text-muted);
+}

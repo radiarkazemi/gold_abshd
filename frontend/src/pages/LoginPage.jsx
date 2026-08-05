@@ -2,6 +2,7 @@ import { useState } from "react";
 import { requestOtp, verifyOtp } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { logoUrl } from "../brandAssets";
+import TermsAcceptModal from "../components/TermsAcceptModal";
 
 function normalizePhone(value) {
   return value.replace(/[^\d]/g, "");
@@ -60,6 +61,9 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [debugCode, setDebugCode] = useState(null);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsVersion, setTermsVersion] = useState(null);
+  const [termsModalOpen, setTermsModalOpen] = useState(false);
 
   async function handlePhoneSubmit(e) {
     e.preventDefault();
@@ -72,6 +76,8 @@ export default function LoginPage() {
     try {
       const res = await requestOtp(phone, regKey || undefined);
       setDebugCode(res.debug_code || null);
+      setTermsAccepted(false);
+      setTermsVersion(null);
       setStep("otp");
       try {
         sessionStorage.removeItem("goldapp_stale_recover_v1");
@@ -107,9 +113,17 @@ export default function LoginPage() {
       setError("کد تایید را کامل وارد کنید");
       return;
     }
+    if (!termsAccepted) {
+      setError("برای ورود باید قوانین و مقررات را بپذیرید");
+      setTermsModalOpen(true);
+      return;
+    }
     setLoading(true);
     try {
-      const res = await verifyOtp(phone, code, regKey || undefined);
+      const res = await verifyOtp(phone, code, regKey || undefined, {
+        termsAccepted: true,
+        termsVersion,
+      });
       login(res.token, res.user);
     } catch (err) {
       if (isNetworkError(err)) {
@@ -133,6 +147,30 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleTermsToggle() {
+    if (termsAccepted) {
+      // Unchecking means they withdraw acceptance for this login attempt.
+      setTermsAccepted(false);
+      setTermsVersion(null);
+      return;
+    }
+    setTermsModalOpen(true);
+  }
+
+  function handleTermsAccept({ version }) {
+    setTermsAccepted(true);
+    setTermsVersion(version || null);
+    setTermsModalOpen(false);
+    setError("");
+  }
+
+  function handleTermsReject() {
+    setTermsAccepted(false);
+    setTermsVersion(null);
+    setTermsModalOpen(false);
+    setError("بدون پذیرش قوانین و مقررات امکان ورود وجود ندارد");
   }
 
   return (
@@ -186,12 +224,48 @@ export default function LoginPage() {
             {debugCode && (
               <p className="login__debug">کد تست (فقط در حالت توسعه): {debugCode}</p>
             )}
+
+            <label className="login__terms">
+              <input
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={handleTermsToggle}
+              />
+              <span>
+                تمامی قوانین و مقررات برنامه را می‌پذیرم
+                <button
+                  type="button"
+                  className="login__terms-link"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setTermsModalOpen(true);
+                  }}
+                >
+                  {" "}
+                  (مشاهده قوانین)
+                </button>
+              </span>
+            </label>
+
             {error && <p className="login__error">{error}</p>}
-            <button type="submit" className="login__btn" disabled={loading}>
+            <button
+              type="submit"
+              className="login__btn"
+              disabled={loading || !termsAccepted}
+            >
               {loading ? "در حال بررسی…" : "ورود"}
             </button>
             <div className="login__links">
-              <button type="button" className="login__link" onClick={() => setStep("phone")}>
+              <button
+                type="button"
+                className="login__link"
+                onClick={() => {
+                  setStep("phone");
+                  setTermsAccepted(false);
+                  setTermsVersion(null);
+                }}
+              >
                 تغییر شماره
               </button>
               <button type="button" className="login__link" onClick={handleResend} disabled={loading}>
@@ -201,6 +275,12 @@ export default function LoginPage() {
           </form>
         )}
       </div>
+
+      <TermsAcceptModal
+        open={termsModalOpen}
+        onAccept={handleTermsAccept}
+        onReject={handleTermsReject}
+      />
     </div>
   );
 }

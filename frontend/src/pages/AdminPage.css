@@ -715,6 +715,12 @@
   margin-top: 12px;
 }
 
+.notice-editor__divider {
+  border: none;
+  border-top: 1px solid var(--hairline);
+  margin: 28px 0 20px;
+}
+
 .notice-editor__saved {
   font-size: 13px;
   color: var(--buy-bright);
