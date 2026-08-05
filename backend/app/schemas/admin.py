@@ -189,6 +189,12 @@ class BalanceAdjustIn(BaseModel):
     note: str = ""
 
 
+class BalanceTransactionUpdateIn(BaseModel):
+    gold_change: float = 0
+    cash_change: float = 0
+    note: str = ""
+
+
 class BlockUserIn(BaseModel):
     is_blocked: bool
 

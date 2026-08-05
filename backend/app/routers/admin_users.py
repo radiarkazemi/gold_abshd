@@ -8,7 +8,7 @@ from app.models_db import Order, BalanceTransaction, User
 from app.schemas.admin import (
     UserSummaryOut, UserDetailOut, TransactionOut, BalanceAdjustIn, BlockUserIn,
     TradingBanUserIn, AdminCreateUserIn, AdminCreateUserOut, AdminUpdateUserIn,
-    TermsAcceptanceSummaryOut, TermsAcceptancesReportOut,
+    TermsAcceptanceSummaryOut, TermsAcceptancesReportOut, BalanceTransactionUpdateIn,
 )
 from app.services.registration import create_user_with_key, delete_user
 from app.services.devices import list_user_devices, revoke_user_device, count_user_devices
@@ -22,6 +22,8 @@ from app.services.orders import (
     get_user_or_404,
     list_users_with_balance,
     adjust_balance as adjust_balance_db,
+    update_admin_adjustment as update_admin_adjustment_db,
+    delete_admin_adjustment as delete_admin_adjustment_db,
     set_user_blocked,
     set_user_trading_banned,
     update_user as update_user_db,
@@ -169,6 +171,30 @@ async def adjust_user_balance(user_id: str, payload: BalanceAdjustIn, db: Sessio
     txn = adjust_balance_db(db, user_id, payload.gold_change,
                             payload.cash_change, payload.note)
     return txn
+
+
+@router.patch("/{user_id}/transactions/{txn_id}", response_model=TransactionOut)
+async def update_user_transaction(
+    user_id: str,
+    txn_id: str,
+    payload: BalanceTransactionUpdateIn,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_permission("users")),
+):
+    return update_admin_adjustment_db(
+        db, user_id, txn_id, payload.gold_change, payload.cash_change, payload.note,
+    )
+
+
+@router.delete("/{user_id}/transactions/{txn_id}")
+async def delete_user_transaction(
+    user_id: str,
+    txn_id: str,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_permission("users")),
+):
+    delete_admin_adjustment_db(db, user_id, txn_id)
+    return {"ok": True}
 
 
 @router.post("/{user_id}/block", response_model=UserSummaryOut)

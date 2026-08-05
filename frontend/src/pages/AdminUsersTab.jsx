@@ -4,6 +4,8 @@ import {
   fetchAdminUsers,
   fetchAdminUserDetail,
   adjustUserBalance,
+  updateUserTransaction,
+  deleteUserTransaction,
   setUserBlocked,
   setUserTradingBanned,
   updateUserAdmin,
@@ -31,6 +33,7 @@ function formatDateOnly(iso) {
 const REASON_LABEL = {
   order_accepted: "سفارش تایید شده",
   admin_adjustment: "تنظیم دستی ادمین",
+  transfer_request: "حواله تایید شده",
 };
 
 const KEY_STATUS_LABEL = {
@@ -38,6 +41,173 @@ const KEY_STATUS_LABEL = {
   active: "فعال",
   banned: "مسدود",
 };
+
+function TxnAmounts({ txn }) {
+  return (
+    <div className="txn-row__amounts">
+      {txn.gold_change !== 0 && (
+        <span className={txn.gold_change > 0 ? "txn-row__pos" : "txn-row__neg"}>
+          {txn.gold_change > 0 ? "+" : ""}
+          {fa(txn.gold_change, { maximumFractionDigits: 3 })} گرم ۱۸
+        </span>
+      )}
+      {txn.cash_change !== 0 && (
+        <span className={txn.cash_change < 0 ? "txn-row__pos" : "txn-row__neg"}>
+          {txn.cash_change > 0 ? "+" : ""}
+          {fa(Math.round(txn.cash_change))} تومان
+        </span>
+      )}
+    </div>
+  );
+}
+
+function EditableTxnRow({ userId, txn, busy, onChanged }) {
+  const [editing, setEditing] = useState(false);
+  const [gold, setGold] = useState(String(txn.gold_change ?? 0));
+  const [cash, setCash] = useState(String(txn.cash_change ?? 0));
+  const [note, setNote] = useState(txn.note || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const canManage = txn.reason === "admin_adjustment";
+
+  function startEdit() {
+    setGold(String(txn.gold_change ?? 0));
+    setCash(String(txn.cash_change ?? 0));
+    setNote(txn.note || "");
+    setError("");
+    setEditing(true);
+  }
+
+  async function handleSave(e) {
+    e.preventDefault();
+    setError("");
+    const g = parseFloat(gold) || 0;
+    const c = parseFloat(cash) || 0;
+    if (!g && !c) {
+      setError("حداقل یکی از مقادیر طلا یا نقدی را وارد کنید");
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateUserTransaction(userId, txn.id, {
+        goldChange: g,
+        cashChange: c,
+        note,
+      });
+      setEditing(false);
+      onChanged?.();
+    } catch (err) {
+      setError(err.message || "خطا در ویرایش تراکنش");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm("این تنظیم دستی حذف شود؟ موجودی کاربر بر اساس حذف این رکورد به‌روز می‌شود.")) {
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await deleteUserTransaction(userId, txn.id);
+      onChanged?.();
+    } catch (err) {
+      setError(err.message || "خطا در حذف تراکنش");
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <form className="txn-row txn-row--editing" onSubmit={handleSave}>
+        <div className="txn-row__edit-grid">
+          <label className="field">
+            <span className="field__label">طلا (گرم ۱۸)</span>
+            <input
+              type="number"
+              step="any"
+              className="field__input"
+              value={gold}
+              onChange={(e) => setGold(e.target.value)}
+              disabled={saving || busy}
+            />
+          </label>
+          <label className="field">
+            <span className="field__label">نقدی (تومان)</span>
+            <FormattedNumberInput
+              value={cash}
+              onChange={setCash}
+              className="field__input"
+              disabled={saving || busy}
+            />
+          </label>
+          <label className="field txn-row__edit-note">
+            <span className="field__label">یادداشت</span>
+            <input
+              type="text"
+              className="field__input"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              disabled={saving || busy}
+            />
+          </label>
+        </div>
+        {error && <p className="field__error">{error}</p>}
+        <div className="txn-row__edit-actions">
+          <button type="submit" className="txn-row__action txn-row__action--save" disabled={saving || busy}>
+            {saving ? "در حال ذخیره…" : "ذخیره"}
+          </button>
+          <button
+            type="button"
+            className="txn-row__action"
+            onClick={() => setEditing(false)}
+            disabled={saving}
+          >
+            انصراف
+          </button>
+        </div>
+      </form>
+    );
+  }
+
+  return (
+    <div className={`txn-row${canManage ? " txn-row--manageable" : ""}`}>
+      <div className="txn-row__main">
+        <div>
+          <span className="txn-row__reason">{REASON_LABEL[txn.reason] || txn.reason}</span>
+          {txn.note && <span className="txn-row__note"> — {txn.note}</span>}
+          {txn.created_at && (
+            <div className="txn-row__date">{formatDate(txn.created_at)}</div>
+          )}
+        </div>
+        <TxnAmounts txn={txn} />
+      </div>
+      {canManage && (
+        <div className="txn-row__actions">
+          <button
+            type="button"
+            className="txn-row__action"
+            onClick={startEdit}
+            disabled={busy || saving}
+          >
+            ویرایش
+          </button>
+          <button
+            type="button"
+            className="txn-row__action txn-row__action--danger"
+            onClick={handleDelete}
+            disabled={busy || saving}
+          >
+            حذف
+          </button>
+        </div>
+      )}
+      {error && <p className="field__error">{error}</p>}
+    </div>
+  );
+}
 
 function EditUserForm({ detail, roles, onSaved, onCancel }) {
   const [fullName, setFullName] = useState(detail.full_name || "");
@@ -422,31 +592,24 @@ function UserDetail({ userId, onClose, onChanged }) {
             </form>
 
             <h3 className="adjust-form__title">تاریخچه تراکنش‌ها</h3>
+            <p className="txn-list__hint">
+              تنظیمات دستی ادمین قابل ویرایش و حذف هستند. تراکنش‌های سفارش و حواله فقط نمایش داده می‌شوند.
+            </p>
             {detail.transactions.length === 0 ? (
               <p className="myorders__empty">تراکنشی ثبت نشده</p>
             ) : (
               <div className="txn-list">
                 {detail.transactions.map((t) => (
-                  <div key={t.id} className="txn-row">
-                    <div>
-                      <span className="txn-row__reason">{REASON_LABEL[t.reason] || t.reason}</span>
-                      {t.note && <span className="txn-row__note"> — {t.note}</span>}
-                    </div>
-                    <div className="txn-row__amounts">
-                      {t.gold_change !== 0 && (
-                        <span className={t.gold_change > 0 ? "txn-row__pos" : "txn-row__neg"}>
-                          {t.gold_change > 0 ? "+" : ""}
-                          {fa(t.gold_change, { maximumFractionDigits: 3 })} گرم ۱۸
-                        </span>
-                      )}
-                      {t.cash_change !== 0 && (
-                        <span className={t.cash_change < 0 ? "txn-row__pos" : "txn-row__neg"}>
-                          {t.cash_change > 0 ? "+" : ""}
-                          {fa(Math.round(t.cash_change))} تومان
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                  <EditableTxnRow
+                    key={t.id}
+                    userId={userId}
+                    txn={t}
+                    busy={busy}
+                    onChanged={() => {
+                      reload();
+                      onChanged?.();
+                    }}
+                  />
                 ))}
               </div>
             )}

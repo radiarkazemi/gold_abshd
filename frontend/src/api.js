@@ -741,6 +741,35 @@ export async function adjustUserBalance(userId, { goldChange, cashChange, note }
   return res.json();
 }
 
+export async function updateUserTransaction(userId, txnId, { goldChange, cashChange, note }) {
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}/transactions/${txnId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...adminAuthHeaders() },
+    body: JSON.stringify({
+      gold_change: goldChange,
+      cash_change: cashChange,
+      note: note || "",
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to update transaction");
+  }
+  return res.json();
+}
+
+export async function deleteUserTransaction(userId, txnId) {
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}/transactions/${txnId}`, {
+    method: "DELETE",
+    headers: { ...adminAuthHeaders() },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to delete transaction");
+  }
+  return res.json();
+}
+
 export async function setUserBlocked(userId, isBlocked) {
   const res = await fetch(`${API_BASE}/api/admin/users/${userId}/block`, {
     method: "POST",
