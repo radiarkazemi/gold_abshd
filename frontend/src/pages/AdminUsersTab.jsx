@@ -125,13 +125,12 @@ function EditableTxnRow({ userId, txn, busy, onChanged }) {
         <div className="txn-row__edit-grid">
           <label className="field">
             <span className="field__label">طلا (گرم ۱۸)</span>
-            <input
-              type="number"
-              step="any"
-              className="field__input"
+            <FormattedNumberInput
               value={gold}
-              onChange={(e) => setGold(e.target.value)}
+              onChange={setGold}
+              className="field__input"
               disabled={saving || busy}
+              allowNegative
             />
           </label>
           <label className="field">
@@ -141,6 +140,7 @@ function EditableTxnRow({ userId, txn, busy, onChanged }) {
               onChange={setCash}
               className="field__input"
               disabled={saving || busy}
+              allowNegative
             />
           </label>
           <label className="field txn-row__edit-note">
@@ -556,13 +556,12 @@ function UserDetail({ userId, onClose, onChanged }) {
               <div className="adjust-form__row">
                 <label className="field">
                   <span className="field__label">تغییر طلا (گرم ۱۸)</span>
-                  <input
-                    type="number"
-                    step="any"
+                  <FormattedNumberInput
+                    value={goldChange}
+                    onChange={setGoldChange}
                     className="field__input"
                     placeholder="مثبت یا منفی، مثلاً 1.5 یا -1.5"
-                    value={goldChange}
-                    onChange={(e) => setGoldChange(e.target.value)}
+                    allowNegative
                   />
                 </label>
                 <label className="field">
@@ -572,6 +571,7 @@ function UserDetail({ userId, onClose, onChanged }) {
                     onChange={setCashChange}
                     className="field__input"
                     placeholder="مثبت یا منفی"
+                    allowNegative
                   />
                 </label>
               </div>

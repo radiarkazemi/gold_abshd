@@ -28,6 +28,7 @@ import "./components/BalanceStrip.css";
 import "./components/UpdatePrompt.css";
 import "./pages/AdminPage.css";
 import "./components/AdminShell.css";
+import "./components/FormattedNumberInput.css";
 import "./pages/LoginPage.css";
 import "./pages/MyOrdersPage.css";
 import "./pages/ClientForms.css";
