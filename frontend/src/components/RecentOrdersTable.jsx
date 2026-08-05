@@ -53,9 +53,10 @@ export default function RecentOrdersTable({ limit = 5, refreshSignal }) {
 
   const rows = useMemo(() => (todayOrders || []).slice(0, limit), [todayOrders, limit]);
 
-  // Totals from the same today-settled set the table is built from (not only the visible slice).
+  // Totals: only accepted orders count. Rejected/cancelled stay visible in
+  // the table but must not inflate مجموع خرید/فروش / تفاضل.
   const totals = useMemo(() => {
-    const list = todayOrders || [];
+    const list = (todayOrders || []).filter((o) => o.status === "accepted");
     let buy = 0;
     let sell = 0;
     for (const o of list) {
