@@ -142,7 +142,8 @@ def _send_one(db: Session, row, payload: dict, vapid_private: str) -> bool:
             data=json.dumps(payload, ensure_ascii=False),
             vapid_private_key=vapid_private,
             vapid_claims=_vapid_claims(),
-            ttl=60,
+            ttl=120,
+            headers={"Urgency": "high", "Topic": str(payload.get("tag") or "admin")[:32]},
         )
         return True
     except WebPushException as e:
