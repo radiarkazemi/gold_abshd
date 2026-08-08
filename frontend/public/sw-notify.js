@@ -2,6 +2,7 @@
    - Shows OS notifications while the admin panel is backgrounded
    - Handles Web Push so mobile phones still alert (with sound) when
      the tab/PWA is suspended and the WebSocket is dead
+   - Accepts SHOW_NOTIFICATION messages from the open admin page
    Query-string on the script URL (APP_BUILD_V) forces browsers to
    fetch a fresh SW on every deploy. */
 
@@ -56,6 +57,32 @@ function openAdminPanel(url) {
   });
 }
 
+function showAdminNotification(title, options) {
+  const opts = options || {};
+  const icon = opts.icon ? absoluteUrl(opts.icon) : absoluteUrl("/gt-icon-192.png");
+  const finalOpts = {
+    body: opts.body || "",
+    dir: opts.dir || "rtl",
+    lang: opts.lang || "fa",
+    tag: opts.tag || `admin-alert-${Date.now()}`,
+    renotify: opts.renotify !== false,
+    requireInteraction: opts.requireInteraction !== false,
+    silent: false,
+    vibrate: opts.vibrate || [220, 100, 220, 100, 320],
+    icon,
+    badge: opts.badge ? absoluteUrl(opts.badge) : icon,
+    data: { url: ADMIN_PATH, ...(opts.data || {}) },
+  };
+  return self.registration.showNotification(title || "آبشده قصر طلا", finalOpts);
+}
+
+self.addEventListener("message", (event) => {
+  const data = event.data || {};
+  if (data.type === "SHOW_NOTIFICATION") {
+    event.waitUntil(showAdminNotification(data.title, data.options));
+  }
+});
+
 self.addEventListener("push", (event) => {
   let payload = {
     title: "آبشده قصر طلا",
@@ -76,26 +103,17 @@ self.addEventListener("push", (event) => {
     }
   }
 
-  const icon = payload.icon
-    ? absoluteUrl(payload.icon)
-    : absoluteUrl("/gt-icon-192.png");
-  const options = {
-    body: payload.body || "",
-    dir: "rtl",
-    lang: "fa",
-    tag: payload.tag || `admin-alert-${Date.now()}`,
-    renotify: true,
-    // Mobile heads-up banners often require interaction + non-silent.
-    requireInteraction: true,
-    silent: false,
-    vibrate: payload.vibrate || [220, 100, 220, 100, 320],
-    icon,
-    badge: payload.badge ? absoluteUrl(payload.badge) : icon,
-    data: { url: ADMIN_PATH, ...(payload.data || {}) },
-  };
-
   event.waitUntil(
-    self.registration.showNotification(payload.title || "آبشده قصر طلا", options)
+    showAdminNotification(payload.title || "آبشده قصر طلا", {
+      body: payload.body,
+      tag: payload.tag,
+      icon: payload.icon,
+      badge: payload.badge,
+      vibrate: payload.vibrate,
+      data: payload.data,
+      requireInteraction: true,
+      renotify: true,
+    })
   );
 });
 
@@ -106,5 +124,4 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(openAdminPanel(url));
 });
 
-// Some Android browsers need notificationclose handled to avoid stuck state.
 self.addEventListener("notificationclose", () => {});
