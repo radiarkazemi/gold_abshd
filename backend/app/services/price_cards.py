@@ -90,6 +90,36 @@ def _price_equal(a, b) -> bool:
         return a == b
 
 
+def _parse_ts_ms(value) -> float | None:
+    """Parse an ISO / space-separated timestamp to epoch ms, or None."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    if " " in s and "T" not in s:
+        s = s.replace(" ", "T", 1)
+    if s.endswith(("z", "Z")):
+        s = s[:-1] + "+00:00"
+    else:
+        # Naive stamps from goldbridge are treated as UTC.
+        tail = s[10:] if len(s) > 10 else ""
+        if not any(ch in tail for ch in ("+", "-")):
+            s = s + "+00:00"
+    try:
+        return datetime.fromisoformat(s).timestamp() * 1000
+    except ValueError:
+        return None
+
+
+def _normalize_source_ts(value) -> str | None:
+    """Return a comparable ISO timestamp from goldbridge last_update_time."""
+    ms = _parse_ts_ms(value)
+    if ms is None:
+        return None
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
+
+
 def mark_item_price_changed(goldbridge_item_id: int, when: str | None = None) -> str:
     """Record that this item's quote changed — advances client 'آخرین بروزرسانی'."""
     ts = when or _now_iso()
@@ -102,31 +132,53 @@ def mark_item_price_changed(goldbridge_item_id: int, when: str | None = None) ->
 def item_price_changed_at(goldbridge_item_id: int | None) -> str | None:
     if goldbridge_item_id is None:
         return _latest_updated_at
-    return _item_price_changed_at.get(int(goldbridge_item_id)) or _latest_updated_at
+    # Never fall back to the feed-level clock: that advances whenever *any*
+    # item moves and would drag unrelated cards' "آخرین بروزرسانی" forward.
+    return _item_price_changed_at.get(int(goldbridge_item_id))
 
 
 def _merge_polled_items(cleaned: dict[int, dict]) -> bool:
-    """Replace cache; bump per-item timestamps only when buy/sell changed.
+    """Merge poll into cache; freeze per-item clocks until source quote moves.
 
-    Returns True if any item's quote changed (or this is the first fill).
+    - Partial catalogs must not wipe other items (or they look "new" next tick
+      and falsely advance آخرین بروزرسانی).
+    - Prefer goldbridge ``last_update_time`` when the quote actually changes.
+    - If buy/sell are unchanged, keep the previous stamp (clock stays put).
+
+    Returns True if any item's quote (or source stamp) advanced.
     """
     global _latest_items, _latest_updated_at
     now = _now_iso()
     any_change = False
     for item_id, item in cleaned.items():
         prev = _latest_items.get(item_id)
-        changed = (
+        price_changed = (
             prev is None
             or not _price_equal(prev.get("buy"), item.get("buy"))
             or not _price_equal(prev.get("sell"), item.get("sell"))
         )
-        if changed:
-            _item_price_changed_at[item_id] = now
+        src_ts = _normalize_source_ts(item.get("last_update_time"))
+        prev_stamp = _item_price_changed_at.get(item_id)
+        prev_ms = _parse_ts_ms(prev_stamp)
+        src_ms = _parse_ts_ms(src_ts)
+
+        if price_changed:
+            # New quote from source → restart the client clock from that moment.
+            # Prefer goldbridge's last_update_time when it isn't older than what
+            # we already showed (avoids the display freezing on a backwards jump).
+            if src_ts is not None and (prev_ms is None or (src_ms is not None and src_ms >= prev_ms)):
+                _item_price_changed_at[item_id] = src_ts
+            else:
+                _item_price_changed_at[item_id] = now
             any_change = True
-        elif item_id not in _item_price_changed_at:
-            # First time we see this id without a prior stamp — seed once.
-            _item_price_changed_at[item_id] = now
-    _latest_items = cleaned
+        elif prev_stamp is None:
+            # First sighting with a stable quote — seed once, then freeze.
+            _item_price_changed_at[item_id] = src_ts or now
+        # else: unchanged buy/sell → leave stamp frozen at last real update
+
+        # Merge by id so a truncated poll cannot drop other cards.
+        _latest_items[item_id] = item
+
     if _latest_updated_at is None or any_change:
         _latest_updated_at = now
     return any_change
