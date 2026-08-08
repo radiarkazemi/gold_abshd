@@ -206,6 +206,9 @@ def notify_new_order(db: Session, order: dict | None) -> int:
             "body": body,
             "tag": f"order-{order.get('id')}" if order.get("id") else "new-order",
             "type": "new_order",
+            "icon": "/gt-icon-192.png",
+            "badge": "/gt-icon-192.png",
+            "vibrate": [220, 100, 220, 100, 320],
             "data": {"type": "new_order", "orderId": order.get("id"), "url": "/admin-hs-panel"},
         },
     )
@@ -225,6 +228,9 @@ def notify_new_kyc(db: Session, user: dict | None) -> int:
             "body": f"{name}{code_s}{phone_s}",
             "tag": f"kyc-{user.get('user_id')}" if user.get("user_id") else "new-kyc",
             "type": "new_kyc",
+            "icon": "/gt-icon-192.png",
+            "badge": "/gt-icon-192.png",
+            "vibrate": [180, 80, 180],
             "data": {"type": "new_kyc", "userId": user.get("user_id"), "url": "/admin-hs-panel"},
         },
     )

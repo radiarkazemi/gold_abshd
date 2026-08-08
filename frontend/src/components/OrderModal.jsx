@@ -26,6 +26,15 @@ function formatWeight(n) {
   return Number(n).toLocaleString("en-US", { maximumFractionDigits: 3 });
 }
 
+/** iPhone / EU keyboards often insert "," as the decimal separator. */
+function normalizeDecimalInput(value) {
+  return String(value ?? "")
+    .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
+    .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d))
+    .replace(/٫/g, ".")
+    .replace(/,/g, ".");
+}
+
 export default function OrderModal({ card, side, onClose, onSubmit, submitting, result, error }) {
   const isCoin = card?.unit === "count";
   const modalRef = useRef(null);
@@ -327,6 +336,15 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
     liveDisplayPrice != null &&
     Math.round(Number(baselineDisplayPrice)) !== Math.round(Number(liveDisplayPrice));
 
+  // Pending timer expired unanswered: offer retry-at-new-price when market moved.
+  const pendingExpiredUnanswered =
+    Boolean(result) && liveOrder?.status === "pending" && secondsLeft <= 0;
+  const pendingExpiredPriceChanged =
+    pendingExpiredUnanswered &&
+    submitFinalPrice() != null &&
+    currentFinalPrice() != null &&
+    Math.round(Number(submitFinalPrice())) !== Math.round(Number(currentFinalPrice()));
+
   const priceChangeTag = formPriceChanged ? (
     <p className="modal-result__price-change">
       {!isCoin && gram18OnlyDisplay ? (
@@ -374,6 +392,37 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
                     order={liveOrder}
                     totalSeconds={limits?.pending_seconds || DEFAULT_PENDING_SECONDS}
                   />
+                ) : pendingExpiredPriceChanged ? (
+                  <div className="modal-result__price-reject">
+                    <p className="modal-result__reject-reason">پاسخی دریافت نشد — مظنه تغییر کرده</p>
+                    <p className="modal-result__price-change">
+                      {gram18OnlyDisplay && !isCoin ? (
+                        <>
+                          مظنه از {toFarsiNumber(Math.round(submitFinalPrice()))} به{" "}
+                          {toFarsiNumber(Math.round(currentFinalPrice()))} تومان (گرم ۱۸) تغییر کرده
+                        </>
+                      ) : (
+                        <>
+                          مظنه از {toFarsiNumber(Math.round(submitFinalPrice()))} به{" "}
+                          {toFarsiNumber(Math.round(currentFinalPrice()))} تومان تغییر کرده
+                        </>
+                      )}
+                    </p>
+                    {retryCount < maxRetries ? (
+                      <button
+                        type="button"
+                        className="modal-btn modal-btn--primary"
+                        onClick={handleRetryNewPrice}
+                        disabled={retrying}
+                      >
+                        {retrying ? "در حال ارسال…" : "تلاش با مظنه جدید"}
+                      </button>
+                    ) : (
+                      <p className="modal-result__hint">
+                        بررسی این درخواست بیش از حد معمول طول کشیده. لطفا با پشتیبانی تماس بگیرید.
+                      </p>
+                    )}
+                  </div>
                 ) : retryCount < maxRetries ? (
                   <button
                     type="button"
@@ -506,16 +555,15 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
               </span>
               {isCoin ? (
                 <input
-                  type="number"
+                  type="text"
                   inputMode="numeric"
-                  step="1"
-                  min="1"
                   autoFocus
                   required
                   value={value}
-                  onChange={(e) => setValue(e.target.value)}
+                  onChange={(e) => setValue(normalizeDecimalInput(e.target.value).replace(/[^\d.]/g, "").replace(/\./g, ""))}
                   placeholder="مثلاً ۱"
                   className="field__input"
+                  dir="ltr"
                 />
               ) : amountType === "amount" ? (
                 <FormattedNumberInput
@@ -528,16 +576,22 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
                 />
               ) : (
                 <input
-                  type="number"
+                  type="text"
                   inputMode="decimal"
-                  step="any"
-                  min="0"
                   autoFocus
                   required
                   value={value}
-                  onChange={(e) => setValue(e.target.value)}
+                  onChange={(e) => {
+                    // iPhone often inserts "," as decimal — normalize to "."
+                    let next = normalizeDecimalInput(e.target.value);
+                    next = next.replace(/[^\d.]/g, "");
+                    const parts = next.split(".");
+                    if (parts.length > 2) next = `${parts[0]}.${parts.slice(1).join("")}`;
+                    setValue(next);
+                  }}
                   placeholder="مثلاً ۲.۵"
                   className="field__input"
+                  dir="ltr"
                 />
               )}
               {!isCoin && limits && amountType === "weight" && (

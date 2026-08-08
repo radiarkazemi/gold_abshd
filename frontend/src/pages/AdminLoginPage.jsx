@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { adminLogin, adminVerify, setAdminToken } from "../api";
 import { ensureNotificationPermission, registerNotifyServiceWorker, subscribeAdminPush } from "../utils/desktopNotify";
+import { unlockNotificationAudio } from "../utils/notificationSound";
+import { applyAdminPwaManifest } from "../utils/adminManifest";
 import { logoUrl } from "../brandAssets";
 
 export default function AdminLoginPage({ onLoggedIn }) {
@@ -15,6 +17,17 @@ export default function AdminLoginPage({ onLoggedIn }) {
   const [code, setCode] = useState("");
   const [registrationKey, setRegistrationKey] = useState("");
   const [debugCode, setDebugCode] = useState(null);
+
+  useEffect(() => applyAdminPwaManifest(), []);
+
+  async function finishLogin(token) {
+    setAdminToken(token);
+    await unlockNotificationAudio();
+    await registerNotifyServiceWorker();
+    const perm = await ensureNotificationPermission();
+    if (perm === "granted") await subscribeAdminPush();
+    onLoggedIn();
+  }
 
   async function handlePasswordSubmit(e) {
     e.preventDefault();
@@ -31,11 +44,7 @@ export default function AdminLoginPage({ onLoggedIn }) {
         setDebugCode(res.debug_code || null);
         setStep("verify");
       } else {
-        setAdminToken(res.token);
-        await registerNotifyServiceWorker();
-        const perm = await ensureNotificationPermission();
-        if (perm === "granted") await subscribeAdminPush();
-        onLoggedIn();
+        await finishLogin(res.token);
       }
     } catch (err) {
       setError(err.message || "ورود ناموفق بود");
@@ -50,11 +59,7 @@ export default function AdminLoginPage({ onLoggedIn }) {
     setLoading(true);
     try {
       const res = await adminVerify(pending.admin_user_id, code, pending.is_first_activation ? registrationKey : undefined);
-      setAdminToken(res.token);
-      await registerNotifyServiceWorker();
-      const perm = await ensureNotificationPermission();
-      if (perm === "granted") await subscribeAdminPush();
-      onLoggedIn();
+      await finishLogin(res.token);
     } catch (err) {
       setError(err.message || "تایید کد با خطا مواجه شد");
     } finally {

@@ -17,7 +17,7 @@ import AdminKycTab from "./AdminKycTab";
 import AdminTransfersTab from "./AdminTransfersTab";
 import AdminShell from "../components/AdminShell";
 import JalaliDateInput from "../components/JalaliDateInput";
-import { playNotificationSound, playKycNotificationSound } from "../utils/notificationSound";
+import { playNotificationSound, playKycNotificationSound, unlockNotificationAudio } from "../utils/notificationSound";
 import {
   ensureNotificationPermission,
   notifyNewOrder,
@@ -25,6 +25,7 @@ import {
   registerNotifyServiceWorker,
   subscribeAdminPush,
 } from "../utils/desktopNotify";
+import { applyAdminPwaManifest } from "../utils/adminManifest";
 import { orderGoldWeight, orderTotalMoney, summarizeOrders } from "../utils/orderCalc";
 import { formatCashStatus } from "../utils/balanceFormat";
 import { remainingFromOrder } from "../utils/orderCountdown";
@@ -143,6 +144,11 @@ function AdminPanel({ onLogout, identity }) {
   }, [filter]);
 
   useEffect(() => {
+    // Point "Add to Home Screen" at the admin panel, not the client app.
+    return applyAdminPwaManifest();
+  }, []);
+
+  useEffect(() => {
     // OS notifications: Windows Action Center when the browser is
     // minimized/backgrounded, and native mobile notifications + Web Push
     // so locked phones still get order alerts with sound.
@@ -153,6 +159,23 @@ function AdminPanel({ onLogout, identity }) {
         await subscribeAdminPush();
       }
     })();
+
+    // Unlock WebAudio on first user gesture so later order chimes play
+    // reliably on mobile (browsers suspend AudioContext until then).
+    const unlock = () => {
+      unlockNotificationAudio();
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+      window.removeEventListener("touchstart", unlock);
+    };
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    window.addEventListener("touchstart", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+      window.removeEventListener("touchstart", unlock);
+    };
   }, []);
 
   useEffect(() => {

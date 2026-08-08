@@ -5,6 +5,7 @@ import { personalizePrice } from "../utils/priceCommission";
 export function usePriceFeed() {
   const [cards, setCards] = useState([]);          // every enabled card, personalized with this user's commission
   const [prevCards, setPrevCards] = useState([]);   // previous tick's cards, for up/down flash comparisons
+  const [updatedAt, setUpdatedAt] = useState(null); // last feed update (ISO) from server
   const [connected, setConnected] = useState(false);
   const [priceLabelMode, setPriceLabelMode] = useState("mesghal_and_gram18");
   const [tradingBanned, setTradingBanned] = useState(false);
@@ -49,6 +50,7 @@ export function usePriceFeed() {
     function applyPayload(payload) {
       const raw = payload.cards || [];
       rawCardsRef.current = raw;
+      if (payload.updated_at) setUpdatedAt(payload.updated_at);
       setCards((old) => {
         setPrevCards(old);
         return personalizeAll(raw);
@@ -116,5 +118,5 @@ export function usePriceFeed() {
     };
   }, []);
 
-  return { cards, prevCards, connected, priceLabelMode, tradingBanned, kycApproved, kycStatus };
+  return { cards, prevCards, updatedAt, connected, priceLabelMode, tradingBanned, kycApproved, kycStatus };
 }

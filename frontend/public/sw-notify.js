@@ -19,8 +19,18 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+const ADMIN_PATH = "/admin-hs-panel";
+
+function absoluteUrl(path) {
+  try {
+    return new URL(path || ADMIN_PATH, self.location.origin).href;
+  } catch {
+    return path || ADMIN_PATH;
+  }
+}
+
 function openAdminPanel(url) {
-  const target = url || "/admin-hs-panel";
+  const target = absoluteUrl(url || ADMIN_PATH);
   return self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (all) => {
     for (const client of all) {
       try {
@@ -51,7 +61,7 @@ self.addEventListener("push", (event) => {
     title: "آبشده قصر طلا",
     body: "اعلان جدید",
     tag: "admin-alert",
-    data: { url: "/admin-hs-panel" },
+    data: { url: ADMIN_PATH },
   };
   try {
     if (event.data) {
@@ -66,25 +76,35 @@ self.addEventListener("push", (event) => {
     }
   }
 
+  const icon = payload.icon
+    ? absoluteUrl(payload.icon)
+    : absoluteUrl("/gt-icon-192.png");
   const options = {
     body: payload.body || "",
     dir: "rtl",
     lang: "fa",
-    tag: payload.tag || "admin-alert",
+    tag: payload.tag || `admin-alert-${Date.now()}`,
     renotify: true,
-    requireInteraction: false,
+    // Mobile heads-up banners often require interaction + non-silent.
+    requireInteraction: true,
     silent: false,
-    vibrate: [220, 100, 220, 100, 320],
-    icon: payload.icon || "/gt-icon-192.png",
-    badge: payload.badge || "/gt-icon-192.png",
-    data: payload.data || { url: "/admin-hs-panel" },
+    vibrate: payload.vibrate || [220, 100, 220, 100, 320],
+    icon,
+    badge: payload.badge ? absoluteUrl(payload.badge) : icon,
+    data: { url: ADMIN_PATH, ...(payload.data || {}) },
   };
 
-  event.waitUntil(self.registration.showNotification(payload.title || "آبشده قصر طلا", options));
+  event.waitUntil(
+    self.registration.showNotification(payload.title || "آبشده قصر طلا", options)
+  );
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/admin-hs-panel";
+  const url =
+    (event.notification.data && event.notification.data.url) || ADMIN_PATH;
   event.waitUntil(openAdminPanel(url));
 });
+
+// Some Android browsers need notificationclose handled to avoid stuck state.
+self.addEventListener("notificationclose", () => {});
