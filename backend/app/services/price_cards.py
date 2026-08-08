@@ -31,6 +31,8 @@ COIN_ITEM_TYPE = 2
 SPECIAL_CARD_MOTAFEREGHE_ID = 900001       # متفرقه — sell only, گرم۱۸
 SPECIAL_CARD_NAGHD_KARTKHAN_ID = 900002    # نقد کارتخوان — buy only, مثقال۱۷
 DEFAULT_PRICE_SOURCE_ITEM_ID = 1
+# نقد کارتخوان is always id:1 (مثقال۱۷) + this fixed markup (تومان).
+NAGHD_KARTKHAN_MARKUP_TOMAN = 100_000
 
 SPECIAL_MIRRORED_CARDS = (
     {
@@ -54,7 +56,10 @@ SPECIAL_MIRRORED_CARDS = (
 )
 
 _latest_items: dict[int, dict] = {}   # goldbridge_item_id -> cleaned item
+# Feed-level: time of the most recent *actual* price change from source.
 _latest_updated_at: str | None = None
+# Per-item: last time that item's buy/sell actually changed (not every poll).
+_item_price_changed_at: dict[int, str] = {}
 _lock = asyncio.Lock()
 
 
@@ -68,6 +73,115 @@ def get_raw_item(goldbridge_item_id: int) -> dict | None:
 
 def get_updated_at() -> str | None:
     return _latest_updated_at
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _price_equal(a, b) -> bool:
+    if a is None and b is None:
+        return True
+    if a is None or b is None:
+        return False
+    try:
+        return round(float(a)) == round(float(b))
+    except (TypeError, ValueError):
+        return a == b
+
+
+def _parse_ts_ms(value) -> float | None:
+    """Parse an ISO / space-separated timestamp to epoch ms, or None."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    if " " in s and "T" not in s:
+        s = s.replace(" ", "T", 1)
+    if s.endswith(("z", "Z")):
+        s = s[:-1] + "+00:00"
+    else:
+        # Naive stamps from goldbridge are treated as UTC.
+        tail = s[10:] if len(s) > 10 else ""
+        if not any(ch in tail for ch in ("+", "-")):
+            s = s + "+00:00"
+    try:
+        return datetime.fromisoformat(s).timestamp() * 1000
+    except ValueError:
+        return None
+
+
+def _normalize_source_ts(value) -> str | None:
+    """Return a comparable ISO timestamp from goldbridge last_update_time."""
+    ms = _parse_ts_ms(value)
+    if ms is None:
+        return None
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
+
+
+def mark_item_price_changed(goldbridge_item_id: int, when: str | None = None) -> str:
+    """Record that this item's quote changed — advances client 'آخرین بروزرسانی'."""
+    ts = when or _now_iso()
+    _item_price_changed_at[int(goldbridge_item_id)] = ts
+    global _latest_updated_at
+    _latest_updated_at = ts
+    return ts
+
+
+def item_price_changed_at(goldbridge_item_id: int | None) -> str | None:
+    if goldbridge_item_id is None:
+        return _latest_updated_at
+    # Never fall back to the feed-level clock: that advances whenever *any*
+    # item moves and would drag unrelated cards' "آخرین بروزرسانی" forward.
+    return _item_price_changed_at.get(int(goldbridge_item_id))
+
+
+def _merge_polled_items(cleaned: dict[int, dict]) -> bool:
+    """Merge poll into cache; freeze per-item clocks until source quote moves.
+
+    - Partial catalogs must not wipe other items (or they look "new" next tick
+      and falsely advance آخرین بروزرسانی).
+    - Prefer goldbridge ``last_update_time`` when the quote actually changes.
+    - If buy/sell are unchanged, keep the previous stamp (clock stays put).
+
+    Returns True if any item's quote (or source stamp) advanced.
+    """
+    global _latest_items, _latest_updated_at
+    now = _now_iso()
+    any_change = False
+    for item_id, item in cleaned.items():
+        prev = _latest_items.get(item_id)
+        price_changed = (
+            prev is None
+            or not _price_equal(prev.get("buy"), item.get("buy"))
+            or not _price_equal(prev.get("sell"), item.get("sell"))
+        )
+        src_ts = _normalize_source_ts(item.get("last_update_time"))
+        prev_stamp = _item_price_changed_at.get(item_id)
+        prev_ms = _parse_ts_ms(prev_stamp)
+        src_ms = _parse_ts_ms(src_ts)
+
+        if price_changed:
+            # New quote from source → restart the client clock from that moment.
+            # Prefer goldbridge's last_update_time when it isn't older than what
+            # we already showed (avoids the display freezing on a backwards jump).
+            if src_ts is not None and (prev_ms is None or (src_ms is not None and src_ms >= prev_ms)):
+                _item_price_changed_at[item_id] = src_ts
+            else:
+                _item_price_changed_at[item_id] = now
+            any_change = True
+        elif prev_stamp is None:
+            # First sighting with a stable quote — seed once, then freeze.
+            _item_price_changed_at[item_id] = src_ts or now
+        # else: unchanged buy/sell → leave stamp frozen at last real update
+
+        # Merge by id so a truncated poll cannot drop other cards.
+        _latest_items[item_id] = item
+
+    if _latest_updated_at is None or any_change:
+        _latest_updated_at = now
+    return any_change
 
 
 def is_coin_item(goldbridge_item_id: int) -> bool:
@@ -138,6 +252,10 @@ def ensure_special_mirrored_cards(db: Session | None = None) -> None:
 
 def is_motaferaghe_card(goldbridge_item_id: int | None) -> bool:
     return goldbridge_item_id == SPECIAL_CARD_MOTAFEREGHE_ID
+
+
+def is_naghd_kartkhan_card(goldbridge_item_id: int | None) -> bool:
+    return goldbridge_item_id == SPECIAL_CARD_NAGHD_KARTKHAN_ID
 
 _bootstrap_attempted = False
 
@@ -229,9 +347,7 @@ async def poll_all_items():
                     }
 
                 async with _lock:
-                    global _latest_items, _latest_updated_at
-                    _latest_items = cleaned
-                    _latest_updated_at = datetime.now(timezone.utc).isoformat()
+                    _merge_polled_items(cleaned)
 
                 _maybe_bootstrap_default_card(cleaned)
                 try:
@@ -286,7 +402,11 @@ def resolve_effective_item(card, item: dict | None) -> dict | None:
     )
     # متفرقه only needs the source BUY quote (used for its بفروشید side).
     is_motaferaghe = bool(card and is_motaferaghe_card(card.goldbridge_item_id))
+    is_naghd = bool(card and is_naghd_kartkhan_card(card.goldbridge_item_id))
     if is_motaferaghe and source_item and source_item.get("buy") is not None:
+        has_live_prices = True
+    # نقد کارتخوان is buy-only and mirrors id:1 buy (+ fixed markup).
+    if is_naghd and source_item and source_item.get("buy") is not None:
         has_live_prices = True
     manuals_ok = bool(
         card
@@ -337,6 +457,14 @@ def resolve_effective_item(card, item: dict | None) -> dict | None:
             out["pricing_mode"] = "motaferaghe_sell"
             if out.get("sell") is None:
                 out["sell"] = buy
+        elif is_naghd:
+            # Raw mirror of id:1 بخرید. Markup (+100k) is applied AFTER
+            # commission in personalizePrice / _price_gold_order.
+            buy = float(source_item["buy"])
+            out["buy"] = buy
+            out["sell"] = buy
+            out["pricing_mode"] = "naghd_kartkhan_buy"
+            out["markup_toman"] = NAGHD_KARTKHAN_MARKUP_TOMAN
         return out
     return None
 
@@ -554,6 +682,7 @@ def set_card_manual_price(
     card.manual_sell = manual_sell
     if use_manual_price:
         card.is_enabled = True
+    mark_item_price_changed(goldbridge_item_id)
     db.commit()
 
 
@@ -703,6 +832,10 @@ def get_enabled_cards_for_broadcast(db: Session) -> list[dict]:
             gram18_buy = motaferaghe_to_gram18(buy)
             gram18_sell = motaferaghe_to_gram18(sell)
             pricing_mode = "motaferaghe_sell"
+        elif is_gold and is_naghd_kartkhan_card(card.goldbridge_item_id):
+            gram18_buy = mesghal17_to_gram18(buy)
+            gram18_sell = mesghal17_to_gram18(sell)
+            pricing_mode = "naghd_kartkhan_buy"
         elif is_gold:
             gram18_buy = mesghal17_to_gram18(buy)
             gram18_sell = mesghal17_to_gram18(sell)
@@ -711,6 +844,9 @@ def get_enabled_cards_for_broadcast(db: Session) -> list[dict]:
             gram18_buy = None
             gram18_sell = None
             pricing_mode = None
+        # Clock freezes until this card's source quote actually changes.
+        source_id = card.price_source_item_id or card.goldbridge_item_id
+        card_updated_at = item_price_changed_at(source_id)
         result.append({
             "goldbridge_item_id": card.goldbridge_item_id,
             "name": card.display_name or item.get("name") or f"#{card.goldbridge_item_id}",
@@ -728,5 +864,6 @@ def get_enabled_cards_for_broadcast(db: Session) -> list[dict]:
             "price_label_mode": card.price_label_mode,
             "price_source_item_id": card.price_source_item_id,
             "pricing_mode": pricing_mode,
+            "updated_at": card_updated_at,
         })
     return result

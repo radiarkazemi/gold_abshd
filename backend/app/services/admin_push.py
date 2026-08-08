@@ -142,7 +142,8 @@ def _send_one(db: Session, row, payload: dict, vapid_private: str) -> bool:
             data=json.dumps(payload, ensure_ascii=False),
             vapid_private_key=vapid_private,
             vapid_claims=_vapid_claims(),
-            ttl=60,
+            ttl=120,
+            headers={"Urgency": "high", "Topic": str(payload.get("tag") or "admin")[:32]},
         )
         return True
     except WebPushException as e:
@@ -206,6 +207,10 @@ def notify_new_order(db: Session, order: dict | None) -> int:
             "body": body,
             "tag": f"order-{order.get('id')}" if order.get("id") else "new-order",
             "type": "new_order",
+            "icon": "/gt-icon-192.png",
+            "badge": "/gt-icon-192.png",
+            "image": "/gt-icon-192.png",
+            "vibrate": [280, 120, 180, 120, 280, 120, 400],
             "data": {"type": "new_order", "orderId": order.get("id"), "url": "/admin-hs-panel"},
         },
     )
@@ -225,6 +230,10 @@ def notify_new_kyc(db: Session, user: dict | None) -> int:
             "body": f"{name}{code_s}{phone_s}",
             "tag": f"kyc-{user.get('user_id')}" if user.get("user_id") else "new-kyc",
             "type": "new_kyc",
+            "icon": "/gt-icon-192.png",
+            "badge": "/gt-icon-192.png",
+            "image": "/gt-icon-192.png",
+            "vibrate": [160, 80, 160, 80, 280],
             "data": {"type": "new_kyc", "userId": user.get("user_id"), "url": "/admin-hs-panel"},
         },
     )

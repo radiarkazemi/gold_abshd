@@ -5,6 +5,7 @@ import { personalizePrice } from "../utils/priceCommission";
 export function usePriceFeed() {
   const [cards, setCards] = useState([]);          // every enabled card, personalized with this user's commission
   const [prevCards, setPrevCards] = useState([]);   // previous tick's cards, for up/down flash comparisons
+  const [updatedAt, setUpdatedAt] = useState(null); // last feed update (ISO) from server
   const [connected, setConnected] = useState(false);
   const [priceLabelMode, setPriceLabelMode] = useState("mesghal_and_gram18");
   const [tradingBanned, setTradingBanned] = useState(false);
@@ -49,6 +50,18 @@ export function usePriceFeed() {
     function applyPayload(payload) {
       const raw = payload.cards || [];
       rawCardsRef.current = raw;
+      // Feed clock: only advance when server reports a newer *real* change.
+      // Equal/older stamps from reconnects must not rewrite "آخرین بروزرسانی".
+      if (payload.updated_at) {
+        setUpdatedAt((prev) => {
+          if (!prev) return payload.updated_at;
+          const prevMs = Date.parse(prev);
+          const nextMs = Date.parse(payload.updated_at);
+          if (Number.isNaN(nextMs)) return prev;
+          if (Number.isNaN(prevMs) || nextMs > prevMs) return payload.updated_at;
+          return prev;
+        });
+      }
       setCards((old) => {
         setPrevCards(old);
         return personalizeAll(raw);
@@ -116,5 +129,5 @@ export function usePriceFeed() {
     };
   }, []);
 
-  return { cards, prevCards, connected, priceLabelMode, tradingBanned, kycApproved, kycStatus };
+  return { cards, prevCards, updatedAt, connected, priceLabelMode, tradingBanned, kycApproved, kycStatus };
 }

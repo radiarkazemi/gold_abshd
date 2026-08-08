@@ -78,3 +78,5 @@ class CustomerPriceCardOut(BaseModel):
     price_source_item_id: int | None = None
     # "motaferaghe_sell" => (id1 buy + commission) / 4.39 for گرم۱۸ بفروشید
     pricing_mode: str | None = None
+    # ISO timestamp of last feed update for this card (client "آخرین بروزرسانی")
+    updated_at: str | None = None

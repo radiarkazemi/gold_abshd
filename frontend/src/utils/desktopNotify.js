@@ -7,13 +7,15 @@
  * - Web Push: delivers alerts when the admin tab is suspended (phone
  *   locked / PWA backgrounded) — see subscribeAdminPush().
  *
- * Requires Notification permission (requested after admin login).
+ * Requires Notification permission (requested after admin login) and
+ * a secure context (HTTPS) for Service Worker + Web Push on mobile.
  */
 
 import { icon192Url, APP_BUILD_V, BRAND_V } from "../brandAssets";
 import { API_BASE, adminAuthHeaders } from "../api";
 
 const PERMISSION_ASKED_KEY = "goldapp_admin_notify_asked";
+const ADMIN_PATH = "/admin-hs-panel";
 
 export function notificationsSupported() {
   return typeof window !== "undefined" && "Notification" in window;
@@ -22,6 +24,21 @@ export function notificationsSupported() {
 export function notificationPermission() {
   if (!notificationsSupported()) return "unsupported";
   return Notification.permission;
+}
+
+/** Capabilities / blockers for admin push on this device. */
+export function pushSupportInfo() {
+  const secureContext = typeof window !== "undefined" && window.isSecureContext === true;
+  const sw = typeof navigator !== "undefined" && "serviceWorker" in navigator;
+  const push = typeof window !== "undefined" && "PushManager" in window;
+  const notif = notificationsSupported();
+  return {
+    secureContext,
+    serviceWorker: sw,
+    pushManager: push,
+    notifications: notif,
+    canSubscribe: Boolean(secureContext && sw && push && notif),
+  };
 }
 
 function isMobileClient() {
@@ -67,58 +84,115 @@ function orderSummary(order) {
   return `${side} — ${name} ${code}`.trim() + (value ? `\n${value}` : "");
 }
 
-function showOsNotification(title, options) {
+function absoluteIconUrl() {
   try {
-    if (navigator.serviceWorker) {
-      navigator.serviceWorker.ready
-        .then((reg) => reg.showNotification(title, options))
-        .catch(() => {
-          // eslint-disable-next-line no-new
-          new Notification(title, options);
+    return new URL(icon192Url || "/gt-icon-192.png", window.location.origin).href;
+  } catch {
+    return icon192Url || "/gt-icon-192.png";
+  }
+}
+
+/**
+ * Show an OS notification via the service worker when possible.
+ * SW path is required for reliable mobile banners; page-level
+ * `new Notification()` is often suppressed on Android/iOS.
+ */
+async function showOsNotification(title, options) {
+  try {
+    if (typeof navigator !== "undefined" && navigator.serviceWorker) {
+      try {
+        await registerNotifyServiceWorker();
+      } catch {
+        /* ignore */
+      }
+
+      // Prefer asking the SW to show the notification (same path as push).
+      const controller = navigator.serviceWorker.controller;
+      if (controller) {
+        controller.postMessage({
+          type: "SHOW_NOTIFICATION",
+          title,
+          options,
         });
-    } else {
-      // eslint-disable-next-line no-new
-      new Notification(title, options);
+        return true;
+      }
+
+      const reg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((resolve) => setTimeout(() => resolve(null), 2000)),
+      ]);
+      if (reg?.showNotification) {
+        await reg.showNotification(title, options);
+        return true;
+      }
+      if (reg?.active) {
+        reg.active.postMessage({ type: "SHOW_NOTIFICATION", title, options });
+        return true;
+      }
     }
+    // Fallback for desktop browsers without an active SW controller.
+    // eslint-disable-next-line no-new
+    new Notification(title, options);
     return true;
   } catch (e) {
     console.warn("System notification failed:", e);
-    return false;
+    try {
+      // eslint-disable-next-line no-new
+      new Notification(title, options);
+      return true;
+    } catch (e2) {
+      console.warn("Notification fallback failed:", e2);
+      return false;
+    }
   }
 }
 
 /**
  * Fire an OS notification for a new order.
- * - Desktop: only when the tab/window is not visible (browser minimized
- *   or another app focused) — while looking at the panel, sound/flash is enough.
- * - Mobile: always, as a native device notification (with sound).
+ * - Desktop: only when the tab/window is not visible.
+ * - Mobile focused: skip OS ding (in-app custom WAV + banner already play).
+ * - Mobile background: rich brief popup card via service worker.
  */
 export function notifyNewOrder(order) {
   if (!notificationsSupported()) return false;
   if (Notification.permission !== "granted") return false;
 
   const mobile = isMobileClient();
+  const pageVisible =
+    typeof document !== "undefined" && !document.hidden && document.hasFocus?.() !== false;
+
+  // While the admin panel is in front, custom sound + in-app banner are enough.
+  // Firing an OS notification here only adds the phone's default ding.
+  if (pageVisible) return false;
   if (!mobile && typeof document !== "undefined" && !document.hidden) {
     return false;
   }
 
   const title = "سفارش جدید — آبشده قصر طلا";
   const body = orderSummary(order);
+  const icon = absoluteIconUrl();
   const options = {
     body,
     dir: "rtl",
     lang: "fa",
-    tag: order?.id ? `order-${order.id}` : "new-order",
+    tag: order?.id ? `order-${order.id}` : `new-order-${Date.now()}`,
     renotify: true,
-    requireInteraction: false,
+    requireInteraction: true,
     silent: false,
-    vibrate: [220, 100, 220, 100, 320],
-    icon: icon192Url,
-    badge: icon192Url,
-    data: { orderId: order?.id, type: "new_order", url: "/admin-hs-panel" },
+    vibrate: [280, 120, 180, 120, 280, 120, 400],
+    icon,
+    badge: icon,
+    image: icon,
+    actions: [
+      { action: "open", title: "مشاهده" },
+      { action: "dismiss", title: "بستن" },
+    ],
+    data: { orderId: order?.id, type: "new_order", url: ADMIN_PATH },
+    sound: "/notify-order.wav",
   };
 
-  return showOsNotification(title, options);
+  showOsNotification(title, options);
+  return true;
 }
 
 /**
@@ -130,6 +204,9 @@ export function notifyNewKyc(user) {
   if (Notification.permission !== "granted") return false;
 
   const mobile = isMobileClient();
+  const pageVisible =
+    typeof document !== "undefined" && !document.hidden && document.hasFocus?.() !== false;
+  if (pageVisible) return false;
   if (!mobile && typeof document !== "undefined" && !document.hidden) {
     return false;
   }
@@ -139,21 +216,29 @@ export function notifyNewKyc(user) {
   const phone = user?.phone_number ? `\n${user.phone_number}` : "";
   const title = "درخواست احراز هویت — آبشده قصر طلا";
   const body = `${name} ${code}`.trim() + phone;
+  const icon = absoluteIconUrl();
   const options = {
     body,
     dir: "rtl",
     lang: "fa",
-    tag: user?.user_id ? `kyc-${user.user_id}` : "new-kyc",
+    tag: user?.user_id ? `kyc-${user.user_id}` : `new-kyc-${Date.now()}`,
     renotify: true,
-    requireInteraction: false,
+    requireInteraction: true,
     silent: false,
-    vibrate: [180, 80, 180],
-    icon: icon192Url,
-    badge: icon192Url,
-    data: { userId: user?.user_id, type: "new_kyc", url: "/admin-hs-panel" },
+    vibrate: [160, 80, 160, 80, 280],
+    icon,
+    badge: icon,
+    image: icon,
+    actions: [
+      { action: "open", title: "مشاهده" },
+      { action: "dismiss", title: "بستن" },
+    ],
+    data: { userId: user?.user_id, type: "new_kyc", url: ADMIN_PATH },
+    sound: "/notify-kyc.wav",
   };
 
-  return showOsNotification(title, options);
+  showOsNotification(title, options);
+  return true;
 }
 
 /** Register a tiny SW used to display notifications while backgrounded. */
@@ -161,8 +246,21 @@ export async function registerNotifyServiceWorker() {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
     return null;
   }
+  if (typeof window !== "undefined" && window.isSecureContext === false) {
+    console.warn("Notify SW skipped: page is not a secure context (HTTPS required)");
+    return null;
+  }
   try {
-    return await navigator.serviceWorker.register(`/sw-notify.js?v=${APP_BUILD_V || BRAND_V}`, { scope: "/" });
+    const reg = await navigator.serviceWorker.register(`/sw-notify.js?v=${APP_BUILD_V || BRAND_V}`, {
+      scope: "/",
+      updateViaCache: "none",
+    });
+    try {
+      await reg.update();
+    } catch {
+      /* ignore */
+    }
+    return reg;
   } catch (e) {
     console.warn("Notify service worker registration failed:", e);
     return null;
@@ -184,8 +282,12 @@ function urlBase64ToUint8Array(base64String) {
  */
 export async function subscribeAdminPush() {
   if (typeof window === "undefined") return false;
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return false;
-  if (!notificationsSupported() || Notification.permission !== "granted") return false;
+  const info = pushSupportInfo();
+  if (!info.canSubscribe) {
+    console.warn("Admin push unavailable:", info);
+    return false;
+  }
+  if (Notification.permission !== "granted") return false;
 
   try {
     const reg = (await registerNotifyServiceWorker()) || (await navigator.serviceWorker.ready);
@@ -194,7 +296,10 @@ export async function subscribeAdminPush() {
     const keyRes = await fetch(`${API_BASE}/api/admin/push/vapid-public-key`, {
       headers: { ...adminAuthHeaders() },
     });
-    if (!keyRes.ok) return false;
+    if (!keyRes.ok) {
+      console.warn("VAPID public key fetch failed", keyRes.status);
+      return false;
+    }
     const { public_key: publicKey } = await keyRes.json();
     if (!publicKey) return false;
 
@@ -215,7 +320,11 @@ export async function subscribeAdminPush() {
         keys: { p256dh: json.keys?.p256dh, auth: json.keys?.auth },
       }),
     });
-    return res.ok;
+    if (!res.ok) {
+      console.warn("Admin push subscribe POST failed", res.status);
+      return false;
+    }
+    return true;
   } catch (e) {
     console.warn("Admin push subscribe failed:", e);
     return false;
