@@ -58,6 +58,7 @@ from app.routers import (
     admin_price_cards,
     admin_expert,
     admin_push,
+    reygiri,
 )
 
 
@@ -235,6 +236,7 @@ app.include_router(auth.router)
 app.include_router(price.router)
 app.include_router(notice.router)
 app.include_router(terms.router)
+app.include_router(reygiri.router)
 app.include_router(calendar.router)
 app.include_router(trading_status.router)
 app.include_router(orders.router)
