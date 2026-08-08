@@ -1,24 +1,29 @@
 import PriceButton from "./PriceButton";
-import { formatTehranTime, formatTehranDateTime } from "../utils/tehranTime";
+import { formatTehranTime, formatTehranDateTime, serverDateMs } from "../utils/tehranTime";
 import { useEffect, useRef, useState } from "react";
 
 export default function PriceCardRow({ card, prevCard, onOrder, disabled, priceLabelMode, feedUpdatedAt }) {
   const effectiveMode = card?.price_label_mode || priceLabelMode;
-  // Keep showing the last *price-change* time even if a later payload omits it.
+  // Frozen wall-clock of the last *source* quote change for this card.
+  // Stays put across polls until a newer card.updated_at arrives.
   const lastChangedRef = useRef(null);
-  const incoming = card?.updated_at || feedUpdatedAt || null;
-  const [updatedAt, setUpdatedAt] = useState(incoming);
+  const [updatedAt, setUpdatedAt] = useState(null);
 
   useEffect(() => {
+    // Prefer per-card stamp. Feed-level updatedAt advances when *any* card
+    // moves — only use it to seed before this card has ever reported one.
+    const incoming = card?.updated_at || (!lastChangedRef.current ? feedUpdatedAt : null) || null;
     if (!incoming) return;
-    const nextMs = Date.parse(incoming);
-    const prevMs = lastChangedRef.current ? Date.parse(lastChangedRef.current) : NaN;
-    if (Number.isNaN(nextMs)) return;
-    if (Number.isNaN(prevMs) || nextMs >= prevMs) {
+    const nextMs = serverDateMs(incoming);
+    if (!nextMs) return;
+    const prevMs = lastChangedRef.current ? serverDateMs(lastChangedRef.current) : 0;
+    // Only move forward (or seed). Never rewrite with an equal/older stamp
+    // from a reconnect or unrelated feed tick.
+    if (!prevMs || nextMs > prevMs) {
       lastChangedRef.current = incoming;
       setUpdatedAt(incoming);
     }
-  }, [incoming]);
+  }, [card?.updated_at, feedUpdatedAt]);
 
   const updatedLabel = updatedAt ? formatTehranTime(updatedAt, { second: "2-digit" }) : null;
 

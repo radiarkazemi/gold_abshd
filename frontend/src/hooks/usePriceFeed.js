@@ -50,8 +50,8 @@ export function usePriceFeed() {
     function applyPayload(payload) {
       const raw = payload.cards || [];
       rawCardsRef.current = raw;
-      // Feed clock: only advance when server reports a newer source change.
-      // Stale polls / reconnects must not rewrite "آخرین بروزرسانی".
+      // Feed clock: only advance when server reports a newer *real* change.
+      // Equal/older stamps from reconnects must not rewrite "آخرین بروزرسانی".
       if (payload.updated_at) {
         setUpdatedAt((prev) => {
           if (!prev) return payload.updated_at;
