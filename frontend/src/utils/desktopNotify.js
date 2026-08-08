@@ -149,15 +149,21 @@ async function showOsNotification(title, options) {
 
 /**
  * Fire an OS notification for a new order.
- * - Desktop: only when the tab/window is not visible (browser minimized
- *   or another app focused) — while looking at the panel, sound/flash is enough.
- * - Mobile: always try OS banner (in-app card covers focused-tab case).
+ * - Desktop: only when the tab/window is not visible.
+ * - Mobile focused: skip OS ding (in-app custom WAV + banner already play).
+ * - Mobile background: rich brief popup card via service worker.
  */
 export function notifyNewOrder(order) {
   if (!notificationsSupported()) return false;
   if (Notification.permission !== "granted") return false;
 
   const mobile = isMobileClient();
+  const pageVisible =
+    typeof document !== "undefined" && !document.hidden && document.hasFocus?.() !== false;
+
+  // While the admin panel is in front, custom sound + in-app banner are enough.
+  // Firing an OS notification here only adds the phone's default ding.
+  if (pageVisible) return false;
   if (!mobile && typeof document !== "undefined" && !document.hidden) {
     return false;
   }
@@ -173,10 +179,16 @@ export function notifyNewOrder(order) {
     renotify: true,
     requireInteraction: true,
     silent: false,
-    vibrate: [220, 100, 220, 100, 320],
+    vibrate: [280, 120, 180, 120, 280, 120, 400],
     icon,
     badge: icon,
+    image: icon,
+    actions: [
+      { action: "open", title: "مشاهده" },
+      { action: "dismiss", title: "بستن" },
+    ],
     data: { orderId: order?.id, type: "new_order", url: ADMIN_PATH },
+    sound: "/notify-order.wav",
   };
 
   showOsNotification(title, options);
@@ -192,6 +204,9 @@ export function notifyNewKyc(user) {
   if (Notification.permission !== "granted") return false;
 
   const mobile = isMobileClient();
+  const pageVisible =
+    typeof document !== "undefined" && !document.hidden && document.hasFocus?.() !== false;
+  if (pageVisible) return false;
   if (!mobile && typeof document !== "undefined" && !document.hidden) {
     return false;
   }
@@ -210,10 +225,16 @@ export function notifyNewKyc(user) {
     renotify: true,
     requireInteraction: true,
     silent: false,
-    vibrate: [180, 80, 180],
+    vibrate: [160, 80, 160, 80, 280],
     icon,
     badge: icon,
+    image: icon,
+    actions: [
+      { action: "open", title: "مشاهده" },
+      { action: "dismiss", title: "بستن" },
+    ],
     data: { userId: user?.user_id, type: "new_kyc", url: ADMIN_PATH },
+    sound: "/notify-kyc.wav",
   };
 
   showOsNotification(title, options);
