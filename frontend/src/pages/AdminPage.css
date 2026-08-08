@@ -1452,7 +1452,7 @@
   animation: fadeIn 200ms ease;
 }
 
-/* Fixed top notification card (mobile heads-up substitute while panel open) */
+/* Fixed top notification card — brief popup style */
 .admin-notify-banner {
   position: fixed;
   top: max(10px, env(safe-area-inset-top));
@@ -1463,21 +1463,29 @@
   display: flex;
   align-items: stretch;
   gap: 0;
-  border-radius: 16px;
+  border-radius: 18px;
   overflow: hidden;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
-  animation: adminNotifySlide 280ms ease-out;
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.5);
+  animation: adminNotifyBrief 5.5s ease forwards;
   direction: rtl;
 }
 
-@keyframes adminNotifySlide {
-  from {
+@keyframes adminNotifyBrief {
+  0% {
     opacity: 0;
-    transform: translate(-50%, -120%);
+    transform: translate(-50%, -130%);
   }
-  to {
+  8% {
     opacity: 1;
     transform: translate(-50%, 0);
+  }
+  82% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -130%);
   }
 }
 

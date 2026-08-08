@@ -199,8 +199,38 @@ function AdminPanel({ onLogout, identity }) {
   function showNotifyBanner(item) {
     setNotifyBanner(item);
     if (notifyTimerRef.current) clearTimeout(notifyTimerRef.current);
-    notifyTimerRef.current = setTimeout(() => setNotifyBanner(null), 12000);
+    // Brief popup — auto-dismiss quickly like Samsung/Android brief style.
+    notifyTimerRef.current = setTimeout(() => setNotifyBanner(null), 5500);
   }
+
+  // Push arrived while this admin client is alive (background or foreground):
+  // play our custom WAV + show the brief top popup card.
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return undefined;
+    function onSwMessage(event) {
+      const msg = event.data || {};
+      if (msg.type !== "ADMIN_PUSH_ALERT") return;
+      unlockNotificationAudio();
+      const isKyc = msg.kind === "new_kyc";
+      if (isKyc) {
+        playKycNotificationSound();
+        refreshKycPendingCount();
+      } else {
+        playNotificationSound();
+        refreshPendingCount();
+        reload(filter);
+      }
+      showNotifyBanner({
+        kind: isKyc ? "kyc" : "order",
+        title: msg.title || (isKyc ? "احراز هویت جدید" : "سفارش جدید"),
+        body: msg.body || "",
+        tab: isKyc ? "kyc" : "orders",
+      });
+    }
+    navigator.serviceWorker.addEventListener("message", onSwMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onSwMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter]);
 
   useEffect(() => {
     function loadPrices() {
