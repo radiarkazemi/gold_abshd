@@ -1,29 +1,50 @@
 import PriceButton from "./PriceButton";
-import { formatTehranTime, formatTehranDateTime, serverDateMs } from "../utils/tehranTime";
+import { formatTehranTime, formatTehranDateTime } from "../utils/tehranTime";
 import { useEffect, useRef, useState } from "react";
+
+/** Stable quote fingerprint — only changes when the user-visible price moves. */
+function quoteFingerprint(card) {
+  if (!card) return "";
+  const parts = [
+    card.goldbridge_item_id,
+    card.buy_price,
+    card.sell_price,
+    card.gram18_buy_price,
+    card.gram18_sell_price,
+  ].map((v) => {
+    if (v == null || v === "") return "";
+    const n = Number(v);
+    return Number.isFinite(n) ? String(Math.round(n)) : String(v);
+  });
+  return parts.join("|");
+}
 
 export default function PriceCardRow({ card, prevCard, onOrder, disabled, priceLabelMode, feedUpdatedAt }) {
   const effectiveMode = card?.price_label_mode || priceLabelMode;
-  // Frozen wall-clock of the last *source* quote change for this card.
-  // Stays put across polls until a newer card.updated_at arrives.
-  const lastChangedRef = useRef(null);
+  // Clock is driven by quote changes, NOT by server updated_at (that can
+  // advance on every poll even when buy/sell are unchanged).
+  const quoteRef = useRef(null);
   const [updatedAt, setUpdatedAt] = useState(null);
+  const fingerprint = quoteFingerprint(card);
 
   useEffect(() => {
-    // Prefer per-card stamp. Feed-level updatedAt advances when *any* card
-    // moves — only use it to seed before this card has ever reported one.
-    const incoming = card?.updated_at || (!lastChangedRef.current ? feedUpdatedAt : null) || null;
-    if (!incoming) return;
-    const nextMs = serverDateMs(incoming);
-    if (!nextMs) return;
-    const prevMs = lastChangedRef.current ? serverDateMs(lastChangedRef.current) : 0;
-    // Only move forward (or seed). Never rewrite with an equal/older stamp
-    // from a reconnect or unrelated feed tick.
-    if (!prevMs || nextMs > prevMs) {
-      lastChangedRef.current = incoming;
-      setUpdatedAt(incoming);
+    if (!fingerprint) return;
+    const serverHint = card?.updated_at || feedUpdatedAt || null;
+
+    if (quoteRef.current == null) {
+      // First paint — seed once from server hint (or now), then freeze.
+      quoteRef.current = fingerprint;
+      setUpdatedAt(serverHint || new Date().toISOString());
+      return;
     }
-  }, [card?.updated_at, feedUpdatedAt]);
+
+    if (quoteRef.current !== fingerprint) {
+      // This card's displayed price actually moved → restart clock now.
+      quoteRef.current = fingerprint;
+      setUpdatedAt(new Date().toISOString());
+    }
+    // Unchanged quote → keep frozen time; ignore advancing server stamps.
+  }, [fingerprint, card?.updated_at, feedUpdatedAt]);
 
   const updatedLabel = updatedAt ? formatTehranTime(updatedAt, { second: "2-digit" }) : null;
 
