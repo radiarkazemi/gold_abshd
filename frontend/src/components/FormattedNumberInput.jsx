@@ -19,7 +19,18 @@ function formatDisplay(raw) {
 }
 
 function stripToRaw(display, allowNegative) {
-  let s = normalizeMinus(display).replace(/,/g, "").trim();
+  let s = normalizeMinus(display).trim();
+  // iPhone / some locales type "," as the decimal separator. If the value
+  // looks like a decimal (single comma, no period) convert it; otherwise
+  // treat commas as thousand separators and strip them.
+  const hasPeriod = s.includes(".");
+  const commaCount = (s.match(/,/g) || []).length;
+  if (!hasPeriod && commaCount === 1 && /^\s*-?\d+,\d+\s*$/.test(s.replace(/[−–—]/g, "-"))) {
+    s = s.replace(",", ".");
+  } else {
+    s = s.replace(/,/g, "");
+  }
+  s = s.replace(/٫/g, ".");
   let negative = false;
   if (allowNegative) {
     // Accept leading or trailing minus while typing (common on mobile / RTL).

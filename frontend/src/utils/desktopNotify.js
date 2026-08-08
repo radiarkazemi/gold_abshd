@@ -14,6 +14,7 @@ import { icon192Url, APP_BUILD_V, BRAND_V } from "../brandAssets";
 import { API_BASE, adminAuthHeaders } from "../api";
 
 const PERMISSION_ASKED_KEY = "goldapp_admin_notify_asked";
+const ADMIN_PATH = "/admin-hs-panel";
 
 export function notificationsSupported() {
   return typeof window !== "undefined" && "Notification" in window;
@@ -67,23 +68,50 @@ function orderSummary(order) {
   return `${side} — ${name} ${code}`.trim() + (value ? `\n${value}` : "");
 }
 
-function showOsNotification(title, options) {
+function absoluteIconUrl() {
   try {
-    if (navigator.serviceWorker) {
-      navigator.serviceWorker.ready
-        .then((reg) => reg.showNotification(title, options))
-        .catch(() => {
-          // eslint-disable-next-line no-new
-          new Notification(title, options);
-        });
-    } else {
-      // eslint-disable-next-line no-new
-      new Notification(title, options);
+    return new URL(icon192Url || "/gt-icon-192.png", window.location.origin).href;
+  } catch {
+    return icon192Url || "/gt-icon-192.png";
+  }
+}
+
+/**
+ * Show an OS notification via the service worker when possible.
+ * SW path is required for reliable mobile banners; page-level
+ * `new Notification()` is often suppressed on Android/iOS.
+ */
+async function showOsNotification(title, options) {
+  try {
+    if (typeof navigator !== "undefined" && navigator.serviceWorker) {
+      try {
+        await registerNotifyServiceWorker();
+      } catch {
+        /* ignore */
+      }
+      const reg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((resolve) => setTimeout(() => resolve(null), 1500)),
+      ]);
+      if (reg?.showNotification) {
+        await reg.showNotification(title, options);
+        return true;
+      }
     }
+    // Fallback for desktop browsers without an active SW controller.
+    // eslint-disable-next-line no-new
+    new Notification(title, options);
     return true;
   } catch (e) {
     console.warn("System notification failed:", e);
-    return false;
+    try {
+      // eslint-disable-next-line no-new
+      new Notification(title, options);
+      return true;
+    } catch (e2) {
+      console.warn("Notification fallback failed:", e2);
+      return false;
+    }
   }
 }
 
@@ -104,21 +132,26 @@ export function notifyNewOrder(order) {
 
   const title = "سفارش جدید — آبشده قصر طلا";
   const body = orderSummary(order);
+  const icon = absoluteIconUrl();
   const options = {
     body,
     dir: "rtl",
     lang: "fa",
-    tag: order?.id ? `order-${order.id}` : "new-order",
+    tag: order?.id ? `order-${order.id}` : `new-order-${Date.now()}`,
     renotify: true,
-    requireInteraction: false,
+    // Keep the banner visible until the admin taps it (mobile often
+    // drops silent/auto-dismiss heads-ups).
+    requireInteraction: true,
     silent: false,
     vibrate: [220, 100, 220, 100, 320],
-    icon: icon192Url,
-    badge: icon192Url,
-    data: { orderId: order?.id, type: "new_order", url: "/admin-hs-panel" },
+    icon,
+    badge: icon,
+    data: { orderId: order?.id, type: "new_order", url: ADMIN_PATH },
   };
 
-  return showOsNotification(title, options);
+  // Fire-and-forget async show; callers treat return as "attempted".
+  showOsNotification(title, options);
+  return true;
 }
 
 /**
@@ -139,21 +172,23 @@ export function notifyNewKyc(user) {
   const phone = user?.phone_number ? `\n${user.phone_number}` : "";
   const title = "درخواست احراز هویت — آبشده قصر طلا";
   const body = `${name} ${code}`.trim() + phone;
+  const icon = absoluteIconUrl();
   const options = {
     body,
     dir: "rtl",
     lang: "fa",
-    tag: user?.user_id ? `kyc-${user.user_id}` : "new-kyc",
+    tag: user?.user_id ? `kyc-${user.user_id}` : `new-kyc-${Date.now()}`,
     renotify: true,
-    requireInteraction: false,
+    requireInteraction: true,
     silent: false,
     vibrate: [180, 80, 180],
-    icon: icon192Url,
-    badge: icon192Url,
-    data: { userId: user?.user_id, type: "new_kyc", url: "/admin-hs-panel" },
+    icon,
+    badge: icon,
+    data: { userId: user?.user_id, type: "new_kyc", url: ADMIN_PATH },
   };
 
-  return showOsNotification(title, options);
+  showOsNotification(title, options);
+  return true;
 }
 
 /** Register a tiny SW used to display notifications while backgrounded. */

@@ -213,6 +213,22 @@
   padding: 0 2px;
 }
 
+.price-card-row__head {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.price-card-row__updated {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-faint);
+  letter-spacing: 0;
+}
+
 /* Every card - primary or secondary - renders with the exact same
    component, same size, same style. No shrinking, no special-casing:
    they're just stacked vertically in the order the admin configured. */

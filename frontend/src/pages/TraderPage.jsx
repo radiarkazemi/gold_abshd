@@ -13,7 +13,7 @@ import BottomTabBar from "../components/BottomTabBar";
 import RefreshBar from "../components/RefreshBar";
 
 export default function TraderPage() {
-  const { cards, prevCards, connected, priceLabelMode, tradingBanned, kycApproved, kycStatus } =
+  const { cards, prevCards, updatedAt, connected, priceLabelMode, tradingBanned, kycApproved, kycStatus } =
     usePriceFeed();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -137,6 +137,7 @@ export default function TraderPage() {
                 onOrder={openModal}
                 disabled={!tradingOnline || ordersLocked}
                 priceLabelMode={priceLabelMode}
+                feedUpdatedAt={updatedAt}
               />
             )}
             {otherCards.length > 0 && (
@@ -149,6 +150,7 @@ export default function TraderPage() {
                     onOrder={openModal}
                     disabled={!tradingOnline || ordersLocked}
                     priceLabelMode={priceLabelMode}
+                    feedUpdatedAt={updatedAt}
                   />
                 ))}
               </div>

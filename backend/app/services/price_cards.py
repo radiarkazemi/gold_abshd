@@ -31,6 +31,8 @@ COIN_ITEM_TYPE = 2
 SPECIAL_CARD_MOTAFEREGHE_ID = 900001       # متفرقه — sell only, گرم۱۸
 SPECIAL_CARD_NAGHD_KARTKHAN_ID = 900002    # نقد کارتخوان — buy only, مثقال۱۷
 DEFAULT_PRICE_SOURCE_ITEM_ID = 1
+# نقد کارتخوان is always id:1 (مثقال۱۷) + this fixed markup (تومان).
+NAGHD_KARTKHAN_MARKUP_TOMAN = 100_000
 
 SPECIAL_MIRRORED_CARDS = (
     {
@@ -138,6 +140,10 @@ def ensure_special_mirrored_cards(db: Session | None = None) -> None:
 
 def is_motaferaghe_card(goldbridge_item_id: int | None) -> bool:
     return goldbridge_item_id == SPECIAL_CARD_MOTAFEREGHE_ID
+
+
+def is_naghd_kartkhan_card(goldbridge_item_id: int | None) -> bool:
+    return goldbridge_item_id == SPECIAL_CARD_NAGHD_KARTKHAN_ID
 
 _bootstrap_attempted = False
 
@@ -286,7 +292,11 @@ def resolve_effective_item(card, item: dict | None) -> dict | None:
     )
     # متفرقه only needs the source BUY quote (used for its بفروشید side).
     is_motaferaghe = bool(card and is_motaferaghe_card(card.goldbridge_item_id))
+    is_naghd = bool(card and is_naghd_kartkhan_card(card.goldbridge_item_id))
     if is_motaferaghe and source_item and source_item.get("buy") is not None:
+        has_live_prices = True
+    # نقد کارتخوان is buy-only and mirrors id:1 buy (+ fixed markup).
+    if is_naghd and source_item and source_item.get("buy") is not None:
         has_live_prices = True
     manuals_ok = bool(
         card
@@ -337,6 +347,13 @@ def resolve_effective_item(card, item: dict | None) -> dict | None:
             out["pricing_mode"] = "motaferaghe_sell"
             if out.get("sell") is None:
                 out["sell"] = buy
+        elif is_naghd:
+            # نقد کارتخوان بخرید = id:1 بخرید + ۱۰۰٬۰۰۰ تومان.
+            buy = float(source_item["buy"]) + NAGHD_KARTKHAN_MARKUP_TOMAN
+            out["buy"] = buy
+            out["sell"] = buy
+            out["pricing_mode"] = "naghd_kartkhan_buy"
+            out["markup_toman"] = NAGHD_KARTKHAN_MARKUP_TOMAN
         return out
     return None
 
@@ -703,6 +720,10 @@ def get_enabled_cards_for_broadcast(db: Session) -> list[dict]:
             gram18_buy = motaferaghe_to_gram18(buy)
             gram18_sell = motaferaghe_to_gram18(sell)
             pricing_mode = "motaferaghe_sell"
+        elif is_gold and is_naghd_kartkhan_card(card.goldbridge_item_id):
+            gram18_buy = mesghal17_to_gram18(buy)
+            gram18_sell = mesghal17_to_gram18(sell)
+            pricing_mode = "naghd_kartkhan_buy"
         elif is_gold:
             gram18_buy = mesghal17_to_gram18(buy)
             gram18_sell = mesghal17_to_gram18(sell)
@@ -728,5 +749,7 @@ def get_enabled_cards_for_broadcast(db: Session) -> list[dict]:
             "price_label_mode": card.price_label_mode,
             "price_source_item_id": card.price_source_item_id,
             "pricing_mode": pricing_mode,
+            # App poll timestamp (ISO) — reliable for client "آخرین بروزرسانی"
+            "updated_at": _latest_updated_at,
         })
     return result
