@@ -348,8 +348,9 @@ def resolve_effective_item(card, item: dict | None) -> dict | None:
             if out.get("sell") is None:
                 out["sell"] = buy
         elif is_naghd:
-            # نقد کارتخوان بخرید = id:1 بخرید + ۱۰۰٬۰۰۰ تومان.
-            buy = float(source_item["buy"]) + NAGHD_KARTKHAN_MARKUP_TOMAN
+            # Raw mirror of id:1 بخرید. Markup (+100k) is applied AFTER
+            # commission in personalizePrice / _price_gold_order.
+            buy = float(source_item["buy"])
             out["buy"] = buy
             out["sell"] = buy
             out["pricing_mode"] = "naghd_kartkhan_buy"

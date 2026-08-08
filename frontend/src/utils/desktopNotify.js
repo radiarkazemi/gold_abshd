@@ -7,7 +7,8 @@
  * - Web Push: delivers alerts when the admin tab is suspended (phone
  *   locked / PWA backgrounded) — see subscribeAdminPush().
  *
- * Requires Notification permission (requested after admin login).
+ * Requires Notification permission (requested after admin login) and
+ * a secure context (HTTPS) for Service Worker + Web Push on mobile.
  */
 
 import { icon192Url, APP_BUILD_V, BRAND_V } from "../brandAssets";
@@ -23,6 +24,21 @@ export function notificationsSupported() {
 export function notificationPermission() {
   if (!notificationsSupported()) return "unsupported";
   return Notification.permission;
+}
+
+/** Capabilities / blockers for admin push on this device. */
+export function pushSupportInfo() {
+  const secureContext = typeof window !== "undefined" && window.isSecureContext === true;
+  const sw = typeof navigator !== "undefined" && "serviceWorker" in navigator;
+  const push = typeof window !== "undefined" && "PushManager" in window;
+  const notif = notificationsSupported();
+  return {
+    secureContext,
+    serviceWorker: sw,
+    pushManager: push,
+    notifications: notif,
+    canSubscribe: Boolean(secureContext && sw && push && notif),
+  };
 }
 
 function isMobileClient() {
@@ -89,12 +105,28 @@ async function showOsNotification(title, options) {
       } catch {
         /* ignore */
       }
+
+      // Prefer asking the SW to show the notification (same path as push).
+      const controller = navigator.serviceWorker.controller;
+      if (controller) {
+        controller.postMessage({
+          type: "SHOW_NOTIFICATION",
+          title,
+          options,
+        });
+        return true;
+      }
+
       const reg = await Promise.race([
         navigator.serviceWorker.ready,
-        new Promise((resolve) => setTimeout(() => resolve(null), 1500)),
+        new Promise((resolve) => setTimeout(() => resolve(null), 2000)),
       ]);
       if (reg?.showNotification) {
         await reg.showNotification(title, options);
+        return true;
+      }
+      if (reg?.active) {
+        reg.active.postMessage({ type: "SHOW_NOTIFICATION", title, options });
         return true;
       }
     }
@@ -119,7 +151,7 @@ async function showOsNotification(title, options) {
  * Fire an OS notification for a new order.
  * - Desktop: only when the tab/window is not visible (browser minimized
  *   or another app focused) — while looking at the panel, sound/flash is enough.
- * - Mobile: always, as a native device notification (with sound).
+ * - Mobile: always try OS banner (in-app card covers focused-tab case).
  */
 export function notifyNewOrder(order) {
   if (!notificationsSupported()) return false;
@@ -139,8 +171,6 @@ export function notifyNewOrder(order) {
     lang: "fa",
     tag: order?.id ? `order-${order.id}` : `new-order-${Date.now()}`,
     renotify: true,
-    // Keep the banner visible until the admin taps it (mobile often
-    // drops silent/auto-dismiss heads-ups).
     requireInteraction: true,
     silent: false,
     vibrate: [220, 100, 220, 100, 320],
@@ -149,7 +179,6 @@ export function notifyNewOrder(order) {
     data: { orderId: order?.id, type: "new_order", url: ADMIN_PATH },
   };
 
-  // Fire-and-forget async show; callers treat return as "attempted".
   showOsNotification(title, options);
   return true;
 }
@@ -196,8 +225,21 @@ export async function registerNotifyServiceWorker() {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
     return null;
   }
+  if (typeof window !== "undefined" && window.isSecureContext === false) {
+    console.warn("Notify SW skipped: page is not a secure context (HTTPS required)");
+    return null;
+  }
   try {
-    return await navigator.serviceWorker.register(`/sw-notify.js?v=${APP_BUILD_V || BRAND_V}`, { scope: "/" });
+    const reg = await navigator.serviceWorker.register(`/sw-notify.js?v=${APP_BUILD_V || BRAND_V}`, {
+      scope: "/",
+      updateViaCache: "none",
+    });
+    try {
+      await reg.update();
+    } catch {
+      /* ignore */
+    }
+    return reg;
   } catch (e) {
     console.warn("Notify service worker registration failed:", e);
     return null;
@@ -219,8 +261,12 @@ function urlBase64ToUint8Array(base64String) {
  */
 export async function subscribeAdminPush() {
   if (typeof window === "undefined") return false;
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return false;
-  if (!notificationsSupported() || Notification.permission !== "granted") return false;
+  const info = pushSupportInfo();
+  if (!info.canSubscribe) {
+    console.warn("Admin push unavailable:", info);
+    return false;
+  }
+  if (Notification.permission !== "granted") return false;
 
   try {
     const reg = (await registerNotifyServiceWorker()) || (await navigator.serviceWorker.ready);
@@ -229,7 +275,10 @@ export async function subscribeAdminPush() {
     const keyRes = await fetch(`${API_BASE}/api/admin/push/vapid-public-key`, {
       headers: { ...adminAuthHeaders() },
     });
-    if (!keyRes.ok) return false;
+    if (!keyRes.ok) {
+      console.warn("VAPID public key fetch failed", keyRes.status);
+      return false;
+    }
     const { public_key: publicKey } = await keyRes.json();
     if (!publicKey) return false;
 
@@ -250,7 +299,11 @@ export async function subscribeAdminPush() {
         keys: { p256dh: json.keys?.p256dh, auth: json.keys?.auth },
       }),
     });
-    return res.ok;
+    if (!res.ok) {
+      console.warn("Admin push subscribe POST failed", res.status);
+      return false;
+    }
+    return true;
   } catch (e) {
     console.warn("Admin push subscribe failed:", e);
     return false;

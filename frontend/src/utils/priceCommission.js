@@ -5,6 +5,9 @@ const MESGHAL17_TO_GRAM18 = 4.3318;
 // متفرقه بفروشید: (قیمت خرید id:1 + کارمزد) / 4.39
 const MOTAFEREGHE_TO_GRAM18 = 4.39;
 export const MOTAFEREGHE_ITEM_ID = 900001;
+export const NAGHD_KARTKHAN_ITEM_ID = 900002;
+// Applied AFTER commission on نقد کارتخوان (see personalizePrice).
+export const NAGHD_KARTKHAN_MARKUP_TOMAN = 100_000;
 
 export function mesghal17ToGram18(mesghal17Price) {
   return mesghal17Price / MESGHAL17_TO_GRAM18;
@@ -38,6 +41,9 @@ export function personalizePrice(rawPrice, commissionType, commissionValue) {
   const isMotaferaghe =
     rawPrice.pricing_mode === "motaferaghe_sell" ||
     rawPrice.goldbridge_item_id === MOTAFEREGHE_ITEM_ID;
+  const isNaghd =
+    rawPrice.pricing_mode === "naghd_kartkhan_buy" ||
+    rawPrice.goldbridge_item_id === NAGHD_KARTKHAN_ITEM_ID;
 
   if (isMotaferaghe && !isCoin) {
     // متفرقه: base = id:1 بخرید; بفروشید = (price + commission) / 4.39
@@ -45,6 +51,21 @@ export function personalizePrice(rawPrice, commissionType, commissionValue) {
     const commission = commissionAmount(raw, commissionType, commissionValue);
     const mesghal = raw + commission;
     const gram18 = motaferagheToGram18(mesghal);
+    return {
+      ...rawPrice,
+      buy_price: mesghal,
+      sell_price: mesghal,
+      gram18_buy_price: gram18,
+      gram18_sell_price: gram18,
+    };
+  }
+
+  if (isNaghd && !isCoin) {
+    // نقد کارتخوان: (id:1 بخرید + کارمزد) + ۱۰۰٬۰۰۰
+    const raw = rawPrice.buy_price ?? rawPrice.sell_price;
+    const withCommission = applyCommission(raw, "buy", commissionType, commissionValue);
+    const mesghal = withCommission + NAGHD_KARTKHAN_MARKUP_TOMAN;
+    const gram18 = mesghal17ToGram18(mesghal);
     return {
       ...rawPrice,
       buy_price: mesghal,

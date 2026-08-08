@@ -68,6 +68,8 @@ def _price_gold_order(
 
     متفرقه بفروشید: base = id:1 buy, final_mesghal = base + commission,
     gram18 = final_mesghal / 4.39.
+
+    نقد کارتخوان بخرید: base = id:1 buy, final = (base + commission) + 100_000.
     """
     if price_cards.is_motaferaghe_card(goldbridge_item_id):
         # Always price from the mirrored BUY quote (sell side of this card).
@@ -76,6 +78,12 @@ def _price_gold_order(
         # Special: commission is ADDED even for بفروشید.
         final_mesghal = raw + commission
         return raw, final_mesghal, motaferaghe_to_gram18(final_mesghal)
+
+    if price_cards.is_naghd_kartkhan_card(goldbridge_item_id):
+        raw = float(raw_item["buy"])
+        commission = commission_amount(raw, commission_type, commission_value)
+        final_mesghal = raw + commission + price_cards.NAGHD_KARTKHAN_MARKUP_TOMAN
+        return raw, final_mesghal, mesghal17_to_gram18(final_mesghal)
 
     raw = float(raw_item["buy"] if side == "buy" else raw_item["sell"])
     final_mesghal = apply_pricing_formula(
