@@ -50,7 +50,18 @@ export function usePriceFeed() {
     function applyPayload(payload) {
       const raw = payload.cards || [];
       rawCardsRef.current = raw;
-      if (payload.updated_at) setUpdatedAt(payload.updated_at);
+      // Feed clock: only advance when server reports a newer source change.
+      // Stale polls / reconnects must not rewrite "آخرین بروزرسانی".
+      if (payload.updated_at) {
+        setUpdatedAt((prev) => {
+          if (!prev) return payload.updated_at;
+          const prevMs = Date.parse(prev);
+          const nextMs = Date.parse(payload.updated_at);
+          if (Number.isNaN(nextMs)) return prev;
+          if (Number.isNaN(prevMs) || nextMs > prevMs) return payload.updated_at;
+          return prev;
+        });
+      }
       setCards((old) => {
         setPrevCards(old);
         return personalizeAll(raw);

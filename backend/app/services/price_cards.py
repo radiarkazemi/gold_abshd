@@ -56,7 +56,10 @@ SPECIAL_MIRRORED_CARDS = (
 )
 
 _latest_items: dict[int, dict] = {}   # goldbridge_item_id -> cleaned item
+# Feed-level: time of the most recent *actual* price change from source.
 _latest_updated_at: str | None = None
+# Per-item: last time that item's buy/sell actually changed (not every poll).
+_item_price_changed_at: dict[int, str] = {}
 _lock = asyncio.Lock()
 
 
@@ -70,6 +73,63 @@ def get_raw_item(goldbridge_item_id: int) -> dict | None:
 
 def get_updated_at() -> str | None:
     return _latest_updated_at
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _price_equal(a, b) -> bool:
+    if a is None and b is None:
+        return True
+    if a is None or b is None:
+        return False
+    try:
+        return round(float(a)) == round(float(b))
+    except (TypeError, ValueError):
+        return a == b
+
+
+def mark_item_price_changed(goldbridge_item_id: int, when: str | None = None) -> str:
+    """Record that this item's quote changed — advances client 'آخرین بروزرسانی'."""
+    ts = when or _now_iso()
+    _item_price_changed_at[int(goldbridge_item_id)] = ts
+    global _latest_updated_at
+    _latest_updated_at = ts
+    return ts
+
+
+def item_price_changed_at(goldbridge_item_id: int | None) -> str | None:
+    if goldbridge_item_id is None:
+        return _latest_updated_at
+    return _item_price_changed_at.get(int(goldbridge_item_id)) or _latest_updated_at
+
+
+def _merge_polled_items(cleaned: dict[int, dict]) -> bool:
+    """Replace cache; bump per-item timestamps only when buy/sell changed.
+
+    Returns True if any item's quote changed (or this is the first fill).
+    """
+    global _latest_items, _latest_updated_at
+    now = _now_iso()
+    any_change = False
+    for item_id, item in cleaned.items():
+        prev = _latest_items.get(item_id)
+        changed = (
+            prev is None
+            or not _price_equal(prev.get("buy"), item.get("buy"))
+            or not _price_equal(prev.get("sell"), item.get("sell"))
+        )
+        if changed:
+            _item_price_changed_at[item_id] = now
+            any_change = True
+        elif item_id not in _item_price_changed_at:
+            # First time we see this id without a prior stamp — seed once.
+            _item_price_changed_at[item_id] = now
+    _latest_items = cleaned
+    if _latest_updated_at is None or any_change:
+        _latest_updated_at = now
+    return any_change
 
 
 def is_coin_item(goldbridge_item_id: int) -> bool:
@@ -235,9 +295,7 @@ async def poll_all_items():
                     }
 
                 async with _lock:
-                    global _latest_items, _latest_updated_at
-                    _latest_items = cleaned
-                    _latest_updated_at = datetime.now(timezone.utc).isoformat()
+                    _merge_polled_items(cleaned)
 
                 _maybe_bootstrap_default_card(cleaned)
                 try:
@@ -572,6 +630,7 @@ def set_card_manual_price(
     card.manual_sell = manual_sell
     if use_manual_price:
         card.is_enabled = True
+    mark_item_price_changed(goldbridge_item_id)
     db.commit()
 
 
@@ -733,6 +792,9 @@ def get_enabled_cards_for_broadcast(db: Session) -> list[dict]:
             gram18_buy = None
             gram18_sell = None
             pricing_mode = None
+        # Clock freezes until this card's source quote actually changes.
+        source_id = card.price_source_item_id or card.goldbridge_item_id
+        card_updated_at = item_price_changed_at(source_id)
         result.append({
             "goldbridge_item_id": card.goldbridge_item_id,
             "name": card.display_name or item.get("name") or f"#{card.goldbridge_item_id}",
@@ -750,7 +812,6 @@ def get_enabled_cards_for_broadcast(db: Session) -> list[dict]:
             "price_label_mode": card.price_label_mode,
             "price_source_item_id": card.price_source_item_id,
             "pricing_mode": pricing_mode,
-            # App poll timestamp (ISO) — reliable for client "آخرین بروزرسانی"
-            "updated_at": _latest_updated_at,
+            "updated_at": card_updated_at,
         })
     return result
