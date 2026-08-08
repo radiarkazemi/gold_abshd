@@ -1,9 +1,25 @@
 import PriceButton from "./PriceButton";
 import { formatTehranTime, formatTehranDateTime } from "../utils/tehranTime";
+import { useEffect, useRef, useState } from "react";
 
 export default function PriceCardRow({ card, prevCard, onOrder, disabled, priceLabelMode, feedUpdatedAt }) {
   const effectiveMode = card?.price_label_mode || priceLabelMode;
-  const updatedAt = card?.updated_at || feedUpdatedAt || null;
+  // Keep showing the last *price-change* time even if a later payload omits it.
+  const lastChangedRef = useRef(null);
+  const incoming = card?.updated_at || feedUpdatedAt || null;
+  const [updatedAt, setUpdatedAt] = useState(incoming);
+
+  useEffect(() => {
+    if (!incoming) return;
+    const nextMs = Date.parse(incoming);
+    const prevMs = lastChangedRef.current ? Date.parse(lastChangedRef.current) : NaN;
+    if (Number.isNaN(nextMs)) return;
+    if (Number.isNaN(prevMs) || nextMs >= prevMs) {
+      lastChangedRef.current = incoming;
+      setUpdatedAt(incoming);
+    }
+  }, [incoming]);
+
   const updatedLabel = updatedAt ? formatTehranTime(updatedAt, { second: "2-digit" }) : null;
 
   return (
