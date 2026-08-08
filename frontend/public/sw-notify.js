@@ -1,8 +1,7 @@
 /* Admin notification service worker.
-   - Shows OS notifications while the admin panel is backgrounded
-   - Handles Web Push so mobile phones still alert (with sound) when
-     the tab/PWA is suspended and the WebSocket is dead
-   - Accepts SHOW_NOTIFICATION messages from the open admin page
+   - Shows a brief heads-up / popup card (not sound-only)
+   - Prefers custom in-app sound via open clients; OS default only as fallback
+   - Handles Web Push when the panel is backgrounded / phone locked
    Query-string on the script URL (APP_BUILD_V) forces browsers to
    fetch a fresh SW on every deploy. */
 
@@ -57,22 +56,53 @@ function openAdminPanel(url) {
   });
 }
 
+function notifyClients(message) {
+  return self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((all) => {
+    for (const client of all) {
+      try {
+        client.postMessage(message);
+      } catch {
+        /* ignore */
+      }
+    }
+    return all;
+  });
+}
+
+/**
+ * Brief-mode popup: rich notification with actions + image so Android
+ * heads-up / Samsung "brief" style shows a card, not sound-only.
+ */
 function showAdminNotification(title, options) {
   const opts = options || {};
   const icon = opts.icon ? absoluteUrl(opts.icon) : absoluteUrl("/gt-icon-192.png");
+  const image = opts.image ? absoluteUrl(opts.image) : icon;
+  const kind = (opts.data && opts.data.type) || "new_order";
   const finalOpts = {
-    body: opts.body || "",
-    dir: opts.dir || "rtl",
-    lang: opts.lang || "fa",
+    body: opts.body || "اعلان جدید از پنل مدیریت",
+    dir: "rtl",
+    lang: "fa",
     tag: opts.tag || `admin-alert-${Date.now()}`,
-    renotify: opts.renotify !== false,
-    requireInteraction: opts.requireInteraction !== false,
-    silent: false,
-    vibrate: opts.vibrate || [220, 100, 220, 100, 320],
+    renotify: true,
+    // Helps Android show a persistent/heads-up card instead of sound-only.
+    requireInteraction: true,
+    // When a client will play our custom WAV, suppress the OS default ding.
+    silent: opts.silent === true,
+    vibrate: opts.vibrate || (kind === "new_kyc"
+      ? [160, 80, 160, 80, 280]
+      : [280, 120, 180, 120, 280, 120, 400]),
     icon,
     badge: opts.badge ? absoluteUrl(opts.badge) : icon,
-    data: { url: ADMIN_PATH, ...(opts.data || {}) },
+    image,
+    actions: opts.actions || [
+      { action: "open", title: "مشاهده" },
+      { action: "dismiss", title: "بستن" },
+    ],
+    data: { url: ADMIN_PATH, kind, ...(opts.data || {}) },
+    timestamp: Date.now(),
   };
+  // Non-standard; ignored on most Android builds, harmless elsewhere.
+  if (opts.sound) finalOpts.sound = absoluteUrl(opts.sound);
   return self.registration.showNotification(title || "آبشده قصر طلا", finalOpts);
 }
 
@@ -88,7 +118,8 @@ self.addEventListener("push", (event) => {
     title: "آبشده قصر طلا",
     body: "اعلان جدید",
     tag: "admin-alert",
-    data: { url: ADMIN_PATH },
+    type: "new_order",
+    data: { url: ADMIN_PATH, type: "new_order" },
   };
   try {
     if (event.data) {
@@ -103,21 +134,58 @@ self.addEventListener("push", (event) => {
     }
   }
 
+  const kind = payload.type || payload.data?.type || "new_order";
+  const soundPath = kind === "new_kyc" ? "/notify-kyc.wav" : "/notify-order.wav";
+
   event.waitUntil(
-    showAdminNotification(payload.title || "آبشده قصر طلا", {
-      body: payload.body,
-      tag: payload.tag,
-      icon: payload.icon,
-      badge: payload.badge,
-      vibrate: payload.vibrate,
-      data: payload.data,
-      requireInteraction: true,
-      renotify: true,
-    })
+    (async () => {
+      const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      let focused = false;
+      for (const client of clients) {
+        try {
+          if (client.focused) focused = true;
+          client.postMessage({
+            type: "ADMIN_PUSH_ALERT",
+            kind,
+            title: payload.title,
+            body: payload.body,
+            data: payload.data,
+          });
+        } catch {
+          /* ignore */
+        }
+      }
+
+      // Panel in front: in-app brief card + custom WAV only (no OS ding/card).
+      if (focused) return;
+
+      // Background tab/PWA still alive: mute OS ding (client plays custom WAV)
+      // but still show the OS brief popup card.
+      // Fully closed: OS popup + OS sound (web apps cannot replace system sound).
+      const hasClient = clients.length > 0;
+      await showAdminNotification(payload.title || "آبشده قصر طلا", {
+        body: payload.body || "اعلان جدید از پنل مدیریت",
+        tag: payload.tag || `${kind}-${Date.now()}`,
+        icon: payload.icon || "/gt-icon-192.png",
+        badge: payload.badge || "/gt-icon-192.png",
+        image: payload.image || payload.icon || "/gt-icon-192.png",
+        vibrate: payload.vibrate,
+        data: { ...(payload.data || {}), type: kind, url: ADMIN_PATH },
+        silent: hasClient,
+        sound: soundPath,
+        requireInteraction: true,
+        renotify: true,
+      });
+    })()
   );
 });
 
 self.addEventListener("notificationclick", (event) => {
+  const action = event.action;
+  if (action === "dismiss") {
+    event.notification.close();
+    return;
+  }
   event.notification.close();
   const url =
     (event.notification.data && event.notification.data.url) || ADMIN_PATH;
