@@ -812,6 +812,27 @@ export async function fetchTerms() {
   return res.json();
 }
 
+export async function lookupReygiri({ ang, series = "", includeArchive = true }) {
+  const res = await fetch(`${API_BASE}/api/reygiri/lookup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({
+      ang,
+      series: series || "",
+      include_archive: !!includeArchive,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const detail = err.detail;
+    const msg = Array.isArray(detail)
+      ? detail.map((d) => d.msg || d).join(" · ")
+      : detail || "جستجوی ریگیری با خطا مواجه شد";
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
 export async function updateTerms(text) {
   const res = await fetch(`${API_BASE}/api/admin/terms`, {
     method: "PUT",
