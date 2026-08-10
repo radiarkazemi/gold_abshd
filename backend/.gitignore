@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Runtime user uploads (KYC / receipts) — never stash/remove on deploy
+uploads/*
+!uploads/.gitkeep
