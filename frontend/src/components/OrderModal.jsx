@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchOrderLimits, fetchMyOrderDetail, retryMyOrder, retryMyOrderAtNewPrice } from "../api";
-import { localDeadlineMsFromOrder, DEFAULT_PENDING_SECONDS } from "../utils/orderCountdown";
+import {
+  localDeadlineMsFromOrder,
+  remainingFromOrder,
+  DEFAULT_PENDING_SECONDS,
+} from "../utils/orderCountdown";
 import { CircularCountdown } from "./PendingCountdown";
 import FormattedNumberInput from "./FormattedNumberInput";
 
@@ -313,10 +317,15 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
       ? STATUS_META[liveOrder.status]
       : STATUS_META.pending;
 
-  // Lock the waiting card while the admin-visibility countdown is running.
-  // After it expires (and the user has not retried), they may leave —
-  // the order is already soft-hidden from admin "در انتظار".
-  const waitingLocked = Boolean(result && liveOrder?.status === "pending" && secondsLeft > 0);
+  // Lock from the moment submit succeeds (or while the request is in
+  // flight) until the pending deadline actually passes. Do NOT key the
+  // lock off `secondsLeft` state — it starts at 0 and only updates after
+  // an effect, which let users dismiss before the timer UI appeared
+  // while the order was already pending for admin.
+  const activeOrder = liveOrder || result;
+  const pendingRemaining = remainingFromOrder(activeOrder);
+  const pendingWindowOpen = Boolean(activeOrder?.status === "pending" && pendingRemaining > 0);
+  const waitingLocked = Boolean(submitting || pendingWindowOpen);
 
   function requestClose() {
     if (waitingLocked) return;
@@ -337,8 +346,12 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
     Math.round(Number(baselineDisplayPrice)) !== Math.round(Number(liveDisplayPrice));
 
   // Pending timer expired unanswered: offer retry-at-new-price when market moved.
+  // Require a known deadline so we don't flash the expired UI before countdown seeds.
   const pendingExpiredUnanswered =
-    Boolean(result) && liveOrder?.status === "pending" && secondsLeft <= 0;
+    Boolean(result) &&
+    activeOrder?.status === "pending" &&
+    activeOrder?.pending_deadline_at &&
+    pendingRemaining <= 0;
   const pendingExpiredPriceChanged =
     pendingExpiredUnanswered &&
     submitFinalPrice() != null &&
@@ -385,14 +398,15 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
               {statusMeta.label}
             </p>
 
-            {liveOrder?.status === "pending" && (
+            {activeOrder?.status === "pending" && (
               <div className="modal-result__timer">
-                {secondsLeft > 0 ? (
+                {pendingWindowOpen ? (
                   <CircularCountdown
-                    order={liveOrder}
+                    order={activeOrder}
                     totalSeconds={limits?.pending_seconds || DEFAULT_PENDING_SECONDS}
                   />
-                ) : pendingExpiredPriceChanged ? (
+                ) : pendingExpiredUnanswered ? (
+                  pendingExpiredPriceChanged ? (
                   <div className="modal-result__price-reject">
                     <p className="modal-result__reject-reason">پاسخی دریافت نشد — مظنه تغییر کرده</p>
                     <p className="modal-result__price-change">
@@ -423,7 +437,7 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
                       </p>
                     )}
                   </div>
-                ) : retryCount < maxRetries ? (
+                  ) : retryCount < maxRetries ? (
                   <button
                     type="button"
                     className="modal-btn modal-btn--ghost"
@@ -432,11 +446,12 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
                   >
                     {retrying ? "در حال ارسال…" : `تلاش دوباره (${retryCount}/${maxRetries})`}
                   </button>
-                ) : (
+                  ) : (
                   <p className="modal-result__hint">
                     بررسی این درخواست بیش از حد معمول طول کشیده. لطفا با پشتیبانی تماس بگیرید.
                   </p>
-                )}
+                  )
+                ) : null}
               </div>
             )}
 
