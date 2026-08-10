@@ -1,0 +1,225 @@
+diff --git a/app/models/schemas.py b/app/models/schemas.py
+index e4cc762..0218ecb 100644
+--- a/app/models/schemas.py
++++ b/app/models/schemas.py
+@@ -21,12 +21,24 @@ class PriceEntry(BaseModel):
+     sell: float | None = Field(None, description="Derived customer-sell price (see README for the offset formula).")
+     min: float | None = Field(None, description="Minimum transactable quantity for this item.")
+     max: float | None = Field(None, description="Maximum transactable quantity for this item.")
+-    last_update_time: str | None = Field(None, description="Source's own last-updated timestamp for this item.")
++    last_update_time: str | None = Field(
++        None,
++        description=(
++            "When THIS item's quote last changed at the upstream source. "
++            "ISO-8601 with Asia/Tehran offset (e.g. 2026-08-10T13:27:33+03:30). "
++            "Use this as the client 'آخرین بروزرسانی' clock — it freezes while "
++            "the source quote is unchanged."
++        ),
++        examples=["2026-08-10T13:27:33+03:30"],
++    )
+ 
+ 
+ class PricesResponse(BaseModel):
+     prices: list[PriceEntry]
+-    source_updated_at: str | None = Field(None, description="Source's overall last-updated timestamp.")
++    source_updated_at: str | None = Field(
++        None,
++        description="Upstream payload-level last-updated timestamp (Asia/Tehran ISO).",
++    )
+     stale: bool = Field(..., description="True if recent polls have been failing - treat the data with caution.")
+ 
+     model_config = ConfigDict(
+@@ -37,10 +49,10 @@ class PricesResponse(BaseModel):
+                         "id": 1, "name": "نقد شنبه", "type": 1, "ayar": 750, "item_weight": 0,
+                         "active": True, "allow_buy": True, "allow_sell": True,
+                         "base_price": 788600000, "buy": 789250000.0, "sell": 787850000.0,
+-                        "min": 1, "max": 5000, "last_update_time": "2026-07-16 17:07:18",
++                        "min": 1, "max": 5000, "last_update_time": "2026-07-16T17:07:18+03:30",
+                     }
+                 ],
+-                "source_updated_at": "2026-07-16 17:07:18",
++                "source_updated_at": "2026-07-16T17:07:18+03:30",
+                 "stale": False,
+             }
+         }
+@@ -62,7 +74,7 @@ class PriceResponse(BaseModel):
+                 "sell": 787850000.0,
+                 "name": "نقد شنبه",
+                 "updated_at": "2026-07-17T12:00:00+00:00",
+-                "source_updated_at": "2026-07-16 17:07:18",
++                "source_updated_at": "2026-07-16T17:07:18+03:30",
+                 "stale": False,
+             }
+         }
+diff --git a/app/services/price_cache.py b/app/services/price_cache.py
+index 00c8b0c..d49e63c 100644
+--- a/app/services/price_cache.py
++++ b/app/services/price_cache.py
+@@ -9,10 +9,19 @@ store (e.g. Redis) if goldbridge is ever run with multiple workers.
+ from datetime import datetime, timezone
+ 
+ from app.core.config import get_settings
++from app.services.timeutil import normalize_source_timestamp
+ 
+ settings = get_settings()
+ 
+ 
++def _merge_entry(prev: dict | None, new: dict) -> dict:
++    """Merge one cleaned entry; keep prior last_update_time if the new one is blank."""
++    out = dict(new)
++    if not out.get("last_update_time") and prev and prev.get("last_update_time"):
++        out["last_update_time"] = prev["last_update_time"]
++    return out
++
++
+ class PriceCache:
+     def __init__(self):
+         self.latest_buy: float | None = None
+@@ -26,7 +35,8 @@ class PriceCache:
+         self.latest_buy = buy
+         self.latest_sell = sell
+         self.updated_at = datetime.now(timezone.utc).isoformat()
+-        self.source_updated_at = source_updated_at
++        # Payload-level lastUpdateTime is also Asia/Tehran wall clock.
++        self.source_updated_at = normalize_source_timestamp(source_updated_at) or source_updated_at
+         self.consecutive_failures = 0
+ 
+     def record_entries(self, new_entries: list[dict]) -> str:
+@@ -45,16 +55,18 @@ class PriceCache:
+         if not new_entries:
+             return "empty"
+ 
++        prev_by_id = {e["id"]: e for e in self.entries if e.get("id") is not None}
++
+         if not self.entries or len(new_entries) >= len(self.entries):
+-            self.entries = list(new_entries)
++            self.entries = [_merge_entry(prev_by_id.get(e.get("id")), e) for e in new_entries]
+             return "replaced"
+ 
+-        by_id = {e["id"]: dict(e) for e in self.entries if e.get("id") is not None}
++        by_id = {eid: dict(e) for eid, e in prev_by_id.items()}
+         for e in new_entries:
+             eid = e.get("id")
+             if eid is None:
+                 continue
+-            by_id[eid] = dict(e)
++            by_id[eid] = _merge_entry(prev_by_id.get(eid), e)
+ 
+         ordered: list[dict] = []
+         seen: set = set()
+@@ -66,7 +78,7 @@ class PriceCache:
+         for e in new_entries:
+             eid = e.get("id")
+             if eid is not None and eid not in seen:
+-                ordered.append(dict(e))
++                ordered.append(by_id[eid])
+                 seen.add(eid)
+ 
+         self.entries = ordered
+@@ -74,13 +86,18 @@ class PriceCache:
+ 
+     def sync_target_quote(self, price_id: int, buy: float, sell: float, source_updated_at: str | None):
+         """Keep the matching /prices row in sync with /price's target quote
+-        even when the source only returned that one row this tick."""
++        even when the source only returned that one row this tick.
++
++        Prefer the entry's own per-item last_update_time; only fall back to
++        the payload-level stamp when the row has none yet.
++        """
++        src_ts = normalize_source_timestamp(source_updated_at) or source_updated_at
+         for entry in self.entries:
+             if entry.get("id") == price_id:
+                 entry["buy"] = buy
+                 entry["sell"] = sell
+-                if source_updated_at:
+-                    entry["last_update_time"] = source_updated_at
++                if src_ts and not entry.get("last_update_time"):
++                    entry["last_update_time"] = src_ts
+                 return
+         # Target not in list yet (boot / never saw a full catalog) - add a
+         # minimal row so /prices isn't empty of the primary instrument.
+@@ -98,9 +115,8 @@ class PriceCache:
+             "sell": sell,
+             "min": None,
+             "max": None,
+-            "last_update_time": source_updated_at,
++            "last_update_time": src_ts,
+         })
+-
+     def record_failure(self):
+         self.consecutive_failures += 1
+ 
+diff --git a/app/services/source_parser.py b/app/services/source_parser.py
+index aa12fff..1b2052b 100644
+--- a/app/services/source_parser.py
++++ b/app/services/source_parser.py
+@@ -71,6 +71,8 @@ def clean_entry(entry: dict) -> dict:
+     picking a price, applying the same customer-buy/customer-sell
+     derivation used in extract_buy_sell.
+     """
++    from app.services.timeutil import normalize_source_timestamp
++
+     result = derive_customer_buy_sell(
+         entry.get("price"),
+         entry.get("priceBuy"),
+@@ -95,7 +97,9 @@ def clean_entry(entry: dict) -> dict:
+         "sell": customer_sell,
+         "min": entry.get("min"),
+         "max": entry.get("max"),
+-        "last_update_time": entry.get("lastUpdateTime"),
++        # Per-item source clock (Asia/Tehran ISO). Downstream apps should
++        # show this as "آخرین بروزرسانی" — do not invent poll times.
++        "last_update_time": normalize_source_timestamp(entry.get("lastUpdateTime")),
+     }
+ 
+ 
+diff --git a/app/services/timeutil.py b/app/services/timeutil.py
+new file mode 100644
+index 0000000..96a09f9
+--- /dev/null
++++ b/app/services/timeutil.py
+@@ -0,0 +1,44 @@
++"""Timestamp helpers for sekefarshad / goldbridge.
++
++sekefarshad's ``lastUpdateTime`` is an Asia/Tehran *wall clock* string
++(e.g. ``\"2026-08-10 13:27:33\"``) with no timezone suffix. Consumers that
++treat it as UTC will display the wrong local time (+3:30 / +4:30).
++
++Always normalize to ISO-8601 *with* an explicit Asia/Tehran offset before
++exposing it on /price or /prices.
++"""
++from __future__ import annotations
++
++from datetime import datetime
++from zoneinfo import ZoneInfo
++
++TEHRAN = ZoneInfo("Asia/Tehran")
++
++
++def normalize_source_timestamp(value) -> str | None:
++    """Return ISO-8601 with Asia/Tehran offset, or None if unparseable."""
++    if value is None:
++        return None
++    s = str(value).strip()
++    if not s:
++        return None
++    if " " in s and "T" not in s:
++        s = s.replace(" ", "T", 1)
++
++    try:
++        # Already has an explicit zone / offset — keep absolute instant.
++        if s.endswith(("Z", "z")) or (
++            len(s) > 10 and (s[-6] in "+-" or s[-5] in "+-") and (":" in s[-6:] or s[-3:].isdigit())
++        ):
++            if s.endswith(("Z", "z")):
++                s = s[:-1] + "+00:00"
++            dt = datetime.fromisoformat(s)
++            if dt.tzinfo is None:
++                dt = dt.replace(tzinfo=TEHRAN)
++            return dt.astimezone(TEHRAN).isoformat()
++
++        # Naive → Asia/Tehran wall clock from sekefarshad.
++        dt = datetime.fromisoformat(s).replace(tzinfo=TEHRAN)
++        return dt.isoformat()
++    except ValueError:
++        return None
