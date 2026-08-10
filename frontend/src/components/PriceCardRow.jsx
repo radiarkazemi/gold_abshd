@@ -17,7 +17,10 @@ export default function PriceCardRow({ card, prevCard, onOrder, disabled, priceL
         <div className="price-card-row__name">{card.name}</div>
         {updatedLabel && updatedLabel !== "—" && (
           <div className="price-card-row__updated" title={formatTehranDateTime(updatedAt, { second: "2-digit" })}>
-            آخرین بروزرسانی: {updatedLabel}
+            آخرین بروزرسانی:{" "}
+            <span className="price-card-row__updated-stamp" dir="ltr">
+              {updatedLabel}
+            </span>
           </div>
         )}
       </div>

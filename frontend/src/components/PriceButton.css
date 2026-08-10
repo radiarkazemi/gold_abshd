@@ -229,6 +229,12 @@
   letter-spacing: 0;
 }
 
+.price-card-row__updated-stamp {
+  display: inline-block;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
 /* Every card - primary or secondary - renders with the exact same
    component, same size, same style. No shrinking, no special-casing:
    they're just stacked vertically in the order the admin configured. */
