@@ -42,14 +42,14 @@ function pickTodayOrders(data, nowMs = Date.now()) {
 }
 
 export default function RecentOrdersTable({ limit = 5, refreshSignal }) {
-  const [todayOrders, setTodayOrders] = useState(null);
+  const [orders, setOrders] = useState(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     function load() {
       fetchMyOrders()
-        .then((data) => setTodayOrders(pickTodayOrders(data)))
-        .catch(() => setTodayOrders([]));
+        .then((data) => setOrders(Array.isArray(data) ? data : []))
+        .catch(() => setOrders([]));
     }
     load();
     const interval = setInterval(load, 6000);
@@ -59,7 +59,7 @@ export default function RecentOrdersTable({ limit = 5, refreshSignal }) {
   useEffect(() => {
     if (refreshSignal === undefined) return;
     fetchMyOrders()
-      .then((data) => setTodayOrders(pickTodayOrders(data)))
+      .then((data) => setOrders(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, [refreshSignal]);
 
@@ -70,15 +70,13 @@ export default function RecentOrdersTable({ limit = 5, refreshSignal }) {
     return () => clearInterval(id);
   }, []);
 
-  const rows = useMemo(() => {
-    const filtered = pickTodayOrders(todayOrders, nowMs);
-    return filtered.slice(0, limit);
-  }, [todayOrders, limit, nowMs]);
+  const todayOrders = useMemo(() => pickTodayOrders(orders, nowMs), [orders, nowMs]);
+  const rows = useMemo(() => todayOrders.slice(0, limit), [todayOrders, limit]);
 
   // Totals: only accepted orders count. Rejected/cancelled/pending stay
   // visible in the table but must not inflate مجموع خرید/فروش / تفاضل.
   const totals = useMemo(() => {
-    const list = (todayOrders || []).filter((o) => o.status === "accepted");
+    const list = todayOrders.filter((o) => o.status === "accepted");
     let buy = 0;
     let sell = 0;
     for (const o of list) {
@@ -89,7 +87,7 @@ export default function RecentOrdersTable({ limit = 5, refreshSignal }) {
     return { buy, sell, net: buy - sell };
   }, [todayOrders]);
 
-  if (todayOrders === null || rows.length === 0) return null;
+  if (orders === null || rows.length === 0) return null;
 
   const netClass =
     Math.abs(totals.net) < 1e-9
