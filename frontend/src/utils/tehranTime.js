@@ -50,6 +50,30 @@ export function formatTehranDateTime(iso, opts = {}) {
   });
 }
 
+/** Price-card stamp: month/day - hour:minute:second (Asia/Tehran, Gregorian). */
+export function formatTehranMonthDayTime(iso) {
+  const d = parseServerDate(iso);
+  if (!d) return "—";
+  // Explicit Gregorian calendar — plain fa-IR would render Jalali month/day.
+  const datePart = d.toLocaleDateString("fa-IR-u-ca-gregory", {
+    timeZone: TEHRAN_TZ,
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const timePart = d.toLocaleTimeString("fa-IR-u-ca-gregory", {
+    timeZone: TEHRAN_TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  // Some engines emit YYYY/MM/DD — keep month/day only.
+  const md = datePart.includes("/")
+    ? datePart.split("/").slice(-2).join("/")
+    : datePart;
+  return `${md} - ${timePart}`;
+}
+
 /** Gregorian YYYY-MM-DD for an instant in Asia/Tehran. */
 export function tehranDayKey(isoOrDate = new Date()) {
   const d = isoOrDate instanceof Date ? isoOrDate : parseServerDate(isoOrDate);
