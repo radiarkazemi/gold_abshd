@@ -137,13 +137,20 @@ def _send_one(db: Session, row, payload: dict, vapid_private: str) -> bool:
         "keys": {"p256dh": row.p256dh, "auth": row.auth},
     }
     try:
+        # TTL must be long enough for Doze / offline Android devices.
+        # 120s caused drops when FCM could not wake the phone quickly;
+        # 24h keeps the message queued until the device comes online.
         webpush(
             subscription_info=subscription_info,
             data=json.dumps(payload, ensure_ascii=False),
             vapid_private_key=vapid_private,
             vapid_claims=_vapid_claims(),
-            ttl=120,
-            headers={"Urgency": "high", "Topic": str(payload.get("tag") or "admin")[:32]},
+            ttl=86400,
+            headers={
+                "Urgency": "high",
+                # Unique topic per alert so FCM does not collapse distinct orders.
+                "Topic": str(payload.get("tag") or "admin")[:32],
+            },
         )
         return True
     except WebPushException as e:

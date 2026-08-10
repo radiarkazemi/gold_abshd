@@ -70,6 +70,37 @@ function hashAppBuild(rootDir, publicDir) {
   return hash.digest("hex").slice(0, 12);
 }
 
+const ADMIN_START_URL = "/admin-hs-panel?source=pwa";
+
+function brandIcons(brandVersion) {
+  return [
+    {
+      src: `/gt-favicon-64.png?v=${brandVersion}`,
+      sizes: "64x64",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: `/gt-icon-192.png?v=${brandVersion}`,
+      sizes: "192x192",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: `/gt-icon-512.png?v=${brandVersion}`,
+      sizes: "512x512",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: `/gt-apple-touch-icon.png?v=${brandVersion}`,
+      sizes: "180x180",
+      type: "image/png",
+      purpose: "any",
+    },
+  ];
+}
+
 function writeManifest(publicDir, brandVersion) {
   const manifestPath = resolve(publicDir, "manifest.json");
   const manifest = {
@@ -87,34 +118,28 @@ function writeManifest(publicDir, brandVersion) {
     lang: "fa",
     // Changing id when icons change nudges Chromium to refresh the installed icon.
     id: `/?brand=${brandVersion}`,
-    icons: [
-      {
-        src: `/gt-favicon-64.png?v=${brandVersion}`,
-        sizes: "64x64",
-        type: "image/png",
-        purpose: "any",
-      },
-      {
-        src: `/gt-icon-192.png?v=${brandVersion}`,
-        sizes: "192x192",
-        type: "image/png",
-        purpose: "any",
-      },
-      {
-        src: `/gt-icon-512.png?v=${brandVersion}`,
-        sizes: "512x512",
-        type: "image/png",
-        purpose: "any",
-      },
-      {
-        src: `/gt-apple-touch-icon.png?v=${brandVersion}`,
-        sizes: "180x180",
-        type: "image/png",
-        purpose: "any",
-      },
-    ],
+    icons: brandIcons(brandVersion),
   };
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  // Static HTTPS URL — Safari ignores blob: manifests for Add to Home Screen.
+  const adminManifestPath = resolve(publicDir, "admin-manifest.json");
+  const adminManifest = {
+    name: "پنل مدیریت قصر طلا",
+    short_name: "پنل قصر طلا",
+    description: "پنل مدیریت آبشده قصر طلا",
+    start_url: ADMIN_START_URL,
+    scope: "/",
+    display: "standalone",
+    orientation: "portrait",
+    background_color: "#12100b",
+    theme_color: "#12100b",
+    dir: "rtl",
+    lang: "fa",
+    id: `/admin-hs-panel?brand=${brandVersion}`,
+    icons: brandIcons(brandVersion),
+  };
+  writeFileSync(adminManifestPath, `${JSON.stringify(adminManifest, null, 2)}\n`);
 }
 
 function writeBrandModule(srcDir, brandVersion, buildVersion) {
@@ -127,6 +152,7 @@ export const icon512Url = \`/gt-icon-512.png?v=\${BRAND_V}\`;
 export const faviconUrl = \`/gt-favicon-64.png?v=\${BRAND_V}\`;
 export const appleTouchIconUrl = \`/gt-apple-touch-icon.png?v=\${BRAND_V}\`;
 export const manifestUrl = \`/manifest.json?v=\${BRAND_V}\`;
+export const adminManifestUrl = \`/admin-manifest.json?v=\${BRAND_V}\`;
 `;
   writeFileSync(resolve(srcDir, "brandAssets.js"), contents);
 }

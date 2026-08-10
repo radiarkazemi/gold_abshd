@@ -26,7 +26,7 @@ import {
   subscribeAdminPush,
   pushSupportInfo,
 } from "../utils/desktopNotify";
-import { applyAdminPwaManifest } from "../utils/adminManifest";
+import { applyAdminPwaManifest, adminInstallHint } from "../utils/adminManifest";
 import AdminNotifyBanner from "../components/AdminNotifyBanner";
 import { orderGoldWeight, orderTotalMoney, summarizeOrders } from "../utils/orderCalc";
 import { formatCashStatus } from "../utils/balanceFormat";
@@ -158,23 +158,42 @@ function AdminPanel({ onLogout, identity }) {
     // minimized/backgrounded, and native mobile notifications + Web Push
     // so locked phones still get order alerts with sound.
     (async () => {
+      const installTip = adminInstallHint();
       const info = pushSupportInfo();
       if (!info.secureContext) {
         setPushHint(
           "برای اعلان بالای صفحه وقتی مرورگر بسته است، سایت باید HTTPS باشد. الان فقط با باز بودن پنل صدا/بنر کار می‌کند."
         );
+      } else if (installTip) {
+        setPushHint(installTip);
       }
       await registerNotifyServiceWorker();
       const perm = await ensureNotificationPermission();
       if (perm === "granted") {
         const ok = await subscribeAdminPush();
         if (!ok && info.secureContext) {
-          setPushHint("ثبت اعلان پس‌زمینه ناموفق بود — یک‌بار از پنل خارج شوید و دوباره وارد شوید.");
+          setPushHint(
+            [
+              "ثبت اعلان پس‌زمینه ناموفق بود — یک‌بار از پنل خارج شوید و دوباره وارد شوید.",
+              installTip,
+            ]
+              .filter(Boolean)
+              .join(" ")
+          );
+        } else if (ok && installTip) {
+          setPushHint(installTip);
         } else if (ok) {
           setPushHint("");
         }
       } else if (perm === "denied") {
-        setPushHint("مجوز اعلان مرورگر رد شده است — از تنظیمات سایت مجوز Notifications را فعال کنید.");
+        setPushHint(
+          [
+            "مجوز اعلان مرورگر رد شده است — از تنظیمات سایت مجوز Notifications را فعال کنید.",
+            installTip,
+          ]
+            .filter(Boolean)
+            .join(" ")
+        );
       }
     })();
 

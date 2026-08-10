@@ -159,10 +159,10 @@ self.addEventListener("push", (event) => {
       // Panel in front: in-app brief card + custom WAV only (no OS ding/card).
       if (focused) return;
 
-      // Background tab/PWA still alive: mute OS ding (client plays custom WAV)
-      // but still show the OS brief popup card.
-      // Fully closed: OS popup + OS sound (web apps cannot replace system sound).
-      const hasClient = clients.length > 0;
+      // Background / locked: ALWAYS use an audible OS notification.
+      // Previously we set silent=true whenever any (frozen) client existed;
+      // Android then showed a mute banner and the suspended page never played
+      // the custom WAV — alerts felt "very late" until the user unlocked.
       await showAdminNotification(payload.title || "آبشده قصر طلا", {
         body: payload.body || "اعلان جدید از پنل مدیریت",
         tag: payload.tag || `${kind}-${Date.now()}`,
@@ -171,7 +171,7 @@ self.addEventListener("push", (event) => {
         image: payload.image || payload.icon || "/gt-icon-192.png",
         vibrate: payload.vibrate,
         data: { ...(payload.data || {}), type: kind, url: ADMIN_PATH },
-        silent: hasClient,
+        silent: false,
         sound: soundPath,
         requireInteraction: true,
         renotify: true,
