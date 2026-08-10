@@ -67,6 +67,8 @@ export default function TraderPage() {
     try {
       const order = await submitOrder({ ...payload, goldbridgeItemId: activeOrder.card.goldbridge_item_id });
       setResult(order);
+      // Surface the new pending row in «آخرین سفارش‌ها · امروز» immediately.
+      setRefreshKey((k) => k + 1);
     } catch (e) {
       console.error(e);
       setError(e.message || "ارسال درخواست با خطا مواجه شد. دوباره تلاش کنید.");
