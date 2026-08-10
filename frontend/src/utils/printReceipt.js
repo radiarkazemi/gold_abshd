@@ -42,9 +42,9 @@ function watermarkCss() {
     print-color-adjust: exact;
   }
   .wm img {
-    width: min(70vw, 70vh);
-    max-width: 160mm;
-    max-height: 160mm;
+    width: min(82vw, 82vh);
+    max-width: 190mm;
+    max-height: 190mm;
     height: auto;
     opacity: 0.08;
     object-fit: contain;
@@ -63,9 +63,9 @@ function watermarkCss() {
     }
     .wm img {
       /* Scale with the printed page box (A4 / Letter / whatever the printer uses). */
-      width: 62%;
+      width: 78%;
       max-width: none;
-      max-height: 62%;
+      max-height: 78%;
       opacity: 0.07;
     }
   }`;
