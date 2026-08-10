@@ -1,5 +1,5 @@
 import PriceButton from "./PriceButton";
-import { formatTehranTime, formatTehranDateTime } from "../utils/tehranTime";
+import { formatTehranMonthDayTime, formatTehranDateTime } from "../utils/tehranTime";
 
 /**
  * Show goldbridge's per-item last_update_time as آخرین بروزرسانی.
@@ -9,14 +9,14 @@ import { formatTehranTime, formatTehranDateTime } from "../utils/tehranTime";
 export default function PriceCardRow({ card, prevCard, onOrder, disabled, priceLabelMode }) {
   const effectiveMode = card?.price_label_mode || priceLabelMode;
   const updatedAt = card?.updated_at || null;
-  const updatedLabel = updatedAt ? formatTehranTime(updatedAt, { second: "2-digit" }) : null;
+  const updatedLabel = updatedAt ? formatTehranMonthDayTime(updatedAt) : null;
 
   return (
     <div className={`price-card-row ${card.is_primary ? "price-card-row--primary" : "price-card-row--secondary"}`}>
       <div className="price-card-row__head">
         <div className="price-card-row__name">{card.name}</div>
         {updatedLabel && updatedLabel !== "—" && (
-          <div className="price-card-row__updated" title={formatTehranDateTime(updatedAt)}>
+          <div className="price-card-row__updated" title={formatTehranDateTime(updatedAt, { second: "2-digit" })}>
             آخرین بروزرسانی: {updatedLabel}
           </div>
         )}
