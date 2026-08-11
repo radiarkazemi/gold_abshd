@@ -8,6 +8,7 @@ import {
   setPriceCardManualPrice,
   setPriceCardRoleCommission,
 } from "../api";
+import FormattedNumberInput from "../components/FormattedNumberInput";
 
 function fa(n, opts) {
   if (n == null) return "—";
@@ -15,6 +16,21 @@ function fa(n, opts) {
 }
 
 const TYPE_LABEL = { 1: "طلا (گرم/عیار)", 2: "سکه" };
+const SPECIAL_MOTAFEREGHE_ID = 900001;
+const SPECIAL_NAGHD_KARTKHAN_ID = 900002;
+
+/** Parse toman/percent fee from typed input (commas / Persian digits OK). */
+function parseFeeNumber(raw) {
+  const s = String(raw ?? "")
+    .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
+    .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d))
+    .replace(/,/g, "")
+    .replace(/٫/g, ".")
+    .trim();
+  if (!s) return 0;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+}
 
 function ManualPriceEditor({ card, busy, onSave }) {
   const [useManual, setUseManual] = useState(!!card.use_manual_price);
@@ -111,9 +127,12 @@ function ManualPriceEditor({ card, busy, onSave }) {
 function RoleCommissionEditor({ card, busy, onSave }) {
   const rows = card.role_commissions || [];
   const [drafts, setDrafts] = useState({});
+  const [savingRoleId, setSavingRoleId] = useState(null);
   const dirtyRolesRef = useRef(new Set());
-  const prevBusyRef = useRef(busy);
   const manualMode = !!card.use_manual_price || card.price_source === "manual";
+  const isSpecialMirror =
+    card.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
+    || card.goldbridge_item_id === SPECIAL_NAGHD_KARTKHAN_ID;
 
   function rowsToDrafts(sourceRows) {
     const next = {};
@@ -127,33 +146,42 @@ function RoleCommissionEditor({ card, busy, onSave }) {
     return next;
   }
 
-  // Initial / card-switch hydrate
+  // Initial / card-switch hydrate only — never on live polls.
   useEffect(() => {
     dirtyRolesRef.current = new Set();
+    setSavingRoleId(null);
     setDrafts(rowsToDrafts(rows));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.goldbridge_item_id]);
 
-  // After a save completes (busy true→false), pull saved values for roles
-  // that aren't still being edited. Live polls must not reset checkboxes.
+  // When parent refreshes card data after a successful save (or idle poll),
+  // merge server values for roles the admin is NOT currently editing.
   useEffect(() => {
-    const wasBusy = prevBusyRef.current;
-    prevBusyRef.current = busy;
-    if (!(wasBusy && !busy)) return;
     setDrafts((prev) => {
       const next = { ...prev };
+      let changed = false;
       for (const r of rows) {
         if (dirtyRolesRef.current.has(r.role_id)) continue;
-        next[r.role_id] = {
+        if (savingRoleId === r.role_id) continue;
+        const server = {
           commission_type: r.commission_type || "fixed",
           commission_value: String(r.commission_value ?? 0),
           can_order: r.can_order !== false,
         };
+        const cur = next[r.role_id];
+        if (
+          !cur
+          || cur.commission_type !== server.commission_type
+          || cur.commission_value !== server.commission_value
+          || cur.can_order !== server.can_order
+        ) {
+          next[r.role_id] = server;
+          changed = true;
+        }
       }
-      return next;
+      return changed ? next : prev;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy]);
+  }, [rows, savingRoleId]);
 
   if (!rows.length) {
     return <p className="price-cards-admin__hint">هنوز دسته‌بندی کاربری تعریف نشده.</p>;
@@ -162,6 +190,18 @@ function RoleCommissionEditor({ card, busy, onSave }) {
   return (
     <div className="price-cards-admin__commissions">
       <div className="price-cards-admin__commissions-title">کمیسیون و دسترسی هر دسته‌بندی برای این کارت</div>
+      {isSpecialMirror ? (
+        <p className="price-cards-admin__manual-note">
+          {card.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
+            ? "متفرقه: کارمزد ثابت/درصدی به قیمت پایه id:1 اضافه می‌شود، سپس گرم ۱۸ با ÷ ۴٫۳۹ محاسبه می‌گردد."
+            : "نقد کارتخوان: کارمزد دسته‌بندی به بخریدِ id:1 اضافه می‌شود، سپس ثابت ۱۰۰٬۰۰۰ تومان روی قیمت نهایی اعمال می‌شود."}
+        </p>
+      ) : (
+        <p className="price-cards-admin__hint">
+          کارمزد ثابت (تومان) همین‌جا روی قیمت مثقال این کارت اعمال می‌شود.
+          افزودن خودکار ۱۰۰٬۰۰۰ تومان فقط مخصوص «نقد کارتخوان» است؛ فرمول ÷۴٫۳۹ فقط مخصوص «متفرقه».
+        </p>
+      )}
       {manualMode && (
         <p className="price-cards-admin__manual-note">
           حالت قیمت دستی فعال است — با سوییچ «مجاز به سفارش» مشخص کنید کدام دسته‌بندی می‌تواند با این قیمت سفارش بدهد.
@@ -173,6 +213,7 @@ function RoleCommissionEditor({ card, busy, onSave }) {
           commission_value: String(r.commission_value ?? 0),
           can_order: r.can_order !== false,
         };
+        const rowBusy = busy || savingRoleId === r.role_id;
         return (
           <div key={r.role_id} className="price-cards-admin__commission-row">
             <div className="price-cards-admin__commission-role">
@@ -187,7 +228,7 @@ function RoleCommissionEditor({ card, busy, onSave }) {
               <input
                 type="checkbox"
                 checked={draft.can_order !== false}
-                disabled={busy}
+                disabled={rowBusy}
                 onChange={(e) => {
                   dirtyRolesRef.current.add(r.role_id);
                   setDrafts((prev) => ({
@@ -201,7 +242,7 @@ function RoleCommissionEditor({ card, busy, onSave }) {
             <div className="price-cards-admin__commission-fields">
               <select
                 value={draft.commission_type}
-                disabled={busy}
+                disabled={rowBusy}
                 onChange={(e) => {
                   dirtyRolesRef.current.add(r.role_id);
                   setDrafts((prev) => ({
@@ -213,34 +254,67 @@ function RoleCommissionEditor({ card, busy, onSave }) {
                 <option value="fixed">ثابت (تومان)</option>
                 <option value="percentage">درصدی</option>
               </select>
-              <input
-                type="number"
-                inputMode="decimal"
+              <FormattedNumberInput
                 value={draft.commission_value}
-                disabled={busy}
-                onChange={(e) => {
+                disabled={rowBusy}
+                placeholder={draft.commission_type === "percentage" ? "مثلاً ۰٫۵" : "مثلاً ۱۰۰٬۰۰۰"}
+                onChange={(raw) => {
                   dirtyRolesRef.current.add(r.role_id);
                   setDrafts((prev) => ({
                     ...prev,
-                    [r.role_id]: { ...draft, commission_value: e.target.value },
+                    [r.role_id]: { ...draft, commission_value: raw },
                   }));
                 }}
               />
               <button
                 type="button"
                 className="price-cards-admin__save-btn"
-                disabled={busy}
-                onClick={() => {
-                  dirtyRolesRef.current.delete(r.role_id);
-                  onSave({
-                    roleId: r.role_id,
-                    commissionType: draft.commission_type,
-                    commissionValue: Number(draft.commission_value || 0),
-                    canOrder: draft.can_order !== false,
-                  });
+                disabled={rowBusy}
+                onClick={async () => {
+                  const fee = parseFeeNumber(draft.commission_value);
+                  if (!Number.isFinite(fee)) {
+                    alert("مقدار کارمزد نامعتبر است");
+                    return;
+                  }
+                  dirtyRolesRef.current.add(r.role_id);
+                  setSavingRoleId(r.role_id);
+                  // Keep the typed value visible even if a poll arrives mid-save.
+                  setDrafts((prev) => ({
+                    ...prev,
+                    [r.role_id]: {
+                      ...draft,
+                      commission_value: String(fee),
+                    },
+                  }));
+                  try {
+                    const updatedRows = await onSave({
+                      roleId: r.role_id,
+                      commissionType: draft.commission_type,
+                      commissionValue: fee,
+                      canOrder: draft.can_order !== false,
+                    });
+                    const saved = (updatedRows || []).find((x) => x.role_id === r.role_id);
+                    if (saved) {
+                      setDrafts((prev) => ({
+                        ...prev,
+                        [r.role_id]: {
+                          commission_type: saved.commission_type || draft.commission_type,
+                          commission_value: String(saved.commission_value ?? fee),
+                          can_order: saved.can_order !== false,
+                        },
+                      }));
+                    }
+                    dirtyRolesRef.current.delete(r.role_id);
+                  } catch (e) {
+                    // Keep dirty + typed value so a failed save does not snap
+                    // back to the role default (often ۱۰٬۰۰۰).
+                    alert(e.message || "خطا در ذخیره کمیسیون");
+                  } finally {
+                    setSavingRoleId(null);
+                  }
                 }}
               >
-                ذخیره
+                {savingRoleId === r.role_id ? "…" : "ذخیره"}
               </button>
             </div>
           </div>
@@ -290,6 +364,7 @@ export default function AdminPricesTab() {
   }, []);
 
   async function toggleEnabled(card) {
+    busyIdRef.current = card.goldbridge_item_id;
     setBusyId(card.goldbridge_item_id);
     try {
       const updated = await setPriceCardEnabled(card.goldbridge_item_id, !card.is_enabled);
@@ -298,11 +373,13 @@ export default function AdminPricesTab() {
     } catch (e) {
       alert(e.message || "خطا در تغییر وضعیت نمایش");
     } finally {
+      busyIdRef.current = null;
       setBusyId(null);
     }
   }
 
   async function toggleOrderable(card, side) {
+    busyIdRef.current = card.goldbridge_item_id;
     setBusyId(card.goldbridge_item_id);
     try {
       const nextBuy = side === "buy" ? !card.orderable_buy : card.orderable_buy;
@@ -313,11 +390,13 @@ export default function AdminPricesTab() {
     } catch (e) {
       alert(e.message || "خطا در تغییر وضعیت سفارش‌پذیری");
     } finally {
+      busyIdRef.current = null;
       setBusyId(null);
     }
   }
 
   async function toggleOverride(card) {
+    busyIdRef.current = card.goldbridge_item_id;
     setBusyId(card.goldbridge_item_id);
     try {
       const updated = await setPriceCardOverride(card.goldbridge_item_id, !card.override_source_restriction);
@@ -326,11 +405,13 @@ export default function AdminPricesTab() {
     } catch (e) {
       alert(e.message || "خطا در تغییر وضعیت override");
     } finally {
+      busyIdRef.current = null;
       setBusyId(null);
     }
   }
 
   async function saveManual(card, payload) {
+    busyIdRef.current = card.goldbridge_item_id;
     setBusyId(card.goldbridge_item_id);
     try {
       const updated = await setPriceCardManualPrice(card.goldbridge_item_id, payload);
@@ -339,19 +420,26 @@ export default function AdminPricesTab() {
     } catch (e) {
       alert(e.message || "خطا در ذخیره قیمت دستی");
     } finally {
+      busyIdRef.current = null;
       setBusyId(null);
     }
   }
 
   async function saveCommission(card, payload) {
+    busyIdRef.current = card.goldbridge_item_id;
     setBusyId(card.goldbridge_item_id);
     try {
       const updated = await setPriceCardRoleCommission(card.goldbridge_item_id, payload);
       setCards(updated);
       fetchGenRef.current += 1;
+      const savedCard = (updated || []).find((c) => c.goldbridge_item_id === card.goldbridge_item_id);
+      return savedCard?.role_commissions || [];
     } catch (e) {
-      alert(e.message || "خطا در ذخیره کمیسیون");
+      // Re-throw so RoleCommissionEditor keeps the typed fee (does not
+      // snap back to the role default, often ۱۰٬۰۰۰).
+      throw e instanceof Error ? e : new Error(e?.message || "خطا در ذخیره کمیسیون");
     } finally {
+      busyIdRef.current = null;
       setBusyId(null);
     }
   }
@@ -387,7 +475,8 @@ export default function AdminPricesTab() {
       <p className="price-cards-admin__hint">
         «نمایش به مشتری» یعنی قیمت این کارت روی صفحه اصلی نشان داده می‌شود.
         دکمه‌های «خرید» و «فروش» مستقل از هم هستند. کمیسیون هر دسته‌بندی روی همین کارت قابل تنظیم روزانه است.
-        کارت‌های «متفرقه» و «نقد کارتخوان» قیمت را از آیتم id:1 می‌گیرند (نقد کارتخوان = قیمت نهایی id:1 پس از کارمزد + ۱۰۰٬۰۰۰ تومان)؛ کارمزد/اختلاف را از همین صفحه برای هر دسته‌بندی تنظیم کنید.
+        کارت‌های «متفرقه» و «نقد کارتخوان» قیمت را از آیتم id:1 می‌گیرند (نقد کارتخوان = قیمت نهایی id:1 پس از کارمزد + ۱۰۰٬۰۰۰ تومان).
+        کارمزد/اختلاف هر دسته‌بندی را روی همان کارت تنظیم کنید — مقدار ذخیره‌شده همان تومان/درصدی است که وارد می‌کنید (مثلاً ۱۰۰٬۰۰۰)، و به پیش‌فرض نقش برنمی‌گردد.
       </p>
 
       <div className="admin-prices__grid">
@@ -521,9 +610,9 @@ export default function AdminPricesTab() {
 
               {isMirrored && (
                 <p className="price-cards-admin__manual-note">
-                  {c.goldbridge_item_id === 900001
+                  {c.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
                     ? "متفرقه: قیمت پایه = بخریدِ id:1 — گرم ۱۸ = (قیمت + کارمزد) ÷ ۴٫۳۹ برای بفروشید."
-                    : c.goldbridge_item_id === 900002
+                    : c.goldbridge_item_id === SPECIAL_NAGHD_KARTKHAN_ID
                       ? "نقد کارتخوان: قیمت نهایی = (بخریدِ id:1 + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."
                       : `قیمت این کارت همیشه از آیتم id:${c.price_source_item_id || 1} گرفته می‌شود.`}
                   {" "}
