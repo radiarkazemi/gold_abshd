@@ -27,14 +27,13 @@ def _current_role_amount_limits(
     min_amount: float | None,
     max_amount: float | None,
 ) -> tuple[float | None, float | None]:
-    """Auto-fill amount limits from weight limits using the current primary
-    gold buy price personalized for this role.
+    """Auto-fill / refresh amount limits from weight limits using the
+    current primary gold buy price personalized for this role.
 
-    We only fill missing amount values; explicit admin-entered amounts win.
+    Weight is the source of truth for دسته بندی caps: whenever a weight
+    is set, its matching تومان amount is recomputed from live gold
+    (ignoring any stale client-sent amount for that side).
     """
-    if min_amount is not None and max_amount is not None:
-        return min_amount, max_amount
-
     try:
         cards = price_cards.get_enabled_cards_for_broadcast(db)
     except Exception:
@@ -57,9 +56,9 @@ def _current_role_amount_limits(
     # match the exact number the customer sees on the card.
     displayed_gram18 = round(mesghal17_to_gram18(final_buy_mesghal))
 
-    if min_amount is None and min_weight is not None:
+    if min_weight is not None:
         min_amount = round(min_weight * displayed_gram18)
-    if max_amount is None and max_weight is not None:
+    if max_weight is not None:
         max_amount = round(max_weight * displayed_gram18)
     return min_amount, max_amount
 
