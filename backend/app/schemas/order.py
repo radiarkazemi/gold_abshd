@@ -93,6 +93,8 @@ class OrderLimitsOut(BaseModel):
     kyc_status: str = "none"  # none | pending | approved | rejected
     kyc_approved: bool = False
     pending_seconds: int = 120
+    # When true, تومان min/max are derived from weight × live gold (role weight caps).
+    amount_limits_follow_weight: bool = False
     # Per-card commission overrides for this user's role (fallback = role default above).
     card_commissions: list[CardCommissionOut] = []
 

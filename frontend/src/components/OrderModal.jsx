@@ -30,6 +30,21 @@ function formatWeight(n) {
   return Number(n).toLocaleString("en-US", { maximumFractionDigits: 3 });
 }
 
+/** When دسته بندی caps follow weight, refresh تومان from live card buy unit. */
+function limitsWithLiveAmounts(limits, card) {
+  if (!limits || !limits.amount_limits_follow_weight || !card) return limits;
+  const unit = Math.round(Number(card.gram18_buy_price));
+  if (!Number.isFinite(unit) || unit <= 0) return limits;
+  const next = { ...limits };
+  if (limits.min_weight != null && Number(limits.min_weight) > 0) {
+    next.min_amount = Math.round(Number(limits.min_weight) * unit);
+  }
+  if (limits.max_weight != null && Number(limits.max_weight) > 0) {
+    next.max_amount = Math.round(Number(limits.max_weight) * unit);
+  }
+  return next;
+}
+
 /** iPhone / EU keyboards often insert "," as the decimal separator. */
 function normalizeDecimalInput(value) {
   return String(value ?? "")
@@ -58,6 +73,7 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
   // "قیمت تغییر کرد" tag if the live feed moves before submit.
   const baselinePriceRef = useRef(null);
   const meta = SIDE_META[side];
+  const effectiveLimits = limitsWithLiveAmounts(limits, card);
 
   if (baselinePriceRef.current == null && card) {
     baselinePriceRef.current = {
@@ -77,7 +93,21 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
   }
 
   useEffect(() => {
-    fetchOrderLimits().then(setLimits).catch(() => {});
+    let cancelled = false;
+    function loadLimits() {
+      fetchOrderLimits()
+        .then((data) => {
+          if (!cancelled) setLimits(data);
+        })
+        .catch(() => {});
+    }
+    loadLimits();
+    // Keep تومان caps in sync when the role derives them from weight × live gold.
+    const poll = setInterval(loadLimits, 8000);
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+    };
   }, []);
 
   useEffect(() => {
@@ -264,23 +294,23 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
       return numeric;
     }
 
-    if (limits) {
+    if (effectiveLimits) {
       if (amountType === "weight") {
-        if (numeric < limits.min_weight) {
-          setLocalError(`حداقل مقدار سفارش ${toFarsiNumber(limits.min_weight)} گرم ۱۸ است`);
+        if (numeric < effectiveLimits.min_weight) {
+          setLocalError(`حداقل مقدار سفارش ${toFarsiNumber(effectiveLimits.min_weight)} گرم ۱۸ است`);
           return null;
         }
-        if (numeric > limits.max_weight) {
-          setLocalError(`حداکثر مقدار سفارش ${toFarsiNumber(limits.max_weight)} گرم ۱۸ است`);
+        if (numeric > effectiveLimits.max_weight) {
+          setLocalError(`حداکثر مقدار سفارش ${toFarsiNumber(effectiveLimits.max_weight)} گرم ۱۸ است`);
           return null;
         }
       } else {
-        if (limits.min_amount && numeric < limits.min_amount) {
-          setLocalError(`حداقل مبلغ سفارش ${toFarsiNumber(limits.min_amount)} تومان است`);
+        if (effectiveLimits.min_amount && numeric < effectiveLimits.min_amount) {
+          setLocalError(`حداقل مبلغ سفارش ${toFarsiNumber(effectiveLimits.min_amount)} تومان است`);
           return null;
         }
-        if (limits.max_amount && numeric > limits.max_amount) {
-          setLocalError(`حداکثر مبلغ سفارش ${toFarsiNumber(limits.max_amount)} تومان است`);
+        if (effectiveLimits.max_amount && numeric > effectiveLimits.max_amount) {
+          setLocalError(`حداکثر مبلغ سفارش ${toFarsiNumber(effectiveLimits.max_amount)} تومان است`);
           return null;
         }
       }
@@ -609,17 +639,17 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
                   dir="ltr"
                 />
               )}
-              {!isCoin && limits && amountType === "weight" && (
+              {!isCoin && effectiveLimits && amountType === "weight" && (
                 <span className="field__hint">
-                  حداقل: {toFarsiNumber(limits.min_weight)} گرم ۱۸ &nbsp;·&nbsp; حداکثر:{" "}
-                  {toFarsiNumber(limits.max_weight)} گرم ۱۸
+                  حداقل: {toFarsiNumber(effectiveLimits.min_weight)} گرم ۱۸ &nbsp;·&nbsp; حداکثر:{" "}
+                  {toFarsiNumber(effectiveLimits.max_weight)} گرم ۱۸
                 </span>
               )}
-              {!isCoin && limits && amountType === "amount" && (limits.min_amount > 0 || limits.max_amount > 0) && (
+              {!isCoin && effectiveLimits && amountType === "amount" && (effectiveLimits.min_amount > 0 || effectiveLimits.max_amount > 0) && (
                 <span className="field__hint">
-                  {limits.min_amount > 0 && <>حداقل: {toFarsiNumber(limits.min_amount)} تومان</>}
-                  {limits.min_amount > 0 && limits.max_amount > 0 && <>&nbsp;·&nbsp;</>}
-                  {limits.max_amount > 0 && <>حداکثر: {toFarsiNumber(limits.max_amount)} تومان</>}
+                  {effectiveLimits.min_amount > 0 && <>حداقل: {toFarsiNumber(effectiveLimits.min_amount)} تومان</>}
+                  {effectiveLimits.min_amount > 0 && effectiveLimits.max_amount > 0 && <>&nbsp;·&nbsp;</>}
+                  {effectiveLimits.max_amount > 0 && <>حداکثر: {toFarsiNumber(effectiveLimits.max_amount)} تومان</>}
                 </span>
               )}
               {isCoin && <span className="field__hint">حداکثر ۵۰ عدد در هر سفارش</span>}
