@@ -54,7 +54,9 @@ class SetCardManualPriceIn(BaseModel):
 class SetCardRoleCommissionIn(BaseModel):
     role_id: str
     commission_type: str  # "fixed" | "percentage"
-    commission_value: float
+    commission_value: float | None = None  # legacy / one-sided: copied to both sides if buy/sell omitted
+    commission_buy_value: float | None = None
+    commission_sell_value: float | None = None
     # When the card uses manual prices, False blocks this role from ordering.
     can_order: bool = True
 

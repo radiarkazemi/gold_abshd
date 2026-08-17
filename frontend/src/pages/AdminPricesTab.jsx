@@ -124,6 +124,24 @@ function ManualPriceEditor({ card, busy, onSave }) {
   );
 }
 
+function draftFromRow(r) {
+  const buy = r.commission_buy_value ?? r.commission_value ?? 0;
+  const sell = r.commission_sell_value ?? r.commission_value ?? 0;
+  return {
+    commission_type: r.commission_type || "fixed",
+    commission_value: String(r.commission_value ?? buy ?? 0),
+    commission_buy_value: String(buy),
+    commission_sell_value: String(sell),
+    can_order: r.can_order !== false,
+  };
+}
+
+function cardUsesSplitCommission(card) {
+  if (card.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID) return false;
+  if (card.goldbridge_item_id === SPECIAL_NAGHD_KARTKHAN_ID) return false;
+  return card.buy != null && card.sell != null;
+}
+
 function RoleCommissionEditor({ card, busy, onSave }) {
   const rows = card.role_commissions || [];
   const [drafts, setDrafts] = useState({});
@@ -133,16 +151,11 @@ function RoleCommissionEditor({ card, busy, onSave }) {
   const isSpecialMirror =
     card.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
     || card.goldbridge_item_id === SPECIAL_NAGHD_KARTKHAN_ID;
+  const splitCommission = cardUsesSplitCommission(card);
 
   function rowsToDrafts(sourceRows) {
     const next = {};
-    for (const r of sourceRows) {
-      next[r.role_id] = {
-        commission_type: r.commission_type || "fixed",
-        commission_value: String(r.commission_value ?? 0),
-        can_order: r.can_order !== false,
-      };
-    }
+    for (const r of sourceRows) next[r.role_id] = draftFromRow(r);
     return next;
   }
 
@@ -163,16 +176,14 @@ function RoleCommissionEditor({ card, busy, onSave }) {
       for (const r of rows) {
         if (dirtyRolesRef.current.has(r.role_id)) continue;
         if (savingRoleId === r.role_id) continue;
-        const server = {
-          commission_type: r.commission_type || "fixed",
-          commission_value: String(r.commission_value ?? 0),
-          can_order: r.can_order !== false,
-        };
+        const server = draftFromRow(r);
         const cur = next[r.role_id];
         if (
           !cur
           || cur.commission_type !== server.commission_type
           || cur.commission_value !== server.commission_value
+          || cur.commission_buy_value !== server.commission_buy_value
+          || cur.commission_sell_value !== server.commission_sell_value
           || cur.can_order !== server.can_order
         ) {
           next[r.role_id] = server;
@@ -196,6 +207,10 @@ function RoleCommissionEditor({ card, busy, onSave }) {
             ? "متفرقه: کارمزد ثابت/درصدی به قیمت پایه id:1 اضافه می‌شود، سپس گرم ۱۸ با ÷ ۴٫۳۹ محاسبه می‌گردد."
             : "نقد کارتخوان: کارمزد دسته‌بندی به بخریدِ id:1 اضافه می‌شود، سپس ثابت ۱۰۰٬۰۰۰ تومان روی قیمت نهایی اعمال می‌شود."}
         </p>
+      ) : splitCommission ? (
+        <p className="price-cards-admin__hint">
+          کارمزد خرید و فروش این کارت جداگانه تنظیم می‌شود. خرید به قیمت خرید اضافه و فروش از قیمت فروش کم می‌شود.
+        </p>
       ) : (
         <p className="price-cards-admin__hint">
           کارمزد ثابت (تومان) همین‌جا روی قیمت مثقال این کارت اعمال می‌شود.
@@ -208,11 +223,7 @@ function RoleCommissionEditor({ card, busy, onSave }) {
         </p>
       )}
       {rows.map((r) => {
-        const draft = drafts[r.role_id] || {
-          commission_type: r.commission_type,
-          commission_value: String(r.commission_value ?? 0),
-          can_order: r.can_order !== false,
-        };
+        const draft = drafts[r.role_id] || draftFromRow(r);
         const rowBusy = busy || savingRoleId === r.role_id;
         return (
           <div key={r.role_id} className="price-cards-admin__commission-row">
@@ -239,7 +250,7 @@ function RoleCommissionEditor({ card, busy, onSave }) {
               />
               مجاز به سفارش{manualMode ? " با قیمت دستی" : ""}
             </label>
-            <div className="price-cards-admin__commission-fields">
+            <div className={`price-cards-admin__commission-fields ${splitCommission ? "is-split" : ""}`}>
               <select
                 value={draft.commission_type}
                 disabled={rowBusy}
@@ -254,60 +265,93 @@ function RoleCommissionEditor({ card, busy, onSave }) {
                 <option value="fixed">ثابت (تومان)</option>
                 <option value="percentage">درصدی</option>
               </select>
-              <FormattedNumberInput
-                value={draft.commission_value}
-                disabled={rowBusy}
-                placeholder={draft.commission_type === "percentage" ? "مثلاً ۰٫۵" : "مثلاً ۱۰۰٬۰۰۰"}
-                onChange={(raw) => {
-                  dirtyRolesRef.current.add(r.role_id);
-                  setDrafts((prev) => ({
-                    ...prev,
-                    [r.role_id]: { ...draft, commission_value: raw },
-                  }));
-                }}
-              />
+              {splitCommission ? (
+                <>
+                  <label>
+                    کمیسیون خرید
+                    <FormattedNumberInput
+                      value={draft.commission_buy_value}
+                      disabled={rowBusy}
+                      placeholder={draft.commission_type === "percentage" ? "مثلاً ۰٫۵" : "مثلاً ۱۰۰٬۰۰۰"}
+                      onChange={(raw) => {
+                        dirtyRolesRef.current.add(r.role_id);
+                        setDrafts((prev) => ({
+                          ...prev,
+                          [r.role_id]: { ...draft, commission_buy_value: raw },
+                        }));
+                      }}
+                    />
+                  </label>
+                  <label>
+                    کمیسیون فروش
+                    <FormattedNumberInput
+                      value={draft.commission_sell_value}
+                      disabled={rowBusy}
+                      placeholder={draft.commission_type === "percentage" ? "مثلاً ۰٫۵" : "مثلاً ۱۰۰٬۰۰۰"}
+                      onChange={(raw) => {
+                        dirtyRolesRef.current.add(r.role_id);
+                        setDrafts((prev) => ({
+                          ...prev,
+                          [r.role_id]: { ...draft, commission_sell_value: raw },
+                        }));
+                      }}
+                    />
+                  </label>
+                </>
+              ) : (
+                <FormattedNumberInput
+                  value={draft.commission_value}
+                  disabled={rowBusy}
+                  placeholder={draft.commission_type === "percentage" ? "مثلاً ۰٫۵" : "مثلاً ۱۰۰٬۰۰۰"}
+                  onChange={(raw) => {
+                    dirtyRolesRef.current.add(r.role_id);
+                    setDrafts((prev) => ({
+                      ...prev,
+                      [r.role_id]: { ...draft, commission_value: raw },
+                    }));
+                  }}
+                />
+              )}
               <button
                 type="button"
                 className="price-cards-admin__save-btn"
                 disabled={rowBusy}
                 onClick={async () => {
-                  const fee = parseFeeNumber(draft.commission_value);
-                  if (!Number.isFinite(fee)) {
+                  const buyFee = parseFeeNumber(splitCommission ? draft.commission_buy_value : draft.commission_value);
+                  const sellFee = parseFeeNumber(splitCommission ? draft.commission_sell_value : draft.commission_value);
+                  if (!Number.isFinite(buyFee) || !Number.isFinite(sellFee)) {
                     alert("مقدار کارمزد نامعتبر است");
                     return;
                   }
                   dirtyRolesRef.current.add(r.role_id);
                   setSavingRoleId(r.role_id);
-                  // Keep the typed value visible even if a poll arrives mid-save.
                   setDrafts((prev) => ({
                     ...prev,
                     [r.role_id]: {
                       ...draft,
-                      commission_value: String(fee),
+                      commission_value: String(buyFee),
+                      commission_buy_value: String(buyFee),
+                      commission_sell_value: String(sellFee),
                     },
                   }));
                   try {
                     const updatedRows = await onSave({
                       roleId: r.role_id,
                       commissionType: draft.commission_type,
-                      commissionValue: fee,
+                      commissionValue: buyFee,
+                      commissionBuyValue: buyFee,
+                      commissionSellValue: sellFee,
                       canOrder: draft.can_order !== false,
                     });
                     const saved = (updatedRows || []).find((x) => x.role_id === r.role_id);
                     if (saved) {
                       setDrafts((prev) => ({
                         ...prev,
-                        [r.role_id]: {
-                          commission_type: saved.commission_type || draft.commission_type,
-                          commission_value: String(saved.commission_value ?? fee),
-                          can_order: saved.can_order !== false,
-                        },
+                        [r.role_id]: draftFromRow(saved),
                       }));
                     }
                     dirtyRolesRef.current.delete(r.role_id);
                   } catch (e) {
-                    // Keep dirty + typed value so a failed save does not snap
-                    // back to the role default (often ۱۰٬۰۰۰).
                     alert(e.message || "خطا در ذخیره کمیسیون");
                   } finally {
                     setSavingRoleId(null);

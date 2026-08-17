@@ -82,7 +82,7 @@ def _primary_gold_gram18_buy_unit(db: Session, user) -> float | None:
         for row in price_cards_service.card_commissions_for_user(db, user):
             if row.get("goldbridge_item_id") == gold_id:
                 commission_type = row.get("commission_type") or commission_type
-                commission_value = float(row.get("commission_value") or 0)
+                commission_value = float(row.get("commission_buy_value") or row.get("commission_value") or 0)
                 break
     except Exception:
         pass

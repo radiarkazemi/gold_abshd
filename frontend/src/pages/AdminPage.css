@@ -2553,12 +2553,17 @@
   display: grid;
   grid-template-columns: 1.1fr 1fr auto;
   gap: 6px;
-  align-items: center;
+  align-items: end;
+}
+
+.price-cards-admin__commission-fields.is-split {
+  grid-template-columns: 1fr 1fr 1fr auto;
 }
 
 @media (max-width: 520px) {
   .price-cards-admin__manual-inputs,
-  .price-cards-admin__commission-fields {
+  .price-cards-admin__commission-fields,
+  .price-cards-admin__commission-fields.is-split {
     grid-template-columns: 1fr;
   }
 }

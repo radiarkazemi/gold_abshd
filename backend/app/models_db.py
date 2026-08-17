@@ -433,7 +433,9 @@ class PriceCardCommission(Base):
     goldbridge_item_id = Column(Integer, nullable=False, index=True)
     role_id = Column(UUID(as_uuid=False), ForeignKey("roles.id"), nullable=False)
     commission_type = Column(Enum(CommissionTypeEnum), nullable=False, default=CommissionTypeEnum.fixed)
-    commission_value = Column(Float, nullable=False, default=0)
+    commission_value = Column(Float, nullable=False, default=0)  # legacy / one-sided / buy fallback
+    commission_buy_value = Column(Float, nullable=True)
+    commission_sell_value = Column(Float, nullable=True)
     # When the card is on manual prices, admin can deny specific roles
     # from placing orders against that manual quote. Ignored for live feed.
     can_order = Column(Boolean, nullable=False, default=True)

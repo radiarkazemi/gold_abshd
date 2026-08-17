@@ -25,6 +25,7 @@ export function motaferagheToGram18(mesghal17Price) {
 // priced authoritatively by the backend at submit time using the same
 // formula server-side, this never affects what a user is charged.
 export function applyCommission(rawPrice, side, commissionType, commissionValue) {
+  if (rawPrice == null) return rawPrice;
   const commission =
     commissionType === "percentage" ? rawPrice * (commissionValue / 100) : commissionValue;
   return side === "buy" ? rawPrice + commission : rawPrice - commission;
@@ -35,8 +36,13 @@ function commissionAmount(rawPrice, commissionType, commissionValue) {
   return Number(commissionValue) || 0;
 }
 
-export function personalizePrice(rawPrice, commissionType, commissionValue) {
+export function personalizePrice(rawPrice, commissionType, commissionBuyValue, commissionSellValue) {
   if (!rawPrice) return rawPrice;
+  const buyValue = Number(commissionBuyValue) || 0;
+  const sellValue =
+    commissionSellValue == null || commissionSellValue === ""
+      ? buyValue
+      : Number(commissionSellValue) || 0;
   const isCoin = rawPrice.unit === "count";
   const isMotaferaghe =
     rawPrice.pricing_mode === "motaferaghe_sell" ||
@@ -48,7 +54,7 @@ export function personalizePrice(rawPrice, commissionType, commissionValue) {
   if (isMotaferaghe && !isCoin) {
     // متفرقه: base = id:1 بخرید; بفروشید = (price + commission) / 4.39
     const raw = rawPrice.buy_price ?? rawPrice.sell_price;
-    const commission = commissionAmount(raw, commissionType, commissionValue);
+    const commission = commissionAmount(raw, commissionType, buyValue);
     const mesghal = raw + commission;
     const gram18 = motaferagheToGram18(mesghal);
     return {
@@ -63,7 +69,7 @@ export function personalizePrice(rawPrice, commissionType, commissionValue) {
   if (isNaghd && !isCoin) {
     // نقد کارتخوان: (id:1 بخرید + کارمزد) + ۱۰۰٬۰۰۰
     const raw = rawPrice.buy_price ?? rawPrice.sell_price;
-    const withCommission = applyCommission(raw, "buy", commissionType, commissionValue);
+    const withCommission = applyCommission(raw, "buy", commissionType, buyValue);
     const mesghal = withCommission + NAGHD_KARTKHAN_MARKUP_TOMAN;
     const gram18 = mesghal17ToGram18(mesghal);
     return {
@@ -75,8 +81,8 @@ export function personalizePrice(rawPrice, commissionType, commissionValue) {
     };
   }
 
-  const buy = applyCommission(rawPrice.buy_price, "buy", commissionType, commissionValue);
-  const sell = applyCommission(rawPrice.sell_price, "sell", commissionType, commissionValue);
+  const buy = applyCommission(rawPrice.buy_price, "buy", commissionType, buyValue);
+  const sell = applyCommission(rawPrice.sell_price, "sell", commissionType, sellValue);
   return {
     ...rawPrice,
     buy_price: buy,
