@@ -235,6 +235,22 @@ def _patch_price_cards_table():
         conn.execute(text(
             "ALTER TABLE price_card_commissions ADD COLUMN IF NOT EXISTS can_order BOOLEAN NOT NULL DEFAULT true"
         ))
+        conn.execute(text(
+            "ALTER TABLE price_card_commissions ADD COLUMN IF NOT EXISTS commission_buy_value FLOAT"
+        ))
+        conn.execute(text(
+            "ALTER TABLE price_card_commissions ADD COLUMN IF NOT EXISTS commission_sell_value FLOAT"
+        ))
+        conn.execute(text("""
+            UPDATE price_card_commissions
+            SET commission_buy_value = commission_value
+            WHERE commission_buy_value IS NULL
+        """))
+        conn.execute(text("""
+            UPDATE price_card_commissions
+            SET commission_sell_value = commission_value
+            WHERE commission_sell_value IS NULL
+        """))
         # Carry over whatever the old single-flag value was, if that
         # column still exists, before dropping it.
         conn.execute(text("""

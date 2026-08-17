@@ -34,7 +34,8 @@ export function usePriceFeed() {
         const personalized = personalizePrice(
           c,
           override?.commission_type ?? commission_type,
-          override?.commission_value ?? commission_value,
+          override?.commission_buy_value ?? override?.commission_value ?? commission_value,
+          override?.commission_sell_value ?? override?.commission_value ?? commission_value,
         );
         // Manual-price role denylist: keep the card visible but block order buttons.
         const canOrder = override?.can_order !== false;
@@ -79,6 +80,8 @@ export function usePriceFeed() {
         byCard[row.goldbridge_item_id] = {
           commission_type: row.commission_type,
           commission_value: row.commission_value,
+          commission_buy_value: row.commission_buy_value ?? row.commission_value,
+          commission_sell_value: row.commission_sell_value ?? row.commission_value,
           can_order: row.can_order !== false,
         };
       }

@@ -76,7 +76,9 @@ class BalanceOut(BaseModel):
 class CardCommissionOut(BaseModel):
     goldbridge_item_id: int
     commission_type: str = "fixed"
-    commission_value: float = 0.0
+    commission_value: float = 0.0  # legacy alias of buy
+    commission_buy_value: float = 0.0
+    commission_sell_value: float = 0.0
     # False when card is on manual prices and this user's role is denied.
     can_order: bool = True
 

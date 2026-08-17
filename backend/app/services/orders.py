@@ -184,9 +184,13 @@ def apply_pricing_formula(mesghal17_buy: float, mesghal17_sell: float, side: str
 def create_order(db: Session, user: User, side: str, amount_type: str, value: float,
                   description: str, goldbridge_item_id: int, raw_item: dict) -> Order:
     is_coin = raw_item.get("type") == price_cards.COIN_ITEM_TYPE
-    commission_type, commission_value = price_cards.resolve_commission_for_user(
+    commission_type, commission_buy, commission_sell = price_cards.resolve_commission_for_user(
         db, user, goldbridge_item_id
     )
+    if price_cards.is_motaferaghe_card(goldbridge_item_id) or price_cards.is_naghd_kartkhan_card(goldbridge_item_id):
+        commission_value = commission_buy
+    else:
+        commission_value = commission_buy if side == "buy" else commission_sell
 
     if is_coin:
         if amount_type != "count":
@@ -518,9 +522,13 @@ def resubmit_order_at_new_price(db: Session, order_id: str, user: User) -> Order
 
     side = order.side.value
     is_coin = raw_item.get("type") == price_cards.COIN_ITEM_TYPE
-    commission_type, commission_value = price_cards.resolve_commission_for_user(
+    commission_type, commission_buy, commission_sell = price_cards.resolve_commission_for_user(
         db, user, order.goldbridge_item_id
     )
+    if price_cards.is_motaferaghe_card(order.goldbridge_item_id) or price_cards.is_naghd_kartkhan_card(order.goldbridge_item_id):
+        commission_value = commission_buy
+    else:
+        commission_value = commission_buy if side == "buy" else commission_sell
     if is_coin:
         mesghal17_raw_price = raw_item["buy"] if side == "buy" else raw_item["sell"]
         final_price = apply_pricing_formula(

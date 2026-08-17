@@ -371,10 +371,28 @@ async def poll_all_items():
 def item_price_with_commission(item: dict, side: str, commission_type: str, commission_value: float) -> float:
     """Same +/- commission formula used everywhere else, generalized
     to any goldbridge item (gold or coin) instead of assuming a single
-    global one."""
+    global one. Pass the buy fee for side='buy' and the sell fee for
+    side='sell'."""
     raw = item["buy"] if side == "buy" else item["sell"]
+    if raw is None:
+        return None
     commission = raw * (commission_value / 100) if commission_type == "percentage" else commission_value
     return raw + commission if side == "buy" else raw - commission
+
+
+def _commission_pair(ov, default_value: float) -> tuple[float, float]:
+    """Buy/sell fees for a card×role row. Missing side-specific columns
+    (or a one-sided card that only stored commission_value) fall back to
+    that single value so existing prices stay the same."""
+    if not ov:
+        return default_value, default_value
+    legacy = float(ov.commission_value if ov.commission_value is not None else default_value)
+    buy = getattr(ov, "commission_buy_value", None)
+    sell = getattr(ov, "commission_sell_value", None)
+    return (
+        float(buy) if buy is not None else legacy,
+        float(sell) if sell is not None else legacy,
+    )
 
 
 def resolve_effective_item(card, item: dict | None) -> dict | None:
@@ -509,11 +527,15 @@ def _role_commissions_for_card(db: Session, goldbridge_item_id: int, roles: list
     for role in roles:
         ov = overrides.get(role.id)
         ctype = ov.commission_type if ov else role.commission_type
+        default = float(role.commission_value or 0)
+        buy_value, sell_value = _commission_pair(ov, default)
         result.append({
             "role_id": role.id,
             "role_name": role.name,
             "commission_type": ctype.value if hasattr(ctype, "value") else ctype,
-            "commission_value": float(ov.commission_value if ov else role.commission_value),
+            "commission_value": buy_value,
+            "commission_buy_value": buy_value,
+            "commission_sell_value": sell_value,
             "can_order": bool(ov.can_order) if ov else True,
             "is_override": ov is not None,
         })
@@ -696,8 +718,10 @@ def set_card_role_commission(
     goldbridge_item_id: int,
     role_id: str,
     commission_type: str,
-    commission_value: float,
+    commission_value: float | None = None,
     can_order: bool = True,
+    commission_buy_value: float | None = None,
+    commission_sell_value: float | None = None,
 ):
     from app.models_db import PriceCardCommission, Role, CommissionTypeEnum
 
@@ -706,6 +730,19 @@ def set_card_role_commission(
     role = db.query(Role).filter(Role.id == role_id).first()
     if not role:
         raise ValueError("دسته‌بندی پیدا نشد")
+
+    buy = commission_buy_value
+    sell = commission_sell_value
+    if buy is None and sell is None:
+        if commission_value is None:
+            raise ValueError("مقدار کمیسیون الزامی است")
+        buy = sell = float(commission_value)
+    if buy is None:
+        buy = commission_value if commission_value is not None else sell
+    if sell is None:
+        sell = commission_value if commission_value is not None else buy
+    buy = float(buy)
+    sell = float(sell)
 
     _get_or_create_card(db, goldbridge_item_id)
     row = (
@@ -720,16 +757,22 @@ def set_card_role_commission(
         row = PriceCardCommission(goldbridge_item_id=goldbridge_item_id, role_id=role_id)
         db.add(row)
     row.commission_type = CommissionTypeEnum(commission_type)
-    row.commission_value = float(commission_value)
+    row.commission_value = buy
+    row.commission_buy_value = buy
+    row.commission_sell_value = sell
     row.can_order = bool(can_order)
     db.commit()
 
 
-def resolve_commission_for_user(db: Session, user, goldbridge_item_id: int) -> tuple[str, float]:
+def resolve_commission_for_user(db: Session, user, goldbridge_item_id: int) -> tuple[str, float, float]:
+    """Return (commission_type, buy_value, sell_value). One-sided cards
+    and older rows still have a single stored value, copied to both."""
     from app.models_db import PriceCardCommission
 
     if not user or not user.role:
-        return "fixed", 0.0
+        return "fixed", 0.0, 0.0
+    default_value = float(user.role.commission_value or 0)
+    default_type = user.role.commission_type.value
     ov = (
         db.query(PriceCardCommission)
         .filter(
@@ -738,9 +781,10 @@ def resolve_commission_for_user(db: Session, user, goldbridge_item_id: int) -> t
         )
         .first()
     )
+    buy_value, sell_value = _commission_pair(ov, default_value)
     if ov:
-        return ov.commission_type.value, float(ov.commission_value)
-    return user.role.commission_type.value, float(user.role.commission_value)
+        return ov.commission_type.value, buy_value, sell_value
+    return default_type, buy_value, sell_value
 
 
 def resolve_can_order_for_user(db: Session, user, card, effective_item: dict | None) -> bool:
@@ -790,10 +834,13 @@ def card_commissions_for_user(db: Session, user) -> list[dict]:
         can_order = True
         if is_manual:
             can_order = bool(ov.can_order) if ov is not None else True
+        buy_value, sell_value = _commission_pair(ov, default_value)
         result.append({
             "goldbridge_item_id": card.goldbridge_item_id,
             "commission_type": ov.commission_type.value if ov else default_type,
-            "commission_value": float(ov.commission_value) if ov else default_value,
+            "commission_value": buy_value,
+            "commission_buy_value": buy_value,
+            "commission_sell_value": sell_value,
             "can_order": can_order,
         })
     return result
