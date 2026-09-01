@@ -3,7 +3,7 @@
   "short_name": "پنل قصر طلا",
   "description": "پنل مدیریت آبشده قصر طلا",
   "start_url": "/admin-hs-panel?source=pwa",
-  "scope": "/admin-hs-panel/",
+  "scope": "/admin-hs-panel",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#12100b",

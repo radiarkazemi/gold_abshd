@@ -68,8 +68,7 @@ export function applyAdminPwaManifest() {
   if (typeof document === "undefined") return () => {};
   const link = ensureManifestLink();
   const previousHref = link.getAttribute("href");
-  const v = BRAND_V || APP_BUILD_V || "1";
-  const href = adminManifestUrl || `/admin-manifest.json?v=${v}`;
+  const href = "/admin-manifest.json";
   link.setAttribute("href", href);
 
   const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
@@ -88,7 +87,7 @@ export function applyAdminPwaManifest() {
     appleIcon.rel = "apple-touch-icon";
     document.head.appendChild(appleIcon);
   }
-  appleIcon.setAttribute("href", appleTouchIconUrl || `/gt-apple-touch-icon.png?v=${v}`);
+  appleIcon.setAttribute("href", "/gt-apple-touch-icon.png");
 
   return () => {
     if (previousHref) link.setAttribute("href", previousHref);
