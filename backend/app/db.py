@@ -74,6 +74,7 @@ def _patch_admin_users_table():
         "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS registration_key_expires_at TIMESTAMP",
         "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS activated_at TIMESTAMP",
         "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS is_super BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS max_devices INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE admin_users DROP COLUMN IF EXISTS display_name",
     ]
     with engine.connect() as conn:

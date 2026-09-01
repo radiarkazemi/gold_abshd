@@ -23,9 +23,13 @@ from datetime import datetime, timedelta
 import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, Header
+from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.db import get_db
 from app.permissions import PERMISSION_SCOPES
+from app.services.admin_accounts import get_sub_admin
+from app.services.admin_devices import find_admin_device, touch_admin_device, count_admin_devices, register_or_touch_admin_device
 
 # 12 hours - shorter-lived than user tokens
 ADMIN_TOKEN_EXPIRE_MINUTES = 12 * 60
@@ -50,6 +54,7 @@ def create_admin_token(
     is_super: bool,
     admin_user_id: str | None = None,
     permissions: list[str] | None = None,
+    device_id: str = "",
 ) -> str:
     payload = {
         "role": "admin",
@@ -57,6 +62,7 @@ def create_admin_token(
         "is_super": is_super,
         "admin_user_id": admin_user_id,
         "permissions": permissions or [],
+        "device_id": device_id,
         "exp": datetime.utcnow() + timedelta(minutes=ADMIN_TOKEN_EXPIRE_MINUTES),
     }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm="HS256")
@@ -82,7 +88,31 @@ def _decode_admin_token(token: str) -> dict:
     return payload
 
 
-def get_current_admin(authorization: str | None = Header(default=None)) -> dict:
+def _ensure_admin_device_allowed(db: Session, payload: dict, device_id: str) -> None:
+    admin_user_id = payload.get("admin_user_id")
+    if not admin_user_id or not device_id:
+        return
+    admin = get_sub_admin(db, admin_user_id)
+    if not admin:
+        raise HTTPException(status_code=401, detail="نشست ادمین نامعتبر است")
+    if find_admin_device(db, admin, device_id):
+        touch_admin_device(db, admin, device_id)
+        return
+    # Existing sessions before device limits: bind this browser on first use.
+    if count_admin_devices(db, admin) == 0:
+        register_or_touch_admin_device(db, admin, device_id)
+        return
+    raise HTTPException(
+        status_code=401,
+        detail="این نشست منقضی شده است. لطفا دوباره وارد شوید.",
+    )
+
+
+def get_current_admin(
+    authorization: str | None = Header(default=None),
+    x_admin_device_id: str | None = Header(default=None, alias="X-Admin-Device-Id"),
+    db: Session = Depends(get_db),
+) -> dict:
     """Use as a FastAPI dependency on every admin HTTP endpoint. Returns
     the decoded token payload - {"username", "is_super", "admin_user_id",
     "permissions", ...} - so callers can check scope themselves, or use
@@ -91,7 +121,10 @@ def get_current_admin(authorization: str | None = Header(default=None)) -> dict:
         raise HTTPException(
             status_code=401, detail="ابتدا به عنوان ادمین وارد شوید")
     token = authorization.removeprefix("Bearer ").strip()
-    return _decode_admin_token(token)
+    payload = _decode_admin_token(token)
+    device_id = (x_admin_device_id or payload.get("device_id") or "").strip()
+    _ensure_admin_device_allowed(db, payload, device_id)
+    return payload
 
 
 def require_permission(scope: str):
@@ -124,9 +157,17 @@ def require_super_admin(admin: dict = Depends(get_current_admin)) -> dict:
     return admin
 
 
-def verify_admin_ws_token(token: str | None) -> dict:
+def verify_admin_ws_token(
+    token: str | None,
+    device_id: str | None = None,
+    db: Session | None = None,
+) -> dict:
     """Use inside the admin WebSocket endpoint (token passed as ?token=...)."""
     if not token:
         raise HTTPException(
             status_code=401, detail="ابتدا به عنوان ادمین وارد شوید")
-    return _decode_admin_token(token)
+    payload = _decode_admin_token(token)
+    if db is not None:
+        resolved_device = (device_id or payload.get("device_id") or "").strip()
+        _ensure_admin_device_allowed(db, payload, resolved_device)
+    return payload

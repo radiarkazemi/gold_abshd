@@ -312,7 +312,10 @@ function AdminPanel({ onLogout, identity }) {
       }
     });
     ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
+    ws.onclose = (event) => {
+      setConnected(false);
+      if (event.code === 4401) onLogout();
+    };
     wsRef.current = ws;
     return () => ws.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -591,8 +594,31 @@ export default function AdminPage() {
         }
         setSessionReady(true);
       });
+
+    function onVisible() {
+      if (document.visibilityState !== "visible" || cancelled) return;
+      refreshAdminSession()
+        .then((data) => {
+          if (cancelled) return;
+          setIdentity({
+            is_super: data.is_super,
+            permissions: data.permissions || [],
+            display_name: data.display_name || "",
+          });
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          if (e.message === "ADMIN_SESSION_EXPIRED") {
+            clearAdminToken();
+            setLoggedIn(false);
+          }
+        });
+    }
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [loggedIn]);
 

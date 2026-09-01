@@ -21,7 +21,7 @@ function apiUrl(pathWithQuery) {
   return new URL(path, origin);
 }
 
-import { getDeviceId, getDeviceInfo, getDeviceFingerprint } from "./utils/deviceId";
+import { getDeviceId, getDeviceInfo, getDeviceFingerprint, getAdminDeviceId } from "./utils/deviceId";
 
 import { decodePayload } from "./utils/payloadCodec";
 const TOKEN_KEY = "goldapp_token";
@@ -69,14 +69,22 @@ export function getAdminIdentity() {
 
 export function adminAuthHeaders() {
   const token = getAdminToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  headers["X-Admin-Device-Id"] = getAdminDeviceId();
+  return headers;
 }
 
 export async function adminLogin(username, password) {
   const res = await fetch(`${API_BASE}/api/admin/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({
+      username,
+      password,
+      device_id: getAdminDeviceId(),
+      device_info: getDeviceInfo(),
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -91,7 +99,13 @@ export async function adminVerify(adminUserId, code, registrationKey) {
   const res = await fetch(`${API_BASE}/api/admin/auth/verify`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ admin_user_id: adminUserId, code, registration_key: registrationKey || null }),
+    body: JSON.stringify({
+      admin_user_id: adminUserId,
+      code,
+      registration_key: registrationKey || null,
+      device_id: getAdminDeviceId(),
+      device_info: getDeviceInfo(),
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -1034,7 +1048,10 @@ export async function createPhoneOrder({ userId, side, amountType, value, mesgha
 
 export function openAdminSocket(onMessage) {
   const token = getAdminToken();
-  const ws = new WebSocket(`${WS_BASE}/ws/admin?token=${encodeURIComponent(token || "")}`);
+  const deviceId = encodeURIComponent(getAdminDeviceId());
+  const ws = new WebSocket(
+    `${WS_BASE}/ws/admin?token=${encodeURIComponent(token || "")}&device_id=${deviceId}`
+  );
   ws.onmessage = (event) => {
     try {
       onMessage(JSON.parse(event.data));

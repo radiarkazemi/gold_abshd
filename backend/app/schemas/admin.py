@@ -206,6 +206,8 @@ class TradingBanUserIn(BaseModel):
 class AdminLoginIn(BaseModel):
     username: str
     password: str
+    device_id: str = ""
+    device_info: str = ""
 
 
 class AdminLoginOut(BaseModel):
@@ -233,3 +235,5 @@ class AdminVerifyIn(BaseModel):
     admin_user_id: str
     code: str
     registration_key: str | None = None
+    device_id: str = ""
+    device_info: str = ""

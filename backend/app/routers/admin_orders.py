@@ -72,9 +72,14 @@ ws_router = APIRouter(tags=["admin-orders"])
 
 
 @ws_router.websocket("/ws/admin")
-async def ws_admin(websocket: WebSocket, token: str | None = Query(default=None)):
+async def ws_admin(
+    websocket: WebSocket,
+    token: str | None = Query(default=None),
+    device_id: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
     try:
-        verify_admin_ws_token(token)
+        verify_admin_ws_token(token, device_id, db)
     except HTTPException:
         await websocket.close(code=4401)
         return
