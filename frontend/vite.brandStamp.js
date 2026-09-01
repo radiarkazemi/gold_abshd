@@ -129,7 +129,7 @@ function writeManifest(publicDir, brandVersion) {
     short_name: "پنل قصر طلا",
     description: "پنل مدیریت آبشده قصر طلا",
     start_url: ADMIN_START_URL,
-    scope: "/",
+    scope: "/admin-hs-panel/",
     display: "standalone",
     orientation: "portrait",
     background_color: "#12100b",
@@ -198,6 +198,7 @@ export function brandStampPlugin() {
       writeVersionFile(publicDir, brandVersion, buildVersion);
     },
     transformIndexHtml(html) {
+      const adminBootstrap = `<script>(function(){var p=location.pathname.replace(/\\/+$/, "")||"/";if(p!=="/admin-hs-panel")return;var v=${JSON.stringify(brandVersion)};var link=document.querySelector('link[rel="manifest"]');if(link)link.href="/admin-manifest.json?v="+v;document.title="پنل مدیریت قصر طلا";var appleTitle=document.querySelector('meta[name="apple-mobile-web-app-title"]');if(appleTitle)appleTitle.content="پنل قصر طلا";})();</script>`;
       return html
         .replaceAll('href="/manifest.json"', `href="/manifest.json?v=${brandVersion}"`)
         .replaceAll('href="/gt-favicon-64.png"', `href="/gt-favicon-64.png?v=${brandVersion}"`)
@@ -206,6 +207,10 @@ export function brandStampPlugin() {
         .replaceAll(
           'href="/gt-apple-touch-icon.png"',
           `href="/gt-apple-touch-icon.png?v=${brandVersion}"`
+        )
+        .replace(
+          `<link rel="manifest" href="/manifest.json?v=${brandVersion}" />`,
+          `<link rel="manifest" href="/manifest.json?v=${brandVersion}" />\n    ${adminBootstrap}`
         )
         .replace(
           "</head>",
