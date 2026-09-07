@@ -202,6 +202,40 @@ def test_broadcast_hot_path_uses_manual_cache_without_db():
     assert cards[1]["buy_price"] == 5_000_000
 
 
+def test_untick_manual_follows_live_despite_leftover_typed_prices():
+    """Turning the flag off must ignore leftover manuals and use goldbridge."""
+    price_cards._latest_items[1] = _live(12_000_000, 11_900_000)
+    price_cards._manual_quotes[1] = {
+        "use_manual": False,
+        "buy": 1,
+        "sell": 1,
+    }
+    src = _source(use_manual_price=False, manual_buy=1, manual_sell=1)
+
+    own = price_cards._live_or_manual_item(src, price_cards._latest_items[1])
+    assert own["price_source"] == "live"
+    assert own["buy"] == 12_000_000
+
+    mota = price_cards.resolve_effective_item(_mota(), None, source_card=src)
+    naghd = price_cards.resolve_effective_item(_naghd(), None, source_card=src)
+    assert mota["buy"] == 12_000_000
+    assert naghd["buy"] == 12_000_000
+    assert mota["mirrored_source_mode"] == "live"
+
+
+def test_untick_manual_cache_beats_stale_orm_still_flagged_on():
+    price_cards._latest_items[1] = _live(8_800_000, 8_700_000)
+    price_cards._manual_quotes[1] = {
+        "use_manual": False,
+        "buy": 99_999_999,
+        "sell": 99_999_999,
+    }
+    stale_on = _source(use_manual_price=True, manual_buy=99_999_999, manual_sell=99_999_999)
+    mota = price_cards.resolve_effective_item(_mota(), None, source_card=stale_on)
+    assert mota["buy"] == 8_800_000
+    assert mota["mirrored_source_mode"] == "live"
+
+
 if __name__ == "__main__":
     setup_function()
     test_motaferaghe_follows_live_buy()
@@ -221,4 +255,8 @@ if __name__ == "__main__":
     test_ensure_specials_is_noop_once_ready()
     setup_function()
     test_broadcast_hot_path_uses_manual_cache_without_db()
+    setup_function()
+    test_untick_manual_follows_live_despite_leftover_typed_prices()
+    setup_function()
+    test_untick_manual_cache_beats_stale_orm_still_flagged_on()
     print("ok")

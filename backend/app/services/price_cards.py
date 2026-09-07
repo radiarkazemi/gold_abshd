@@ -583,16 +583,13 @@ def _mirror_base_buy(
     if sid is None:
         sid = DEFAULT_PRICE_SOURCE_ITEM_ID
     cached = _manual_quote_for(sid)
-    if cached and cached.get("use_manual") and cached.get("buy") is not None:
-        return float(cached["buy"]), "manual"
-    if src_card is not None and src_card.use_manual_price and src_card.manual_buy is not None:
+    if cached is not None:
+        if cached.get("use_manual") and cached.get("buy") is not None:
+            return float(cached["buy"]), "manual"
+    elif src_card is not None and src_card.use_manual_price and src_card.manual_buy is not None:
         return float(src_card.manual_buy), "manual"
     if source_live is not None and source_live.get("buy") is not None:
         return float(source_live["buy"]), "live"
-    if cached and cached.get("buy") is not None:
-        return float(cached["buy"]), "manual"
-    if src_card is not None and src_card.manual_buy is not None:
-        return float(src_card.manual_buy), "manual"
     return None, "unavailable"
 
 
@@ -600,22 +597,24 @@ def _live_or_manual_item(card, live_item: dict | None, *, buy_only_ok: bool = Fa
     """
     This card's own live vs manual quotes — no mirroring.
 
-    Manual wins when the admin enables use_manual_price, or as a fallback
-    when the live feed has no usable buy/sell but manuals are filled in.
+    Manual is used only while the admin has use_manual_price enabled.
+    Unticking that flag returns to goldbridge immediately; leftover
+    typed numbers are not a silent fallback.
     """
     cached = _manual_quote_for(getattr(card, "goldbridge_item_id", None)) if card else None
     manual_buy = cached.get("buy") if cached and cached.get("buy") is not None else (card.manual_buy if card else None)
     manual_sell = cached.get("sell") if cached and cached.get("sell") is not None else (card.manual_sell if card else None)
-    flagged_manual = bool(cached.get("use_manual")) if cached else bool(card and card.use_manual_price)
+    if cached is not None:
+        flagged_manual = bool(cached.get("use_manual"))
+    else:
+        flagged_manual = bool(card and card.use_manual_price)
 
     has_live_buy = bool(live_item and live_item.get("buy") is not None)
     has_live_sell = bool(live_item and live_item.get("sell") is not None)
     has_live_prices = has_live_buy and (buy_only_ok or has_live_sell)
 
     manuals_ok = bool(card and manual_buy is not None and manual_sell is not None)
-    use_manual = bool(card and flagged_manual and manuals_ok) or (
-        not has_live_prices and manuals_ok
-    )
+    use_manual = bool(card and flagged_manual and manuals_ok)
     if use_manual:
         base = dict(live_item) if live_item else {
             "goldbridge_item_id": card.goldbridge_item_id,
@@ -695,14 +694,13 @@ def resolve_effective_item(
     NOT hide priced items from customers (most coins sit at active=False
     while still carrying valid buy/sell).
 
-    Manual wins when the admin explicitly enables use_manual_price, or
-    as a fallback when the live feed has no buy/sell at all but manuals
-    are filled in.
+    Manual is used only while the admin has use_manual_price enabled.
+    Unticking it returns every card — including متفرقه / نقد کارتخوان —
+    to the goldbridge quote immediately.
 
     Mirrored cards (price_source_item_id, e.g. متفرقه / نقد کارتخوان)
-    follow the *effective* source card — so if id:1 is switched to
-    manual while goldbridge is down, these two cards use id:1's manual
-    buy/sell, then apply the same متفرقه / نقد کارتخوان formulas as live.
+    follow the *effective* source card: id:1 live when that flag is
+    off, id:1 typed buy when it is on.
     """
     source_id = getattr(card, "price_source_item_id", None) if card else None
     if source_id:

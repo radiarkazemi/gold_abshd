@@ -20,7 +20,24 @@ const SPECIAL_MOTAFEREGHE_ID = 900001;
 const SPECIAL_NAGHD_KARTKHAN_ID = 900002;
 const SOURCE_MIRROR_ITEM_ID = 1;
 
-/** Keep متفرقه / نقد کارتخوان in lockstep with id:1's current buy. */
+/** Visible quote origin for every admin card. */
+function quoteStatus(card) {
+  const isMirrored = !!card.price_source_item_id || card.price_source === "mirrored";
+  const missing = card.price_source === "unavailable" || (card.buy == null && card.sell == null);
+  if (missing) {
+    return { kind: "unavailable", label: "ناموجود" };
+  }
+  if (isMirrored) {
+    if (card.mirrored_source_mode === "manual") {
+      return { kind: "manual", label: "دستی (از id:1)" };
+    }
+    return { kind: "source", label: "از منبع" };
+  }
+  if (card.use_manual_price || card.price_source === "manual") {
+    return { kind: "manual", label: "دستی" };
+  }
+  return { kind: "source", label: "از منبع" };
+}
 function syncMirroredCardQuotes(cards) {
   if (!Array.isArray(cards)) return cards;
   const source = cards.find((c) => Number(c.goldbridge_item_id) === SOURCE_MIRROR_ITEM_ID);
@@ -84,6 +101,13 @@ function ManualPriceEditor({ card, busy, onSave }) {
     setSell(card.manual_sell != null ? String(card.manual_sell) : "");
   }, [busy, card.use_manual_price, card.manual_buy, card.manual_sell]);
 
+  // Poll/refresh: keep the checkbox aligned with the server while the admin
+  // is not mid-edit.
+  useEffect(() => {
+    if (dirtyRef.current) return;
+    setUseManual(!!card.use_manual_price);
+  }, [card.use_manual_price]);
+
   return (
     <div className="price-cards-admin__manual">
       <label className="price-cards-admin__toggle">
@@ -92,11 +116,22 @@ function ManualPriceEditor({ card, busy, onSave }) {
           checked={useManual}
           disabled={busy}
           onChange={(e) => {
+            const next = e.target.checked;
+            setUseManual(next);
+            if (!next) {
+              // Untick must persist immediately — don't wait for «ذخیره».
+              dirtyRef.current = false;
+              onSave({
+                useManualPrice: false,
+                manualBuy: buy === "" ? null : Number(buy),
+                manualSell: sell === "" ? null : Number(sell),
+              });
+              return;
+            }
             dirtyRef.current = true;
-            setUseManual(e.target.checked);
           }}
         />
-        قیمت دستی (وقتی goldbridge غیرفعال است / به‌جای فید)
+        قیمت دستی — با برداشتن تیک، قیمت فوراً از منبع (goldbridge) می‌آید
       </label>
       <div className="price-cards-admin__manual-inputs">
         <label>
@@ -143,8 +178,10 @@ function ManualPriceEditor({ card, busy, onSave }) {
       >
         ذخیره قیمت دستی
       </button>
-      {card.price_source === "manual" && (
+      {card.use_manual_price || card.price_source === "manual" ? (
         <p className="price-cards-admin__manual-note">در حال نمایش قیمت دستی به مشتری</p>
+      ) : (
+        <p className="price-cards-admin__manual-note">در حال نمایش قیمت منبع (goldbridge)</p>
       )}
     </div>
   );
@@ -483,33 +520,28 @@ export default function AdminPricesTab() {
   async function saveManual(card, payload) {
     busyIdRef.current = card.goldbridge_item_id;
     setBusyId(card.goldbridge_item_id);
-    if (Number(card.goldbridge_item_id) === SOURCE_MIRROR_ITEM_ID) {
-      const buy = payload.useManualPrice
-        ? Number(payload.manualBuy)
-        : Number(card.live_buy ?? card.buy);
-      const sell = payload.useManualPrice
-        ? Number(payload.manualSell)
-        : Number(card.live_sell ?? card.sell);
-      if (buy > 0) {
-        setCards((prev) =>
-          syncMirroredCardQuotes(
-            (prev || []).map((c) =>
-              Number(c.goldbridge_item_id) === SOURCE_MIRROR_ITEM_ID
-                ? {
-                    ...c,
-                    buy,
-                    sell: Number.isFinite(sell) && sell > 0 ? sell : buy,
-                    use_manual_price: !!payload.useManualPrice,
-                    manual_buy: payload.manualBuy,
-                    manual_sell: payload.manualSell,
-                    price_source: payload.useManualPrice ? "manual" : (c.live_buy != null ? "live" : c.price_source),
-                  }
-                : c
-            )
-          )
-        );
-      }
-    }
+    const usingManual = !!payload.useManualPrice;
+    const nextBuy = usingManual
+      ? Number(payload.manualBuy)
+      : Number(card.live_buy);
+    const nextSell = usingManual
+      ? Number(payload.manualSell)
+      : Number(card.live_sell);
+    setCards((prev) => {
+      const patched = (prev || []).map((c) => {
+        if (Number(c.goldbridge_item_id) !== Number(card.goldbridge_item_id)) return c;
+        return {
+          ...c,
+          use_manual_price: usingManual,
+          manual_buy: payload.manualBuy,
+          manual_sell: payload.manualSell,
+          buy: Number.isFinite(nextBuy) ? nextBuy : c.buy,
+          sell: Number.isFinite(nextSell) ? nextSell : c.sell,
+          price_source: usingManual ? "manual" : (card.live_buy != null ? "live" : "unavailable"),
+        };
+      });
+      return syncMirroredCardQuotes(patched);
+    });
     try {
       const updated = await setPriceCardManualPrice(card.goldbridge_item_id, payload);
       setCards(syncMirroredCardQuotes(updated));
@@ -580,6 +612,7 @@ export default function AdminPricesTab() {
       <div className="admin-prices__grid">
         {cards.map((c) => {
           const isMirrored = !!c.price_source_item_id || c.price_source === "mirrored";
+          const status = quoteStatus(c);
           const sourceLabel =
             c.price_source === "manual"
               ? "دستی"
@@ -600,7 +633,9 @@ export default function AdminPricesTab() {
           <div key={c.goldbridge_item_id} className={`admin-price-card ${!c.active && !isMirrored ? "admin-price-card--inactive" : ""}`}>
             <div className="admin-price-card__top">
               <span className="admin-price-card__name">{c.display_name}</span>
-              <span className="admin-price-card__type">{TYPE_LABEL[c.type] || (isMirrored ? "طلا (گرم/عیار)" : "—")}</span>
+              <span className={`admin-price-card__quote-status is-${status.kind}`}>
+                {status.label}
+              </span>
             </div>
 
             <div className="admin-price-card__values">
@@ -612,6 +647,9 @@ export default function AdminPricesTab() {
                 <span className="admin-price-card__value-label">خرید</span>
                 <span className="admin-price-card__value-amount">{fa(c.buy)}</span>
               </div>
+            </div>
+            <div className="admin-price-card__type-row">
+              <span className="admin-price-card__type">{TYPE_LABEL[c.type] || (isMirrored ? "طلا (گرم/عیار)" : "—")}</span>
             </div>
 
             <div className="admin-price-card__flags">
