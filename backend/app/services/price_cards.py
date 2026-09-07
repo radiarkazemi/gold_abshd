@@ -395,42 +395,47 @@ def _commission_pair(ov, default_value: float) -> tuple[float, float]:
     )
 
 
-def resolve_effective_item(card, item: dict | None) -> dict | None:
+def _get_price_card_row(goldbridge_item_id: int, db: Session | None = None):
+    """Load a PriceCard by goldbridge id. Copies fields if we had to open a throwaway session."""
+    from types import SimpleNamespace
+    from app.models_db import PriceCard
+
+    def as_row(row):
+        if row is None:
+            return None
+        return SimpleNamespace(
+            goldbridge_item_id=row.goldbridge_item_id,
+            display_name=row.display_name,
+            use_manual_price=bool(row.use_manual_price),
+            manual_buy=row.manual_buy,
+            manual_sell=row.manual_sell,
+            price_source_item_id=None,
+        )
+
+    if db is not None:
+        return db.query(PriceCard).filter(PriceCard.goldbridge_item_id == goldbridge_item_id).first()
+
+    from app.db import SessionLocal
+    session = SessionLocal()
+    try:
+        return as_row(
+            session.query(PriceCard).filter(PriceCard.goldbridge_item_id == goldbridge_item_id).first()
+        )
+    finally:
+        session.close()
+
+
+def _live_or_manual_item(card, live_item: dict | None, *, buy_only_ok: bool = False) -> dict | None:
     """
-    Pick live goldbridge prices, mirrored source prices, or admin manuals.
+    This card's own live vs manual quotes — no mirroring.
 
-    Live quotes are used whenever buy/sell exist - goldbridge's own
-    `active` flag is informational only (shown in admin UI) and must
-    NOT hide priced items from customers (most coins sit at active=False
-    while still carrying valid buy/sell).
-
-    Manual wins when the admin explicitly enables use_manual_price, or
-    as a fallback when the live feed has no buy/sell at all but manuals
-    are filled in.
-
-    Mirrored cards (price_source_item_id) copy buy/sell from the source
-    item while keeping this card's own goldbridge_item_id for orders /
-    commissions.
+    Manual wins when the admin enables use_manual_price, or as a fallback
+    when the live feed has no usable buy/sell but manuals are filled in.
     """
-    source_item = item
-    if card and getattr(card, "price_source_item_id", None):
-        mirrored = _latest_items.get(int(card.price_source_item_id))
-        if mirrored:
-            source_item = mirrored
+    has_live_buy = bool(live_item and live_item.get("buy") is not None)
+    has_live_sell = bool(live_item and live_item.get("sell") is not None)
+    has_live_prices = has_live_buy and (buy_only_ok or has_live_sell)
 
-    has_live_prices = bool(
-        source_item
-        and source_item.get("buy") is not None
-        and source_item.get("sell") is not None
-    )
-    # متفرقه only needs the source BUY quote (used for its بفروشید side).
-    is_motaferaghe = bool(card and is_motaferaghe_card(card.goldbridge_item_id))
-    is_naghd = bool(card and is_naghd_kartkhan_card(card.goldbridge_item_id))
-    if is_motaferaghe and source_item and source_item.get("buy") is not None:
-        has_live_prices = True
-    # نقد کارتخوان is buy-only and mirrors id:1 buy (+ fixed markup).
-    if is_naghd and source_item and source_item.get("buy") is not None:
-        has_live_prices = True
     manuals_ok = bool(
         card
         and card.manual_buy is not None
@@ -440,7 +445,7 @@ def resolve_effective_item(card, item: dict | None) -> dict | None:
         not has_live_prices and manuals_ok
     )
     if use_manual:
-        base = dict(source_item) if source_item else {
+        base = dict(live_item) if live_item else {
             "goldbridge_item_id": card.goldbridge_item_id,
             "name": card.display_name or f"#{card.goldbridge_item_id}",
             "type": GOLD_ITEM_TYPE,
@@ -459,37 +464,94 @@ def resolve_effective_item(card, item: dict | None) -> dict | None:
         base["active"] = True
         return base
     if has_live_prices:
-        out = dict(source_item)
+        out = dict(live_item)
         if card:
             out["goldbridge_item_id"] = card.goldbridge_item_id
             if card.display_name:
                 out["name"] = card.display_name
-        if card and getattr(card, "price_source_item_id", None):
-            out["price_source"] = "mirrored"
-            out["mirrored_from"] = int(card.price_source_item_id)
-            # Mirrored cards ignore goldbridge allow flags for the source.
-            out["allow_buy"] = True
-            out["allow_sell"] = True
-        else:
-            out["price_source"] = "live"
-        if is_motaferaghe:
-            # متفرقه بفروشید always uses id:1 بخرید price as the base quote.
-            buy = float(source_item["buy"])
-            out["buy"] = buy
-            out["sell"] = buy
-            out["pricing_mode"] = "motaferaghe_sell"
-            if out.get("sell") is None:
-                out["sell"] = buy
-        elif is_naghd:
-            # Raw mirror of id:1 بخرید. Markup (+100k) is applied AFTER
-            # commission in personalizePrice / _price_gold_order.
-            buy = float(source_item["buy"])
-            out["buy"] = buy
-            out["sell"] = buy
-            out["pricing_mode"] = "naghd_kartkhan_buy"
-            out["markup_toman"] = NAGHD_KARTKHAN_MARKUP_TOMAN
+        out["price_source"] = "live"
         return out
     return None
+
+
+def _apply_mirrored_structure(card, source_resolved: dict) -> dict:
+    """Copy the source card's effective quotes onto this synthetic card.
+
+    متفرقه / نقد کارتخوان keep their existing formulas (base = source BUY).
+    The source quote may be live goldbridge *or* id:1's admin manual.
+    """
+    out = dict(source_resolved)
+    out["goldbridge_item_id"] = card.goldbridge_item_id
+    if card.display_name:
+        out["name"] = card.display_name
+    out["price_source"] = "mirrored"
+    out["mirrored_from"] = int(card.price_source_item_id)
+    out["mirrored_source_mode"] = source_resolved.get("price_source") or "live"
+    out["allow_buy"] = True
+    out["allow_sell"] = True
+    out["active"] = True
+
+    if is_motaferaghe_card(card.goldbridge_item_id):
+        buy = float(source_resolved["buy"])
+        out["buy"] = buy
+        out["sell"] = buy
+        out["pricing_mode"] = "motaferaghe_sell"
+    elif is_naghd_kartkhan_card(card.goldbridge_item_id):
+        buy = float(source_resolved["buy"])
+        out["buy"] = buy
+        out["sell"] = buy
+        out["pricing_mode"] = "naghd_kartkhan_buy"
+        out["markup_toman"] = NAGHD_KARTKHAN_MARKUP_TOMAN
+    else:
+        out["buy"] = float(source_resolved["buy"]) if source_resolved.get("buy") is not None else None
+        out["sell"] = float(source_resolved["sell"]) if source_resolved.get("sell") is not None else None
+    return out
+
+
+def resolve_effective_item(
+    card,
+    item: dict | None,
+    db: Session | None = None,
+    *,
+    source_card=None,
+) -> dict | None:
+    """
+    Pick live goldbridge prices, mirrored source prices, or admin manuals.
+
+    Live quotes are used whenever buy/sell exist - goldbridge's own
+    `active` flag is informational only (shown in admin UI) and must
+    NOT hide priced items from customers (most coins sit at active=False
+    while still carrying valid buy/sell).
+
+    Manual wins when the admin explicitly enables use_manual_price, or
+    as a fallback when the live feed has no buy/sell at all but manuals
+    are filled in.
+
+    Mirrored cards (price_source_item_id, e.g. متفرقه / نقد کارتخوان)
+    follow the *effective* source card — so if id:1 is switched to
+    manual while goldbridge is down, these two cards use id:1's manual
+    buy/sell, then apply the same متفرقه / نقد کارتخوان formulas as live.
+    """
+    source_id = getattr(card, "price_source_item_id", None) if card else None
+    if source_id:
+        source_live = _latest_items.get(int(source_id))
+        src_card = source_card if source_card is not None else _get_price_card_row(int(source_id), db)
+        buy_only = bool(
+            card
+            and (is_motaferaghe_card(card.goldbridge_item_id) or is_naghd_kartkhan_card(card.goldbridge_item_id))
+        )
+        source_resolved = _live_or_manual_item(src_card, source_live, buy_only_ok=buy_only)
+        if not source_resolved or source_resolved.get("buy") is None:
+            return None
+        if not buy_only and source_resolved.get("sell") is None:
+            return None
+        return _apply_mirrored_structure(card, source_resolved)
+
+    is_special = bool(
+        card
+        and (is_motaferaghe_card(card.goldbridge_item_id) or is_naghd_kartkhan_card(card.goldbridge_item_id))
+    )
+    return _live_or_manual_item(card, item, buy_only_ok=is_special)
 
 
 # --- Admin management (PriceCard rows) ---
@@ -557,7 +619,7 @@ def list_admin_cards(db: Session) -> list[dict]:
     for item_id, item in sorted(_latest_items.items()):
         seen.add(item_id)
         card = existing.get(item_id)
-        effective = resolve_effective_item(card, item)
+        effective = resolve_effective_item(card, item, db)
         result.append({
             **item,
             "goldbridge_item_id": item_id,
@@ -576,6 +638,7 @@ def list_admin_cards(db: Session) -> list[dict]:
             "buy": effective["buy"] if effective else item.get("buy"),
             "sell": effective["sell"] if effective else item.get("sell"),
             "price_source": effective["price_source"] if effective else "unavailable",
+            "mirrored_source_mode": (effective or {}).get("mirrored_source_mode"),
             "sort_order": card.sort_order if card else 0,
             "role_commissions": _role_commissions_for_card(db, item_id, roles),
         })
@@ -587,7 +650,7 @@ def list_admin_cards(db: Session) -> list[dict]:
         is_mirrored = bool(getattr(card, "price_source_item_id", None))
         if not card.is_enabled and not card.use_manual_price and not is_mirrored:
             continue
-        effective = resolve_effective_item(card, None)
+        effective = resolve_effective_item(card, None, db)
         if not effective:
             # Still show the admin row so commissions can be set before feed is up.
             result.append({
@@ -614,6 +677,7 @@ def list_admin_cards(db: Session) -> list[dict]:
                 "price_source_item_id": card.price_source_item_id,
                 "price_label_mode": card.price_label_mode,
                 "price_source": "unavailable",
+                "mirrored_source_mode": None,
                 "sort_order": card.sort_order,
                 "role_commissions": _role_commissions_for_card(db, item_id, roles),
             })
@@ -642,6 +706,7 @@ def list_admin_cards(db: Session) -> list[dict]:
             "price_source_item_id": card.price_source_item_id,
             "price_label_mode": card.price_label_mode,
             "price_source": effective.get("price_source", "mirrored"),
+            "mirrored_source_mode": effective.get("mirrored_source_mode"),
             "sort_order": card.sort_order,
             "role_commissions": _role_commissions_for_card(db, item_id, roles),
         })
@@ -829,7 +894,7 @@ def card_commissions_for_user(db: Session, user) -> list[dict]:
     result = []
     for card in cards:
         ov = overrides.get(card.goldbridge_item_id)
-        effective = resolve_effective_item(card, _latest_items.get(card.goldbridge_item_id))
+        effective = resolve_effective_item(card, _latest_items.get(card.goldbridge_item_id), db)
         is_manual = bool(effective and effective.get("price_source") == "manual")
         can_order = True
         if is_manual:
@@ -871,7 +936,7 @@ def get_enabled_cards_for_broadcast(db: Session) -> list[dict]:
     )
     result = []
     for i, card in enumerate(cards):
-        item = resolve_effective_item(card, _latest_items.get(card.goldbridge_item_id))
+        item = resolve_effective_item(card, _latest_items.get(card.goldbridge_item_id), db)
         if not item or item.get("buy") is None or item.get("sell") is None:
             continue
         is_gold = item.get("type", GOLD_ITEM_TYPE) == GOLD_ITEM_TYPE

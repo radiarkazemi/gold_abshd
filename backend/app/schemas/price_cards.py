@@ -26,6 +26,8 @@ class AdminPriceCardOut(BaseModel):
     sort_order: int = 0
     price_source_item_id: int | None = None
     price_label_mode: str | None = None
+    # For mirrored cards: "live" or "manual" depending on the source (id:1).
+    mirrored_source_mode: str | None = None
     # Role commission overrides for this card: [{role_id, role_name, commission_type, commission_value}]
     role_commissions: list[dict] = []
 

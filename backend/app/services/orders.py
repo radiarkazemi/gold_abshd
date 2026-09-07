@@ -509,7 +509,7 @@ def resubmit_order_at_new_price(db: Session, order_id: str, user: User) -> Order
 
     card = price_cards.get_card_state(db, order.goldbridge_item_id)
     raw_item = price_cards.resolve_effective_item(
-        card, price_cards.get_raw_item(order.goldbridge_item_id)
+        card, price_cards.get_raw_item(order.goldbridge_item_id), db
     )
     if not raw_item or raw_item.get("buy") is None or raw_item.get("sell") is None:
         raise HTTPException(status_code=503, detail="قیمت لحظه‌ای در دسترس نیست، لطفا کمی صبر کنید.")
