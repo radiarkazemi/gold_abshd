@@ -18,6 +18,32 @@ function fa(n, opts) {
 const TYPE_LABEL = { 1: "طلا (گرم/عیار)", 2: "سکه" };
 const SPECIAL_MOTAFEREGHE_ID = 900001;
 const SPECIAL_NAGHD_KARTKHAN_ID = 900002;
+const SOURCE_MIRROR_ITEM_ID = 1;
+
+/** Keep متفرقه / نقد کارتخوان in lockstep with id:1's current buy. */
+function syncMirroredCardQuotes(cards) {
+  if (!Array.isArray(cards)) return cards;
+  const source = cards.find((c) => Number(c.goldbridge_item_id) === SOURCE_MIRROR_ITEM_ID);
+  if (!source) return cards;
+  const buy = Number(source.buy);
+  if (!(buy > 0)) return cards;
+  const mirroredMode =
+    source.use_manual_price || source.price_source === "manual" ? "manual" : "live";
+  return cards.map((c) => {
+    const id = Number(c.goldbridge_item_id);
+    if (id !== SPECIAL_MOTAFEREGHE_ID && id !== SPECIAL_NAGHD_KARTKHAN_ID) return c;
+    if (Number(c.buy) === buy && Number(c.sell) === buy && c.mirrored_source_mode === mirroredMode) {
+      return c;
+    }
+    return {
+      ...c,
+      buy,
+      sell: buy,
+      price_source: "mirrored",
+      mirrored_source_mode: mirroredMode,
+    };
+  });
+}
 
 /** Parse toman/percent fee from typed input (commas / Persian digits OK). */
 function parseFeeNumber(raw) {
@@ -389,7 +415,7 @@ export default function AdminPricesTab() {
       .then((data) => {
         if (gen !== fetchGenRef.current) return;
         if (!force && busyIdRef.current != null) return;
-        setCards(data);
+        setCards(syncMirroredCardQuotes(data));
         setError("");
         setLastFetched(new Date());
       })
@@ -457,12 +483,40 @@ export default function AdminPricesTab() {
   async function saveManual(card, payload) {
     busyIdRef.current = card.goldbridge_item_id;
     setBusyId(card.goldbridge_item_id);
+    if (Number(card.goldbridge_item_id) === SOURCE_MIRROR_ITEM_ID) {
+      const buy = payload.useManualPrice
+        ? Number(payload.manualBuy)
+        : Number(card.live_buy ?? card.buy);
+      const sell = payload.useManualPrice
+        ? Number(payload.manualSell)
+        : Number(card.live_sell ?? card.sell);
+      if (buy > 0) {
+        setCards((prev) =>
+          syncMirroredCardQuotes(
+            (prev || []).map((c) =>
+              Number(c.goldbridge_item_id) === SOURCE_MIRROR_ITEM_ID
+                ? {
+                    ...c,
+                    buy,
+                    sell: Number.isFinite(sell) && sell > 0 ? sell : buy,
+                    use_manual_price: !!payload.useManualPrice,
+                    manual_buy: payload.manualBuy,
+                    manual_sell: payload.manualSell,
+                    price_source: payload.useManualPrice ? "manual" : (c.live_buy != null ? "live" : c.price_source),
+                  }
+                : c
+            )
+          )
+        );
+      }
+    }
     try {
       const updated = await setPriceCardManualPrice(card.goldbridge_item_id, payload);
-      setCards(updated);
+      setCards(syncMirroredCardQuotes(updated));
       fetchGenRef.current += 1;
     } catch (e) {
       alert(e.message || "خطا در ذخیره قیمت دستی");
+      reload({ force: true });
     } finally {
       busyIdRef.current = null;
       setBusyId(null);

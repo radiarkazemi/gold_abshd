@@ -58,6 +58,9 @@ def _live(buy=12_000_000, sell=11_900_000):
 
 def setup_function():
     price_cards._latest_items.clear()
+    price_cards._manual_quotes.clear()
+    price_cards._card_config_cache = None
+    price_cards._specials_ready = False
 
 
 def test_motaferaghe_follows_live_buy():
@@ -116,6 +119,89 @@ def test_unavailable_when_feed_down_and_id1_not_manual():
     assert price_cards.resolve_effective_item(_mota(), None, source_card=_source()) is None
 
 
+def test_manual_cache_wins_over_stale_source_card():
+    """A just-saved id:1 buy must move the specials before Postgres is re-read."""
+    price_cards._latest_items[1] = _live(1, 1)
+    price_cards._manual_quotes[1] = {
+        "use_manual": True,
+        "buy": 7_000_000,
+        "sell": 6_900_000,
+    }
+    stale = _source(use_manual_price=True, manual_buy=1, manual_sell=1)
+    mota = price_cards.resolve_effective_item(_mota(), None, source_card=stale)
+    naghd = price_cards.resolve_effective_item(_naghd(), None, source_card=stale)
+    assert mota["buy"] == 7_000_000
+    assert naghd["buy"] == 7_000_000
+    assert mota["mirrored_source_mode"] == "manual"
+
+
+def test_manual_cache_works_without_source_card_or_db():
+    price_cards._latest_items.clear()
+    price_cards._manual_quotes[1] = {
+        "use_manual": True,
+        "buy": 8_250_000,
+        "sell": 8_200_000,
+    }
+    mota = price_cards.resolve_effective_item(_mota(), None, source_card=None)
+    assert mota["buy"] == 8_250_000
+    assert mota["mirrored_source_mode"] == "manual"
+
+
+def test_ensure_specials_is_noop_once_ready():
+    price_cards._specials_ready = True
+    # Must not open a DB session / commit.
+    price_cards.ensure_special_mirrored_cards(db=None)
+
+
+def test_broadcast_hot_path_uses_manual_cache_without_db():
+    from types import SimpleNamespace
+
+    def snap(item_id, **kwargs):
+        defaults = dict(
+            display_name=str(item_id),
+            use_manual_price=False,
+            manual_buy=None,
+            manual_sell=None,
+            price_source_item_id=None,
+            price_label_mode=None,
+            is_enabled=True,
+            orderable_buy=True,
+            orderable_sell=True,
+            override_source_restriction=True,
+            sort_order=item_id,
+            created_at=None,
+        )
+        defaults.update(kwargs)
+        return SimpleNamespace(goldbridge_item_id=item_id, **defaults)
+
+    price_cards._manual_quotes[1] = {
+        "use_manual": True,
+        "buy": 5_000_000,
+        "sell": 4_900_000,
+    }
+    price_cards._card_config_cache = [
+        snap(1, display_name="نقد یکشنبه", use_manual_price=True, manual_buy=1, manual_sell=1),
+        snap(
+            price_cards.SPECIAL_CARD_MOTAFEREGHE_ID,
+            display_name="متفرقه",
+            price_source_item_id=1,
+            orderable_buy=False,
+            orderable_sell=True,
+        ),
+        snap(
+            price_cards.SPECIAL_CARD_NAGHD_KARTKHAN_ID,
+            display_name="نقد کارتخوان",
+            price_source_item_id=1,
+            orderable_buy=True,
+            orderable_sell=False,
+        ),
+    ]
+    cards = {c["goldbridge_item_id"]: c for c in price_cards.get_enabled_cards_for_broadcast(None)}
+    assert cards[price_cards.SPECIAL_CARD_MOTAFEREGHE_ID]["buy_price"] == 5_000_000
+    assert cards[price_cards.SPECIAL_CARD_NAGHD_KARTKHAN_ID]["buy_price"] == 5_000_000
+    assert cards[1]["buy_price"] == 5_000_000
+
+
 if __name__ == "__main__":
     setup_function()
     test_motaferaghe_follows_live_buy()
@@ -127,4 +213,12 @@ if __name__ == "__main__":
     test_unavailable_when_feed_down_and_id1_not_manual()
     setup_function()
     test_uses_entered_manual_buy_not_sell_even_if_sell_missing()
+    setup_function()
+    test_manual_cache_wins_over_stale_source_card()
+    setup_function()
+    test_manual_cache_works_without_source_card_or_db()
+    setup_function()
+    test_ensure_specials_is_noop_once_ready()
+    setup_function()
+    test_broadcast_hot_path_uses_manual_cache_without_db()
     print("ok")
