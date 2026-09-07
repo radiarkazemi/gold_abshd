@@ -187,6 +187,7 @@ export default function AdminRolesTab() {
     <div>
       <p className="notice-editor__hint" style={{ marginBottom: 12 }}>
         کارمزد هر کارت را از صفحه «قیمت‌ها» تنظیم کنید. اینجا فقط دسته‌بندی و محدودیت‌ها ساخته می‌شود.
+        مبلغ تومان از وزن × قیمت زنده گرم ۱۸ محاسبه می‌شود و با تغییر قیمت طلا خودکار به‌روز می‌ماند.
       </p>
 
       <h3 className="notice-editor__hint">دسته‌بندی‌های موجود</h3>

@@ -17,14 +17,17 @@ import AdminKycTab from "./AdminKycTab";
 import AdminTransfersTab from "./AdminTransfersTab";
 import AdminShell from "../components/AdminShell";
 import JalaliDateInput from "../components/JalaliDateInput";
-import { playNotificationSound, playKycNotificationSound } from "../utils/notificationSound";
+import { playNotificationSound, playKycNotificationSound, unlockNotificationAudio } from "../utils/notificationSound";
 import {
   ensureNotificationPermission,
   notifyNewOrder,
   notifyNewKyc,
   registerNotifyServiceWorker,
   subscribeAdminPush,
+  pushSupportInfo,
 } from "../utils/desktopNotify";
+import { applyAdminPwaManifest, adminInstallHint } from "../utils/adminManifest";
+import AdminNotifyBanner from "../components/AdminNotifyBanner";
 import { orderGoldWeight, orderTotalMoney, summarizeOrders } from "../utils/orderCalc";
 import { formatCashStatus } from "../utils/balanceFormat";
 import { remainingFromOrder } from "../utils/orderCountdown";
@@ -87,6 +90,9 @@ function AdminPanel({ onLogout, identity }) {
   const [kycPendingCount, setKycPendingCount] = useState(0);
   const [newOrderFlash, setNewOrderFlash] = useState(false);
   const [newKycFlash, setNewKycFlash] = useState(false);
+  const [notifyBanner, setNotifyBanner] = useState(null); // { kind, title, body, tab }
+  const [pushHint, setPushHint] = useState("");
+  const notifyTimerRef = useRef(null);
   const [wsTick, setWsTick] = useState(0);
   const [dateFrom, setDateFrom] = useState(todayIso());
   const [dateTo, setDateTo] = useState(todayIso());
@@ -143,17 +149,107 @@ function AdminPanel({ onLogout, identity }) {
   }, [filter]);
 
   useEffect(() => {
+    // Point "Add to Home Screen" at the admin panel, not the client app.
+    return applyAdminPwaManifest();
+  }, []);
+
+  useEffect(() => {
     // OS notifications: Windows Action Center when the browser is
     // minimized/backgrounded, and native mobile notifications + Web Push
     // so locked phones still get order alerts with sound.
     (async () => {
+      const installTip = adminInstallHint();
+      const info = pushSupportInfo();
+      if (!info.secureContext) {
+        setPushHint(
+          "برای اعلان بالای صفحه وقتی مرورگر بسته است، سایت باید HTTPS باشد. الان فقط با باز بودن پنل صدا/بنر کار می‌کند."
+        );
+      } else if (installTip) {
+        setPushHint(installTip);
+      }
       await registerNotifyServiceWorker();
       const perm = await ensureNotificationPermission();
       if (perm === "granted") {
-        await subscribeAdminPush();
+        const ok = await subscribeAdminPush();
+        if (!ok && info.secureContext) {
+          setPushHint(
+            [
+              "ثبت اعلان پس‌زمینه ناموفق بود — یک‌بار از پنل خارج شوید و دوباره وارد شوید.",
+              installTip,
+            ]
+              .filter(Boolean)
+              .join(" ")
+          );
+        } else if (ok && installTip) {
+          setPushHint(installTip);
+        } else if (ok) {
+          setPushHint("");
+        }
+      } else if (perm === "denied") {
+        setPushHint(
+          [
+            "مجوز اعلان مرورگر رد شده است — از تنظیمات سایت مجوز Notifications را فعال کنید.",
+            installTip,
+          ]
+            .filter(Boolean)
+            .join(" ")
+        );
       }
     })();
+
+    // Unlock WebAudio on first user gesture so later order chimes play
+    // reliably on mobile (browsers suspend AudioContext until then).
+    const unlock = () => {
+      unlockNotificationAudio();
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+      window.removeEventListener("touchstart", unlock);
+    };
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    window.addEventListener("touchstart", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+      window.removeEventListener("touchstart", unlock);
+    };
   }, []);
+
+  function showNotifyBanner(item) {
+    setNotifyBanner(item);
+    if (notifyTimerRef.current) clearTimeout(notifyTimerRef.current);
+    // Brief popup — auto-dismiss quickly like Samsung/Android brief style.
+    notifyTimerRef.current = setTimeout(() => setNotifyBanner(null), 5500);
+  }
+
+  // Push arrived while this admin client is alive (background or foreground):
+  // play our custom WAV + show the brief top popup card.
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return undefined;
+    function onSwMessage(event) {
+      const msg = event.data || {};
+      if (msg.type !== "ADMIN_PUSH_ALERT") return;
+      unlockNotificationAudio();
+      const isKyc = msg.kind === "new_kyc";
+      if (isKyc) {
+        playKycNotificationSound();
+        refreshKycPendingCount();
+      } else {
+        playNotificationSound();
+        refreshPendingCount();
+        reload(filter);
+      }
+      showNotifyBanner({
+        kind: isKyc ? "kyc" : "order",
+        title: msg.title || (isKyc ? "احراز هویت جدید" : "سفارش جدید"),
+        body: msg.body || "",
+        tab: isKyc ? "kyc" : "orders",
+      });
+    }
+    navigator.serviceWorker.addEventListener("message", onSwMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onSwMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter]);
 
   useEffect(() => {
     function loadPrices() {
@@ -172,9 +268,19 @@ function AdminPanel({ onLogout, identity }) {
 
       if (message?.type === "new_kyc") {
         refreshKycPendingCount();
+        unlockNotificationAudio();
         playKycNotificationSound();
         setNewKycFlash(true);
         setTimeout(() => setNewKycFlash(false), 3200);
+        const u = message.user || {};
+        const name = u.full_name || "مشتری";
+        const code = u.user_code != null ? `#${u.user_code}` : "";
+        showNotifyBanner({
+          kind: "kyc",
+          title: `${name} ${code}`.trim(),
+          body: u.phone_number || "درخواست احراز هویت جدید",
+          tab: "kyc",
+        });
         notifyNewKyc(message.user);
         return;
       }
@@ -184,15 +290,32 @@ function AdminPanel({ onLogout, identity }) {
       refreshPendingCount();
 
       if (message?.type === "new_order") {
+        unlockNotificationAudio();
         playNotificationSound();
         setNewOrderFlash(true);
         setTimeout(() => setNewOrderFlash(false), 2500);
+        const o = message.order || {};
+        const side = o.side === "buy" ? "خرید" : o.side === "sell" ? "فروش" : "سفارش";
+        const name = o.customer_name || "مشتری";
+        const code = o.customer_code != null ? `#${o.customer_code}` : "";
+        const unit = o.amount_type === "weight" ? "گرم ۱۸" : "تومان";
+        const value =
+          o.value != null ? `${Number(o.value).toLocaleString("fa-IR")} ${unit}` : "";
+        showNotifyBanner({
+          kind: "order",
+          title: `${side} — ${name} ${code}`.trim(),
+          body: value,
+          tab: "orders",
+        });
         // System notification (Windows when browser is down + mobile notif)
         notifyNewOrder(message.order);
       }
     });
     ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
+    ws.onclose = (event) => {
+      setConnected(false);
+      if (event.code === 4401) onLogout();
+    };
     wsRef.current = ws;
     return () => ws.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -232,6 +355,17 @@ function AdminPanel({ onLogout, identity }) {
       onLogout={onLogout}
       identity={identity}
     >
+      {notifyBanner && (
+        <AdminNotifyBanner
+          item={notifyBanner}
+          onClose={() => setNotifyBanner(null)}
+          onOpen={() => {
+            if (notifyBanner.tab) setTab(notifyBanner.tab);
+            setNotifyBanner(null);
+          }}
+        />
+      )}
+      {pushHint && <p className="admin-push-hint">{pushHint}</p>}
       {newOrderFlash && (
         <div className="new-order-flash">سفارش جدید دریافت شد</div>
       )}
@@ -460,8 +594,31 @@ export default function AdminPage() {
         }
         setSessionReady(true);
       });
+
+    function onVisible() {
+      if (document.visibilityState !== "visible" || cancelled) return;
+      refreshAdminSession()
+        .then((data) => {
+          if (cancelled) return;
+          setIdentity({
+            is_super: data.is_super,
+            permissions: data.permissions || [],
+            display_name: data.display_name || "",
+          });
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          if (e.message === "ADMIN_SESSION_EXPIRED") {
+            clearAdminToken();
+            setLoggedIn(false);
+          }
+        });
+    }
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [loggedIn]);
 

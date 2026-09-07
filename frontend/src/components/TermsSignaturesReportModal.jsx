@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, Fragment } from "react";
 import { fetchUserTermsAcceptances } from "../api";
 import { formatTehranDateTime } from "../utils/tehranTime";
+import { watermarkCss, watermarkHtml } from "../utils/printReceipt";
 import JalaliDateInput from "./JalaliDateInput";
 import "./TermsSignaturesReportModal.css";
 
@@ -107,9 +108,15 @@ function buildPrintHtml(report) {
   table{width:100%;border-collapse:collapse;font-size:12px}
   th,td{border:1px solid #ccc;padding:8px;vertical-align:top;text-align:right}
   th{background:#f3f3f3}
+  ${watermarkCss()}
+  @media print {
+    @page { margin: 10mm; size: auto; }
+  }
 </style>
 </head>
 <body>
+  ${watermarkHtml()}
+  <div class="report-body">
   <h1>${title}</h1>
   <div class="meta">
     کد کاربر: ${report.user_code || "—"} —
@@ -126,6 +133,7 @@ function buildPrintHtml(report) {
     </thead>
     <tbody>${rows || `<tr><td colspan="7">موردی یافت نشد</td></tr>`}</tbody>
   </table>
+  </div>
 </body>
 </html>`;
 }

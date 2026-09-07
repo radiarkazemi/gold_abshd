@@ -48,8 +48,13 @@ async def submit_order(
 
     # Prefer live goldbridge quote; fall back to admin manual prices when
     # the feed is down / card is on manual mode (see resolve_effective_item).
+    src = (
+        price_cards.get_card_state(db, int(card.price_source_item_id))
+        if getattr(card, "price_source_item_id", None)
+        else None
+    )
     raw_item = price_cards.resolve_effective_item(
-        card, price_cards.get_raw_item(order_in.goldbridge_item_id)
+        card, price_cards.get_raw_item(order_in.goldbridge_item_id), db, source_card=src
     )
     if not raw_item or raw_item.get("buy") is None or raw_item.get("sell") is None:
         raise HTTPException(status_code=503, detail="قیمت لحظه‌ای در دسترس نیست، لطفا کمی صبر کنید.")

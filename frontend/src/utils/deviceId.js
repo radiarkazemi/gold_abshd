@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { APP_BUILD_V } from "../brandAssets";
 
 const DEVICE_ID_KEY = "goldapp_device_id";
+const ADMIN_DEVICE_ID_KEY = "goldapp_admin_device_id";
 
 export function getDeviceId() {
   let id = localStorage.getItem(DEVICE_ID_KEY);
@@ -9,6 +10,18 @@ export function getDeviceId() {
   if (!id) {
     id = uuidv4();
     localStorage.setItem(DEVICE_ID_KEY, id);
+  }
+
+  return id;
+}
+
+/** Separate device id for the admin panel (not shared with the client app). */
+export function getAdminDeviceId() {
+  let id = localStorage.getItem(ADMIN_DEVICE_ID_KEY);
+
+  if (!id) {
+    id = uuidv4();
+    localStorage.setItem(ADMIN_DEVICE_ID_KEY, id);
   }
 
   return id;

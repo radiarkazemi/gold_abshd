@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends, Header
 from sqlalchemy.orm import Session
 
 from app.rate_limit import limiter
@@ -17,6 +17,7 @@ from app.services.admin_accounts import (
     log_activity,
     mark_login,
 )
+from app.services.admin_devices import register_or_touch_admin_device
 
 router = APIRouter(prefix="/api/admin/auth", tags=["admin-auth"])
 
@@ -34,10 +35,18 @@ async def admin_login(request: Request, payload: AdminLoginIn, db: Session = Dep
 
     if admin.is_super:
         # Super-admin skips OTP entirely - unchanged behavior from before.
+        register_or_touch_admin_device(
+            db, admin, payload.device_id, payload.device_info or ""
+        )
         mark_login(db, admin)
         log_activity(db, admin.username, True, "login")
         return AdminLoginOut(
-            token=create_admin_token(admin.username, is_super=True, admin_user_id=admin.id),
+            token=create_admin_token(
+                admin.username,
+                is_super=True,
+                admin_user_id=admin.id,
+                device_id=payload.device_id,
+            ),
             requires_verification=False,
             is_super=True,
             display_name=admin.full_name or "مدیر اصلی",
@@ -78,11 +87,21 @@ async def admin_verify(request: Request, payload: AdminVerifyIn, db: Session = D
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    register_or_touch_admin_device(
+        db, sub_admin, payload.device_id, payload.device_info or ""
+    )
+    mark_login(db, sub_admin)
     perms = admin_user_permissions(sub_admin)
     log_activity(db, sub_admin.username, False, "login")
 
     return AdminLoginOut(
-        token=create_admin_token(sub_admin.username, is_super=False, admin_user_id=sub_admin.id, permissions=perms),
+        token=create_admin_token(
+            sub_admin.username,
+            is_super=False,
+            admin_user_id=sub_admin.id,
+            permissions=perms,
+            device_id=payload.device_id,
+        ),
         requires_verification=False,
         is_super=False,
         display_name=sub_admin.full_name or sub_admin.username,
@@ -91,12 +110,17 @@ async def admin_verify(request: Request, payload: AdminVerifyIn, db: Session = D
 
 
 @router.get("/me", response_model=AdminLoginOut)
-async def admin_me(db: Session = Depends(get_db), admin: dict = Depends(get_current_admin)):
+async def admin_me(
+    db: Session = Depends(get_db),
+    admin: dict = Depends(get_current_admin),
+    x_admin_device_id: str | None = Header(default=None, alias="X-Admin-Device-Id"),
+):
     """Refresh identity + JWT from the live DB row.
 
     Newly promoted main admins (or newly granted scopes) pick up access
     on the next soft page load without clearing browser data.
     """
+    device_id = (x_admin_device_id or admin.get("device_id") or "").strip()
     admin_user_id = admin.get("admin_user_id")
     row = get_sub_admin(db, admin_user_id) if admin_user_id else None
     if not row:
@@ -110,7 +134,13 @@ async def admin_me(db: Session = Depends(get_db), admin: dict = Depends(get_curr
 
     if row.is_super:
         perms = list(PERMISSION_SCOPES.keys())
-        token = create_admin_token(row.username, is_super=True, admin_user_id=row.id, permissions=perms)
+        token = create_admin_token(
+            row.username,
+            is_super=True,
+            admin_user_id=row.id,
+            permissions=perms,
+            device_id=device_id,
+        )
         return AdminLoginOut(
             token=token,
             requires_verification=False,
@@ -120,7 +150,13 @@ async def admin_me(db: Session = Depends(get_db), admin: dict = Depends(get_curr
         )
 
     perms = admin_user_permissions(row)
-    token = create_admin_token(row.username, is_super=False, admin_user_id=row.id, permissions=perms)
+    token = create_admin_token(
+        row.username,
+        is_super=False,
+        admin_user_id=row.id,
+        permissions=perms,
+        device_id=device_id,
+    )
     return AdminLoginOut(
         token=token,
         requires_verification=False,

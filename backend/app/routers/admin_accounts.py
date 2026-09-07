@@ -39,6 +39,7 @@ def _to_out(row) -> AdminUserOut:
         created_by=row.created_by,
         created_at=row.created_at,
         last_login_at=row.last_login_at,
+        max_devices=row.max_devices or 1,
     )
 
 
@@ -69,6 +70,7 @@ async def create_sub_admin_endpoint(
             permissions=payload.permissions,
             created_by=admin["username"],
             key_ttl_days=payload.key_ttl_days,
+            max_devices=payload.max_devices,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -93,6 +95,7 @@ async def update_sub_admin_endpoint(
             permissions=payload.permissions,
             is_active=payload.is_active,
             new_password=payload.new_password,
+            max_devices=payload.max_devices,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

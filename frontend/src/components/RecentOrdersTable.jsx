@@ -2,10 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { formatTehranDateTime, tehranDayKey, tehranTodayKey } from "../utils/tehranTime";
 import { fetchMyOrders } from "../api";
 import { orderGoldWeight } from "../utils/orderCalc";
+import { remainingFromOrder } from "../utils/orderCountdown";
 
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
-const STATUS_LABEL = { accepted: "تایید شده", rejected: "رد شده", cancelled: "لغو شده" };
+const STATUS_LABEL = {
+  pending: "در انتظار",
+  accepted: "تایید شده",
+  rejected: "رد شده",
+  cancelled: "لغو شده",
+};
 const STATUS_CLASS = {
+  pending: "recent-orders__status--pending",
   accepted: "recent-orders__status--accepted",
   rejected: "recent-orders__status--rejected",
   cancelled: "recent-orders__status--rejected",
@@ -23,21 +30,26 @@ function isSettledStatus(status) {
   return status === "accepted" || status === "rejected" || status === "cancelled";
 }
 
-function pickTodayOrders(data) {
+/** Active pending (timer still running) or settled today. Expired pending is hidden. */
+function pickTodayOrders(data, nowMs = Date.now()) {
   const today = tehranTodayKey();
-  return (data || []).filter(
-    (o) => isSettledStatus(o.status) && tehranDayKey(o.created_at) === today
-  );
+  return (data || []).filter((o) => {
+    if (tehranDayKey(o.created_at) !== today) return false;
+    if (isSettledStatus(o.status)) return true;
+    if (o.status === "pending" && remainingFromOrder(o, nowMs) > 0) return true;
+    return false;
+  });
 }
 
 export default function RecentOrdersTable({ limit = 5, refreshSignal }) {
-  const [todayOrders, setTodayOrders] = useState(null);
+  const [orders, setOrders] = useState(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     function load() {
       fetchMyOrders()
-        .then((data) => setTodayOrders(pickTodayOrders(data)))
-        .catch(() => setTodayOrders([]));
+        .then((data) => setOrders(Array.isArray(data) ? data : []))
+        .catch(() => setOrders([]));
     }
     load();
     const interval = setInterval(load, 6000);
@@ -47,16 +59,24 @@ export default function RecentOrdersTable({ limit = 5, refreshSignal }) {
   useEffect(() => {
     if (refreshSignal === undefined) return;
     fetchMyOrders()
-      .then((data) => setTodayOrders(pickTodayOrders(data)))
+      .then((data) => setOrders(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, [refreshSignal]);
 
-  const rows = useMemo(() => (todayOrders || []).slice(0, limit), [todayOrders, limit]);
+  // Drop expired pending rows as soon as the local deadline passes,
+  // without waiting for the next 6s poll.
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
-  // Totals: only accepted orders count. Rejected/cancelled stay visible in
-  // the table but must not inflate مجموع خرید/فروش / تفاضل.
+  const todayOrders = useMemo(() => pickTodayOrders(orders, nowMs), [orders, nowMs]);
+  const rows = useMemo(() => todayOrders.slice(0, limit), [todayOrders, limit]);
+
+  // Totals: only accepted orders count. Rejected/cancelled/pending stay
+  // visible in the table but must not inflate مجموع خرید/فروش / تفاضل.
   const totals = useMemo(() => {
-    const list = (todayOrders || []).filter((o) => o.status === "accepted");
+    const list = todayOrders.filter((o) => o.status === "accepted");
     let buy = 0;
     let sell = 0;
     for (const o of list) {
@@ -67,7 +87,7 @@ export default function RecentOrdersTable({ limit = 5, refreshSignal }) {
     return { buy, sell, net: buy - sell };
   }, [todayOrders]);
 
-  if (todayOrders === null || todayOrders.length === 0) return null;
+  if (orders === null || rows.length === 0) return null;
 
   const netClass =
     Math.abs(totals.net) < 1e-9

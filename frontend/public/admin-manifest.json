@@ -1,16 +1,16 @@
 {
-  "name": "آبشده قصر طلا",
-  "short_name": "آبشده قصر طلا",
-  "description": "خرید و فروش آنلاین طلا",
-  "start_url": "/?source=pwa",
-  "scope": "/",
+  "name": "پنل مدیریت قصر طلا",
+  "short_name": "پنل قصر طلا",
+  "description": "پنل مدیریت آبشده قصر طلا",
+  "start_url": "/admin-hs-panel?source=pwa",
+  "scope": "/admin-hs-panel",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#12100b",
   "theme_color": "#12100b",
   "dir": "rtl",
   "lang": "fa",
-  "id": "/?brand=8e62aa32994b",
+  "id": "/admin-hs-panel?brand=8e62aa32994b",
   "icons": [
     {
       "src": "/gt-favicon-64.png?v=8e62aa32994b",

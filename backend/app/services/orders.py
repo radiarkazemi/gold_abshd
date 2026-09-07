@@ -68,6 +68,8 @@ def _price_gold_order(
 
     متفرقه بفروشید: base = id:1 buy, final_mesghal = base + commission,
     gram18 = final_mesghal / 4.39.
+
+    نقد کارتخوان بخرید: base = id:1 buy, final = (base + commission) + 100_000.
     """
     if price_cards.is_motaferaghe_card(goldbridge_item_id):
         # Always price from the mirrored BUY quote (sell side of this card).
@@ -76,6 +78,12 @@ def _price_gold_order(
         # Special: commission is ADDED even for بفروشید.
         final_mesghal = raw + commission
         return raw, final_mesghal, motaferaghe_to_gram18(final_mesghal)
+
+    if price_cards.is_naghd_kartkhan_card(goldbridge_item_id):
+        raw = float(raw_item["buy"])
+        commission = commission_amount(raw, commission_type, commission_value)
+        final_mesghal = raw + commission + price_cards.NAGHD_KARTKHAN_MARKUP_TOMAN
+        return raw, final_mesghal, mesghal17_to_gram18(final_mesghal)
 
     raw = float(raw_item["buy"] if side == "buy" else raw_item["sell"])
     final_mesghal = apply_pricing_formula(
@@ -176,9 +184,13 @@ def apply_pricing_formula(mesghal17_buy: float, mesghal17_sell: float, side: str
 def create_order(db: Session, user: User, side: str, amount_type: str, value: float,
                   description: str, goldbridge_item_id: int, raw_item: dict) -> Order:
     is_coin = raw_item.get("type") == price_cards.COIN_ITEM_TYPE
-    commission_type, commission_value = price_cards.resolve_commission_for_user(
+    commission_type, commission_buy, commission_sell = price_cards.resolve_commission_for_user(
         db, user, goldbridge_item_id
     )
+    if price_cards.is_motaferaghe_card(goldbridge_item_id) or price_cards.is_naghd_kartkhan_card(goldbridge_item_id):
+        commission_value = commission_buy
+    else:
+        commission_value = commission_buy if side == "buy" else commission_sell
 
     if is_coin:
         if amount_type != "count":
@@ -466,8 +478,10 @@ def decide_order(db: Session, order_id: str, status: str) -> Order:
 
 def resubmit_order_at_new_price(db: Session, order_id: str, user: User) -> Order:
     """
-    After an admin rejection for market-move (reject_reason=price_change),
-    the customer can re-open the same order at the CURRENT live quote.
+    Re-open an order at the CURRENT live quote when:
+      - admin rejected for market-move (reject_reason=price_change), OR
+      - the pending countdown expired unanswered and the market moved.
+
     Status goes back to pending with a fresh countdown; prices are
     rewritten to match what the price card shows right now.
     """
@@ -476,17 +490,31 @@ def resubmit_order_at_new_price(db: Session, order_id: str, user: User) -> Order
         raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
     if order.user_id != user.id:
         raise HTTPException(status_code=403, detail="این سفارش متعلق به شما نیست")
-    if order.status != OrderStatusEnum.rejected or order.reject_reason != "price_change":
+
+    rejected_for_price = (
+        order.status == OrderStatusEnum.rejected and order.reject_reason == "price_change"
+    )
+    pending_expired = (
+        order.status == OrderStatusEnum.pending
+        and not is_active_pending(order)
+        and (order.retry_count or 0) < settings.ORDER_MAX_RETRIES
+    )
+    if not rejected_for_price and not pending_expired:
         raise HTTPException(
             status_code=400,
-            detail="فقط سفارش‌های رد‌شده به‌دلیل تغییر مظنه را می‌توان با مظنه جدید ارسال کرد",
+            detail="فقط سفارش‌های رد‌شده به‌دلیل تغییر مظنه یا منقضی‌شده بدون پاسخ را می‌توان با مظنه جدید ارسال کرد",
         )
     if not order.goldbridge_item_id:
         raise HTTPException(status_code=400, detail="این سفارش قابل قیمت‌گذاری مجدد نیست")
 
     card = price_cards.get_card_state(db, order.goldbridge_item_id)
+    src = (
+        price_cards.get_card_state(db, int(card.price_source_item_id))
+        if card and getattr(card, "price_source_item_id", None)
+        else None
+    )
     raw_item = price_cards.resolve_effective_item(
-        card, price_cards.get_raw_item(order.goldbridge_item_id)
+        card, price_cards.get_raw_item(order.goldbridge_item_id), db, source_card=src
     )
     if not raw_item or raw_item.get("buy") is None or raw_item.get("sell") is None:
         raise HTTPException(status_code=503, detail="قیمت لحظه‌ای در دسترس نیست، لطفا کمی صبر کنید.")
@@ -499,9 +527,13 @@ def resubmit_order_at_new_price(db: Session, order_id: str, user: User) -> Order
 
     side = order.side.value
     is_coin = raw_item.get("type") == price_cards.COIN_ITEM_TYPE
-    commission_type, commission_value = price_cards.resolve_commission_for_user(
+    commission_type, commission_buy, commission_sell = price_cards.resolve_commission_for_user(
         db, user, order.goldbridge_item_id
     )
+    if price_cards.is_motaferaghe_card(order.goldbridge_item_id) or price_cards.is_naghd_kartkhan_card(order.goldbridge_item_id):
+        commission_value = commission_buy
+    else:
+        commission_value = commission_buy if side == "buy" else commission_sell
     if is_coin:
         mesghal17_raw_price = raw_item["buy"] if side == "buy" else raw_item["sell"]
         final_price = apply_pricing_formula(
@@ -518,7 +550,9 @@ def resubmit_order_at_new_price(db: Session, order_id: str, user: User) -> Order
     order.mesghal17_raw_price_at_submit = mesghal17_raw_price
     order.status = OrderStatusEnum.pending
     order.reject_reason = None
-    order.retry_count = 0
+    order.retry_count = (order.retry_count or 0) + (1 if pending_expired else 0)
+    if rejected_for_price:
+        order.retry_count = 0
     order.pending_deadline_at = _new_pending_deadline()
     order.updated_at = datetime.utcnow()
     db.commit()

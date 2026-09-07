@@ -26,6 +26,8 @@ class AdminPriceCardOut(BaseModel):
     sort_order: int = 0
     price_source_item_id: int | None = None
     price_label_mode: str | None = None
+    # For mirrored cards: "live" or "manual" depending on the source (id:1).
+    mirrored_source_mode: str | None = None
     # Role commission overrides for this card: [{role_id, role_name, commission_type, commission_value}]
     role_commissions: list[dict] = []
 
@@ -54,7 +56,9 @@ class SetCardManualPriceIn(BaseModel):
 class SetCardRoleCommissionIn(BaseModel):
     role_id: str
     commission_type: str  # "fixed" | "percentage"
-    commission_value: float
+    commission_value: float | None = None  # legacy / one-sided: copied to both sides if buy/sell omitted
+    commission_buy_value: float | None = None
+    commission_sell_value: float | None = None
     # When the card uses manual prices, False blocks this role from ordering.
     can_order: bool = True
 
@@ -78,3 +82,5 @@ class CustomerPriceCardOut(BaseModel):
     price_source_item_id: int | None = None
     # "motaferaghe_sell" => (id1 buy + commission) / 4.39 for گرم۱۸ بفروشید
     pricing_mode: str | None = None
+    # goldbridge per-item last_update_time (ISO) — client "آخرین بروزرسانی"
+    updated_at: str | None = None

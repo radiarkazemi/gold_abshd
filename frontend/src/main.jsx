@@ -3,7 +3,16 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.jsx";
 import { APP_BUILD_V, BRAND_V } from "./brandAssets.js";
+import { applyAdminPwaManifest } from "./utils/adminManifest.js";
 import { signalAppUpdateAvailable, APPLIED_UPDATE_KEY } from "./components/UpdatePrompt.jsx";
+
+// Admin PWA: swap manifest/title before React mounts (Safari reads head early).
+if (typeof window !== "undefined") {
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  if (path === "/admin-hs-panel") {
+    applyAdminPwaManifest();
+  }
+}
 
 // Strip one-shot cache-bust query from soft-update navigations.
 if (typeof window !== "undefined") {

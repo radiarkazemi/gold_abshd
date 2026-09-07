@@ -11,6 +11,7 @@ class AdminUserCreateIn(BaseModel):
     national_id: str
     permissions: list[str] = []
     key_ttl_days: int = 14
+    max_devices: int = 1
 
 
 class AdminUserUpdateIn(BaseModel):
@@ -18,6 +19,7 @@ class AdminUserUpdateIn(BaseModel):
     permissions: list[str] | None = None
     is_active: bool | None = None
     new_password: str | None = None
+    max_devices: int | None = None
 
 
 class AdminUserOut(BaseModel):
@@ -34,6 +36,7 @@ class AdminUserOut(BaseModel):
     created_by: str | None = None
     created_at: datetime
     last_login_at: datetime | None = None
+    max_devices: int = 1
 
     class Config:
         from_attributes = True

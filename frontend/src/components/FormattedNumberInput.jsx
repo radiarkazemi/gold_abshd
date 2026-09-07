@@ -19,7 +19,13 @@ function formatDisplay(raw) {
 }
 
 function stripToRaw(display, allowNegative) {
-  let s = normalizeMinus(display).replace(/,/g, "").trim();
+  let s = normalizeMinus(display).trim();
+  // Commas are thousand separators from formatDisplay (and user paste).
+  // Never treat them as decimals here — that breaks toman amounts like
+  // "2,167,000" mid-typing into "2.167000". Order weight fields that need
+  // iPhone decimal-comma handling do it outside this component.
+  s = s.replace(/,/g, "");
+  s = s.replace(/٫/g, ".");
   let negative = false;
   if (allowNegative) {
     // Accept leading or trailing minus while typing (common on mobile / RTL).

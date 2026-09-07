@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchOrderLimits, fetchMyOrderDetail, retryMyOrder, retryMyOrderAtNewPrice } from "../api";
-import { localDeadlineMsFromOrder, DEFAULT_PENDING_SECONDS } from "../utils/orderCountdown";
+import {
+  localDeadlineMsFromOrder,
+  remainingFromOrder,
+  DEFAULT_PENDING_SECONDS,
+} from "../utils/orderCountdown";
 import { CircularCountdown } from "./PendingCountdown";
 import FormattedNumberInput from "./FormattedNumberInput";
 
@@ -26,6 +30,30 @@ function formatWeight(n) {
   return Number(n).toLocaleString("en-US", { maximumFractionDigits: 3 });
 }
 
+/** When دسته بندی caps follow weight, refresh تومان from live card buy unit. */
+function limitsWithLiveAmounts(limits, card) {
+  if (!limits || !limits.amount_limits_follow_weight || !card) return limits;
+  const unit = Math.round(Number(card.gram18_buy_price));
+  if (!Number.isFinite(unit) || unit <= 0) return limits;
+  const next = { ...limits };
+  if (limits.min_weight != null && Number(limits.min_weight) > 0) {
+    next.min_amount = Math.round(Number(limits.min_weight) * unit);
+  }
+  if (limits.max_weight != null && Number(limits.max_weight) > 0) {
+    next.max_amount = Math.round(Number(limits.max_weight) * unit);
+  }
+  return next;
+}
+
+/** iPhone / EU keyboards often insert "," as the decimal separator. */
+function normalizeDecimalInput(value) {
+  return String(value ?? "")
+    .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
+    .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d))
+    .replace(/٫/g, ".")
+    .replace(/,/g, ".");
+}
+
 export default function OrderModal({ card, side, onClose, onSubmit, submitting, result, error }) {
   const isCoin = card?.unit === "count";
   const modalRef = useRef(null);
@@ -45,6 +73,7 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
   // "قیمت تغییر کرد" tag if the live feed moves before submit.
   const baselinePriceRef = useRef(null);
   const meta = SIDE_META[side];
+  const effectiveLimits = limitsWithLiveAmounts(limits, card);
 
   if (baselinePriceRef.current == null && card) {
     baselinePriceRef.current = {
@@ -64,7 +93,21 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
   }
 
   useEffect(() => {
-    fetchOrderLimits().then(setLimits).catch(() => {});
+    let cancelled = false;
+    function loadLimits() {
+      fetchOrderLimits()
+        .then((data) => {
+          if (!cancelled) setLimits(data);
+        })
+        .catch(() => {});
+    }
+    loadLimits();
+    // Keep تومان caps in sync when the role derives them from weight × live gold.
+    const poll = setInterval(loadLimits, 8000);
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+    };
   }, []);
 
   useEffect(() => {
@@ -251,23 +294,23 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
       return numeric;
     }
 
-    if (limits) {
+    if (effectiveLimits) {
       if (amountType === "weight") {
-        if (numeric < limits.min_weight) {
-          setLocalError(`حداقل مقدار سفارش ${toFarsiNumber(limits.min_weight)} گرم ۱۸ است`);
+        if (numeric < effectiveLimits.min_weight) {
+          setLocalError(`حداقل مقدار سفارش ${toFarsiNumber(effectiveLimits.min_weight)} گرم ۱۸ است`);
           return null;
         }
-        if (numeric > limits.max_weight) {
-          setLocalError(`حداکثر مقدار سفارش ${toFarsiNumber(limits.max_weight)} گرم ۱۸ است`);
+        if (numeric > effectiveLimits.max_weight) {
+          setLocalError(`حداکثر مقدار سفارش ${toFarsiNumber(effectiveLimits.max_weight)} گرم ۱۸ است`);
           return null;
         }
       } else {
-        if (limits.min_amount && numeric < limits.min_amount) {
-          setLocalError(`حداقل مبلغ سفارش ${toFarsiNumber(limits.min_amount)} تومان است`);
+        if (effectiveLimits.min_amount && numeric < effectiveLimits.min_amount) {
+          setLocalError(`حداقل مبلغ سفارش ${toFarsiNumber(effectiveLimits.min_amount)} تومان است`);
           return null;
         }
-        if (limits.max_amount && numeric > limits.max_amount) {
-          setLocalError(`حداکثر مبلغ سفارش ${toFarsiNumber(limits.max_amount)} تومان است`);
+        if (effectiveLimits.max_amount && numeric > effectiveLimits.max_amount) {
+          setLocalError(`حداکثر مبلغ سفارش ${toFarsiNumber(effectiveLimits.max_amount)} تومان است`);
           return null;
         }
       }
@@ -304,10 +347,15 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
       ? STATUS_META[liveOrder.status]
       : STATUS_META.pending;
 
-  // Lock the waiting card while the admin-visibility countdown is running.
-  // After it expires (and the user has not retried), they may leave —
-  // the order is already soft-hidden from admin "در انتظار".
-  const waitingLocked = Boolean(result && liveOrder?.status === "pending" && secondsLeft > 0);
+  // Lock from the moment submit succeeds (or while the request is in
+  // flight) until the pending deadline actually passes. Do NOT key the
+  // lock off `secondsLeft` state — it starts at 0 and only updates after
+  // an effect, which let users dismiss before the timer UI appeared
+  // while the order was already pending for admin.
+  const activeOrder = liveOrder || result;
+  const pendingRemaining = remainingFromOrder(activeOrder);
+  const pendingWindowOpen = Boolean(activeOrder?.status === "pending" && pendingRemaining > 0);
+  const waitingLocked = Boolean(submitting || pendingWindowOpen);
 
   function requestClose() {
     if (waitingLocked) return;
@@ -326,6 +374,19 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
     baselineDisplayPrice != null &&
     liveDisplayPrice != null &&
     Math.round(Number(baselineDisplayPrice)) !== Math.round(Number(liveDisplayPrice));
+
+  // Pending timer expired unanswered: offer retry-at-new-price when market moved.
+  // Require a known deadline so we don't flash the expired UI before countdown seeds.
+  const pendingExpiredUnanswered =
+    Boolean(result) &&
+    activeOrder?.status === "pending" &&
+    activeOrder?.pending_deadline_at &&
+    pendingRemaining <= 0;
+  const pendingExpiredPriceChanged =
+    pendingExpiredUnanswered &&
+    submitFinalPrice() != null &&
+    currentFinalPrice() != null &&
+    Math.round(Number(submitFinalPrice())) !== Math.round(Number(currentFinalPrice()));
 
   const priceChangeTag = formPriceChanged ? (
     <p className="modal-result__price-change">
@@ -367,14 +428,46 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
               {statusMeta.label}
             </p>
 
-            {liveOrder?.status === "pending" && (
+            {activeOrder?.status === "pending" && (
               <div className="modal-result__timer">
-                {secondsLeft > 0 ? (
+                {pendingWindowOpen ? (
                   <CircularCountdown
-                    order={liveOrder}
+                    order={activeOrder}
                     totalSeconds={limits?.pending_seconds || DEFAULT_PENDING_SECONDS}
                   />
-                ) : retryCount < maxRetries ? (
+                ) : pendingExpiredUnanswered ? (
+                  pendingExpiredPriceChanged ? (
+                  <div className="modal-result__price-reject">
+                    <p className="modal-result__reject-reason">پاسخی دریافت نشد — مظنه تغییر کرده</p>
+                    <p className="modal-result__price-change">
+                      {gram18OnlyDisplay && !isCoin ? (
+                        <>
+                          مظنه از {toFarsiNumber(Math.round(submitFinalPrice()))} به{" "}
+                          {toFarsiNumber(Math.round(currentFinalPrice()))} تومان (گرم ۱۸) تغییر کرده
+                        </>
+                      ) : (
+                        <>
+                          مظنه از {toFarsiNumber(Math.round(submitFinalPrice()))} به{" "}
+                          {toFarsiNumber(Math.round(currentFinalPrice()))} تومان تغییر کرده
+                        </>
+                      )}
+                    </p>
+                    {retryCount < maxRetries ? (
+                      <button
+                        type="button"
+                        className="modal-btn modal-btn--primary"
+                        onClick={handleRetryNewPrice}
+                        disabled={retrying}
+                      >
+                        {retrying ? "در حال ارسال…" : "تلاش با مظنه جدید"}
+                      </button>
+                    ) : (
+                      <p className="modal-result__hint">
+                        بررسی این درخواست بیش از حد معمول طول کشیده. لطفا با پشتیبانی تماس بگیرید.
+                      </p>
+                    )}
+                  </div>
+                  ) : retryCount < maxRetries ? (
                   <button
                     type="button"
                     className="modal-btn modal-btn--ghost"
@@ -383,11 +476,12 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
                   >
                     {retrying ? "در حال ارسال…" : `تلاش دوباره (${retryCount}/${maxRetries})`}
                   </button>
-                ) : (
+                  ) : (
                   <p className="modal-result__hint">
                     بررسی این درخواست بیش از حد معمول طول کشیده. لطفا با پشتیبانی تماس بگیرید.
                   </p>
-                )}
+                  )
+                ) : null}
               </div>
             )}
 
@@ -506,16 +600,15 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
               </span>
               {isCoin ? (
                 <input
-                  type="number"
+                  type="text"
                   inputMode="numeric"
-                  step="1"
-                  min="1"
                   autoFocus
                   required
                   value={value}
-                  onChange={(e) => setValue(e.target.value)}
+                  onChange={(e) => setValue(normalizeDecimalInput(e.target.value).replace(/[^\d.]/g, "").replace(/\./g, ""))}
                   placeholder="مثلاً ۱"
                   className="field__input"
+                  dir="ltr"
                 />
               ) : amountType === "amount" ? (
                 <FormattedNumberInput
@@ -528,29 +621,35 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
                 />
               ) : (
                 <input
-                  type="number"
+                  type="text"
                   inputMode="decimal"
-                  step="any"
-                  min="0"
                   autoFocus
                   required
                   value={value}
-                  onChange={(e) => setValue(e.target.value)}
+                  onChange={(e) => {
+                    // iPhone often inserts "," as decimal — normalize to "."
+                    let next = normalizeDecimalInput(e.target.value);
+                    next = next.replace(/[^\d.]/g, "");
+                    const parts = next.split(".");
+                    if (parts.length > 2) next = `${parts[0]}.${parts.slice(1).join("")}`;
+                    setValue(next);
+                  }}
                   placeholder="مثلاً ۲.۵"
                   className="field__input"
+                  dir="ltr"
                 />
               )}
-              {!isCoin && limits && amountType === "weight" && (
+              {!isCoin && effectiveLimits && amountType === "weight" && (
                 <span className="field__hint">
-                  حداقل: {toFarsiNumber(limits.min_weight)} گرم ۱۸ &nbsp;·&nbsp; حداکثر:{" "}
-                  {toFarsiNumber(limits.max_weight)} گرم ۱۸
+                  حداقل: {toFarsiNumber(effectiveLimits.min_weight)} گرم ۱۸ &nbsp;·&nbsp; حداکثر:{" "}
+                  {toFarsiNumber(effectiveLimits.max_weight)} گرم ۱۸
                 </span>
               )}
-              {!isCoin && limits && amountType === "amount" && (limits.min_amount > 0 || limits.max_amount > 0) && (
+              {!isCoin && effectiveLimits && amountType === "amount" && (effectiveLimits.min_amount > 0 || effectiveLimits.max_amount > 0) && (
                 <span className="field__hint">
-                  {limits.min_amount > 0 && <>حداقل: {toFarsiNumber(limits.min_amount)} تومان</>}
-                  {limits.min_amount > 0 && limits.max_amount > 0 && <>&nbsp;·&nbsp;</>}
-                  {limits.max_amount > 0 && <>حداکثر: {toFarsiNumber(limits.max_amount)} تومان</>}
+                  {effectiveLimits.min_amount > 0 && <>حداقل: {toFarsiNumber(effectiveLimits.min_amount)} تومان</>}
+                  {effectiveLimits.min_amount > 0 && effectiveLimits.max_amount > 0 && <>&nbsp;·&nbsp;</>}
+                  {effectiveLimits.max_amount > 0 && <>حداکثر: {toFarsiNumber(effectiveLimits.max_amount)} تومان</>}
                 </span>
               )}
               {isCoin && <span className="field__hint">حداکثر ۵۰ عدد در هر سفارش</span>}

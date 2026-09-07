@@ -31,7 +31,7 @@ export default function AdminAccountsTab() {
   const [view, setView] = useState("admins"); // "admins" | "activity"
 
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ username: "", password: "", full_name: "", phone_number: "", national_id: "", permissions: [] });
+  const [form, setForm] = useState({ username: "", password: "", full_name: "", phone_number: "", national_id: "", permissions: [], max_devices: 1 });
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -68,7 +68,7 @@ export default function AdminAccountsTab() {
     setBusy(true);
     try {
       await createSubAdmin(form);
-      setForm({ username: "", password: "", full_name: "", phone_number: "", national_id: "", permissions: [] });
+      setForm({ username: "", password: "", full_name: "", phone_number: "", national_id: "", permissions: [], max_devices: 1 });
       setCreating(false);
       reload();
     } catch (err) {
@@ -175,6 +175,17 @@ export default function AdminAccountsTab() {
                   <span>کد ملی</span>
                   <input value={form.national_id} onChange={(e) => setForm({ ...form, national_id: e.target.value })} dir="ltr" />
                 </label>
+                <label className="order-limits-box__field">
+                  <span>حداکثر دستگاه همزمان</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={form.max_devices}
+                    onChange={(e) => setForm({ ...form, max_devices: Number(e.target.value) || 1 })}
+                    dir="ltr"
+                  />
+                </label>
               </div>
               <div className="admin-accounts__scopes">
                 <span className="admin-accounts__scopes-label">دسترسی‌ها:</span>
@@ -220,6 +231,7 @@ export default function AdminAccountsTab() {
                     <span>کد ملی: <span dir="ltr">{admin.national_id || "—"}</span></span>
                     <span>ایجاد شده توسط: {admin.created_by || "—"}</span>
                     <span>آخرین ورود: {formatDate(admin.last_login_at)}</span>
+                    <span>حداکثر دستگاه: {fa(admin.max_devices || 1)}</span>
                   </div>
 
                   {admin.registration_key && (

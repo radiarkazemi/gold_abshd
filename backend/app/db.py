@@ -74,6 +74,7 @@ def _patch_admin_users_table():
         "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS registration_key_expires_at TIMESTAMP",
         "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS activated_at TIMESTAMP",
         "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS is_super BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS max_devices INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE admin_users DROP COLUMN IF EXISTS display_name",
     ]
     with engine.connect() as conn:
@@ -234,6 +235,22 @@ def _patch_price_cards_table():
         conn.execute(text(
             "ALTER TABLE price_card_commissions ADD COLUMN IF NOT EXISTS can_order BOOLEAN NOT NULL DEFAULT true"
         ))
+        conn.execute(text(
+            "ALTER TABLE price_card_commissions ADD COLUMN IF NOT EXISTS commission_buy_value FLOAT"
+        ))
+        conn.execute(text(
+            "ALTER TABLE price_card_commissions ADD COLUMN IF NOT EXISTS commission_sell_value FLOAT"
+        ))
+        conn.execute(text("""
+            UPDATE price_card_commissions
+            SET commission_buy_value = commission_value
+            WHERE commission_buy_value IS NULL
+        """))
+        conn.execute(text("""
+            UPDATE price_card_commissions
+            SET commission_sell_value = commission_value
+            WHERE commission_sell_value IS NULL
+        """))
         # Carry over whatever the old single-flag value was, if that
         # column still exists, before dropping it.
         conn.execute(text("""

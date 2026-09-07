@@ -50,6 +50,30 @@ export function formatTehranDateTime(iso, opts = {}) {
   });
 }
 
+/** Price-card stamp: Jalali month/day - hour:minute:second (Asia/Tehran). */
+export function formatTehranMonthDayTime(iso) {
+  const d = parseServerDate(iso);
+  if (!d) return "—";
+  const datePart = d.toLocaleDateString("fa-IR", {
+    timeZone: TEHRAN_TZ,
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const timePart = d.toLocaleTimeString("fa-IR", {
+    timeZone: TEHRAN_TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  // fa-IR may emit YYYY/MM/DD — keep month/day only.
+  const md = datePart.includes("/")
+    ? datePart.split("/").slice(-2).join("/")
+    : datePart;
+  // date left of time (render this span with dir="ltr")
+  return `${md} - ${timePart}`;
+}
+
 /** Gregorian YYYY-MM-DD for an instant in Asia/Tehran. */
 export function tehranDayKey(isoOrDate = new Date()) {
   const d = isoOrDate instanceof Date ? isoOrDate : parseServerDate(isoOrDate);

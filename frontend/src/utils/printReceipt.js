@@ -15,6 +15,69 @@ function formatDate(iso) {
   return formatTehranDateTime(iso);
 }
 
+/** Absolute logo URL so print iframes / srcDoc previews resolve the asset. */
+function brandLogoUrl() {
+  try {
+    if (typeof window !== "undefined" && window.location?.origin) {
+      return `${window.location.origin}/logo.png`;
+    }
+  } catch {
+    /* ignore */
+  }
+  return "/logo.png";
+}
+
+/** Shared print watermark: large centered brand mark scaled to the page. */
+function watermarkCss() {
+  return `
+  .wm {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .wm img {
+    width: min(82vw, 82vh);
+    max-width: 190mm;
+    max-height: 190mm;
+    height: auto;
+    opacity: 0.08;
+    object-fit: contain;
+  }
+  .report-body {
+    position: relative;
+    z-index: 1;
+  }
+  @media print {
+    .wm {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+    .wm img {
+      /* Scale with the printed page box (A4 / Letter / whatever the printer uses). */
+      width: 78%;
+      max-width: none;
+      max-height: 78%;
+      opacity: 0.07;
+    }
+  }`;
+}
+
+function watermarkHtml() {
+  const src = brandLogoUrl();
+  return `<div class="wm" aria-hidden="true"><img src="${src}" alt="" /></div>`;
+}
+
+export { watermarkCss, watermarkHtml, brandLogoUrl };
+
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
 const STATUS_LABEL = { pending: "در انتظار", accepted: "تایید شده", rejected: "رد شده", cancelled: "لغو شده" };
 
@@ -148,6 +211,7 @@ export function buildOrderReceiptHtml(order, { priceLabelMode = "mesghal_and_gra
     font-size: clamp(10px, 2.8vw, 11px);
     color: #999;
   }
+  ${watermarkCss()}
   @media print {
     body { padding: 8mm; }
     @page { margin: 10mm; size: auto; }
@@ -155,10 +219,13 @@ export function buildOrderReceiptHtml(order, { priceLabelMode = "mesghal_and_gra
 </style>
 </head>
 <body>
+  ${watermarkHtml()}
+  <div class="report-body">
   <h1>آبشده قصر طلا</h1>
   <p class="sub">رسید سفارش</p>
   <table>${rowsHtml}</table>
   <p class="footer">این رسید در تاریخ ${formatDate(new Date().toISOString())} صادر شده است.</p>
+  </div>
 </body>
 </html>`;
 }
@@ -249,6 +316,7 @@ export function buildOrdersReceiptHtml(orders, { dateFrom, dateTo, priceLabelMod
     line-height: 1.7;
   }
   .footer { margin-top: clamp(18px, 4vw, 30px); text-align: center; font-size: clamp(10px, 2.8vw, 11px); color: #999; }
+  ${watermarkCss()}
   @media print {
     body { padding: 8mm; }
     .table-wrap { overflow: visible; }
@@ -258,6 +326,8 @@ export function buildOrdersReceiptHtml(orders, { dateFrom, dateTo, priceLabelMod
 </style>
 </head>
 <body>
+  ${watermarkHtml()}
+  <div class="report-body">
   <h1>آبشده قصر طلا</h1>
   <p class="sub">گزارش سفارش‌ها - ${rangeLabel}</p>
   <div class="table-wrap">
@@ -272,6 +342,7 @@ export function buildOrdersReceiptHtml(orders, { dateFrom, dateTo, priceLabelMod
   </div>
   <p class="summary">مجموع طلا: ${goldSummary} — مجموع نقدی: ${cashSummary} — تعداد سفارش‌ها: ${fa(orders.length)}</p>
   <p class="footer">این گزارش در تاریخ ${formatDate(new Date().toISOString())} صادر شده است.</p>
+  </div>
 </body>
 </html>`;
 }

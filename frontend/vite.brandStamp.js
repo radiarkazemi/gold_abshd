@@ -70,13 +70,45 @@ function hashAppBuild(rootDir, publicDir) {
   return hash.digest("hex").slice(0, 12);
 }
 
+const ADMIN_START_URL = "/admin-hs-panel?source=pwa";
+
+function brandIcons(brandVersion) {
+  return [
+    {
+      src: `/gt-favicon-64.png?v=${brandVersion}`,
+      sizes: "64x64",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: `/gt-icon-192.png?v=${brandVersion}`,
+      sizes: "192x192",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: `/gt-icon-512.png?v=${brandVersion}`,
+      sizes: "512x512",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: `/gt-apple-touch-icon.png?v=${brandVersion}`,
+      sizes: "180x180",
+      type: "image/png",
+      purpose: "any",
+    },
+  ];
+}
+
 function writeManifest(publicDir, brandVersion) {
   const manifestPath = resolve(publicDir, "manifest.json");
   const manifest = {
     name: "آبشده قصر طلا",
     short_name: "آبشده قصر طلا",
     description: "خرید و فروش آنلاین طلا",
-    start_url: "/",
+    start_url: "/?source=pwa",
+    scope: "/",
     display: "standalone",
     orientation: "portrait",
     // Splash only. Do NOT ship maskable icons — Chrome fills those with this
@@ -87,34 +119,29 @@ function writeManifest(publicDir, brandVersion) {
     lang: "fa",
     // Changing id when icons change nudges Chromium to refresh the installed icon.
     id: `/?brand=${brandVersion}`,
-    icons: [
-      {
-        src: `/gt-favicon-64.png?v=${brandVersion}`,
-        sizes: "64x64",
-        type: "image/png",
-        purpose: "any",
-      },
-      {
-        src: `/gt-icon-192.png?v=${brandVersion}`,
-        sizes: "192x192",
-        type: "image/png",
-        purpose: "any",
-      },
-      {
-        src: `/gt-icon-512.png?v=${brandVersion}`,
-        sizes: "512x512",
-        type: "image/png",
-        purpose: "any",
-      },
-      {
-        src: `/gt-apple-touch-icon.png?v=${brandVersion}`,
-        sizes: "180x180",
-        type: "image/png",
-        purpose: "any",
-      },
-    ],
+    icons: brandIcons(brandVersion),
   };
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  // Static HTTPS URL — Safari ignores blob: manifests for Add to Home Screen.
+  const adminManifestPath = resolve(publicDir, "admin-manifest.json");
+  const adminManifest = {
+    name: "پنل مدیریت قصر طلا",
+    short_name: "پنل قصر طلا",
+    description: "پنل مدیریت آبشده قصر طلا",
+    start_url: ADMIN_START_URL,
+    // Must prefix-match start_url (/admin-hs-panel?...) — trailing slash breaks install.
+    scope: "/admin-hs-panel",
+    display: "standalone",
+    orientation: "portrait",
+    background_color: "#12100b",
+    theme_color: "#12100b",
+    dir: "rtl",
+    lang: "fa",
+    id: `/admin-hs-panel?brand=${brandVersion}`,
+    icons: brandIcons(brandVersion),
+  };
+  writeFileSync(adminManifestPath, `${JSON.stringify(adminManifest, null, 2)}\n`);
 }
 
 function writeBrandModule(srcDir, brandVersion, buildVersion) {
@@ -127,6 +154,7 @@ export const icon512Url = \`/gt-icon-512.png?v=\${BRAND_V}\`;
 export const faviconUrl = \`/gt-favicon-64.png?v=\${BRAND_V}\`;
 export const appleTouchIconUrl = \`/gt-apple-touch-icon.png?v=\${BRAND_V}\`;
 export const manifestUrl = \`/manifest.json?v=\${BRAND_V}\`;
+export const adminManifestUrl = \`/admin-manifest.json?v=\${BRAND_V}\`;
 `;
   writeFileSync(resolve(srcDir, "brandAssets.js"), contents);
 }
@@ -172,14 +200,20 @@ export function brandStampPlugin() {
       writeVersionFile(publicDir, brandVersion, buildVersion);
     },
     transformIndexHtml(html) {
+      const adminBootstrap = `<script>(function(){var p=location.pathname.replace(/\\/+$/, "")||"/";if(p!=="/admin-hs-panel")return;var link=document.querySelector('link[rel="manifest"]');if(link)link.href="/admin-manifest.json";document.title="پنل مدیریت قصر طلا";var appleTitle=document.querySelector('meta[name="apple-mobile-web-app-title"]');if(appleTitle)appleTitle.content="پنل قصر طلا";var appleIcon=document.querySelector('link[rel="apple-touch-icon"]');if(appleIcon)appleIcon.href="/gt-apple-touch-icon.png";})();</script>`;
       return html
         .replaceAll('href="/manifest.json"', `href="/manifest.json?v=${brandVersion}"`)
         .replaceAll('href="/gt-favicon-64.png"', `href="/gt-favicon-64.png?v=${brandVersion}"`)
         .replaceAll('href="/gt-icon-192.png"', `href="/gt-icon-192.png?v=${brandVersion}"`)
         .replaceAll('href="/gt-icon-512.png"', `href="/gt-icon-512.png?v=${brandVersion}"`)
+        // iOS A2HS reads apple-touch-icon literally — keep a stable URL without query args.
         .replaceAll(
           'href="/gt-apple-touch-icon.png"',
-          `href="/gt-apple-touch-icon.png?v=${brandVersion}"`
+          'href="/gt-apple-touch-icon.png"'
+        )
+        .replace(
+          `<link rel="manifest" href="/manifest.json?v=${brandVersion}" />`,
+          `<link rel="manifest" href="/manifest.json?v=${brandVersion}" />\n    ${adminBootstrap}`
         )
         .replace(
           "</head>",

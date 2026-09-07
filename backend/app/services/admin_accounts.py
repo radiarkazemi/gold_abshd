@@ -105,11 +105,18 @@ def mark_login(db: Session, admin_user: AdminUser):
 
 def create_sub_admin(db: Session, username: str, password: str, full_name: str,
                       phone_number: str, national_id: str, permissions: list[str],
-                      created_by: str, key_ttl_days: int = KEY_DEFAULT_TTL_DAYS) -> AdminUser:
+                      created_by: str, key_ttl_days: int = KEY_DEFAULT_TTL_DAYS,
+                      max_devices: int = 1) -> AdminUser:
     if db.query(AdminUser).filter(AdminUser.username == username).first():
         raise ValueError("این نام کاربری قبلا استفاده شده")
     if phone_number and db.query(AdminUser).filter(AdminUser.phone_number == phone_number).first():
         raise ValueError("این شماره موبایل قبلا استفاده شده")
+
+    max_devices = int(max_devices or 1)
+    if max_devices < 1:
+        raise ValueError("حداقل یک دستگاه مجاز است")
+    if max_devices > 20:
+        raise ValueError("حداکثر ۲۰ دستگاه مجاز است")
 
     row = AdminUser(
         username=username,
@@ -121,6 +128,7 @@ def create_sub_admin(db: Session, username: str, password: str, full_name: str,
         created_by=created_by,
         registration_key=_generate_registration_key(),
         registration_key_expires_at=datetime.utcnow() + timedelta(days=key_ttl_days),
+        max_devices=max_devices,
     )
     db.add(row)
     db.commit()
@@ -138,7 +146,7 @@ def get_sub_admin(db: Session, admin_user_id: str) -> AdminUser | None:
 
 def update_sub_admin(db: Session, admin_user_id: str, full_name: str | None = None,
                       permissions: list[str] | None = None, is_active: bool | None = None,
-                      new_password: str | None = None) -> AdminUser:
+                      new_password: str | None = None, max_devices: int | None = None) -> AdminUser:
     row = get_sub_admin(db, admin_user_id)
     if not row:
         raise ValueError("کاربر ادمین پیدا نشد")
@@ -149,6 +157,13 @@ def update_sub_admin(db: Session, admin_user_id: str, full_name: str | None = No
         row.permissions = json.dumps(valid_scopes(permissions))
     if is_active is not None:
         row.is_active = is_active
+    if max_devices is not None:
+        max_devices = int(max_devices)
+        if max_devices < 1:
+            raise ValueError("حداقل یک دستگاه مجاز است")
+        if max_devices > 20:
+            raise ValueError("حداکثر ۲۰ دستگاه مجاز است")
+        row.max_devices = max_devices
     if new_password:
         row.password_hash = hash_password(new_password)
 

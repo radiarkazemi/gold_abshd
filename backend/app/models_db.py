@@ -433,7 +433,9 @@ class PriceCardCommission(Base):
     goldbridge_item_id = Column(Integer, nullable=False, index=True)
     role_id = Column(UUID(as_uuid=False), ForeignKey("roles.id"), nullable=False)
     commission_type = Column(Enum(CommissionTypeEnum), nullable=False, default=CommissionTypeEnum.fixed)
-    commission_value = Column(Float, nullable=False, default=0)
+    commission_value = Column(Float, nullable=False, default=0)  # legacy / one-sided / buy fallback
+    commission_buy_value = Column(Float, nullable=True)
+    commission_sell_value = Column(Float, nullable=True)
     # When the card is on manual prices, admin can deny specific roles
     # from placing orders against that manual quote. Ignored for live feed.
     can_order = Column(Boolean, nullable=False, default=True)
@@ -488,6 +490,27 @@ class AdminUser(Base):
     registration_key = Column(String, nullable=True)
     registration_key_expires_at = Column(DateTime, nullable=True)
     activated_at = Column(DateTime, nullable=True)
+    max_devices = Column(Integer, nullable=False, default=1)
+
+    devices = relationship("AdminDevice", back_populates="admin_user", cascade="all, delete-orphan")
+
+
+class AdminDevice(Base):
+    """One row per browser/app install that has successfully logged in for this admin."""
+
+    __tablename__ = "admin_devices"
+    __table_args__ = (
+        UniqueConstraint("admin_user_id", "device_id", name="uq_admin_devices_admin_device"),
+    )
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    admin_user_id = Column(UUID(as_uuid=False), ForeignKey("admin_users.id"), nullable=False, index=True)
+    device_id = Column(String, nullable=False, index=True)
+    device_info = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, nullable=True)
+
+    admin_user = relationship("AdminUser", back_populates="devices")
 
 
 class AdminPushSubscription(Base):
