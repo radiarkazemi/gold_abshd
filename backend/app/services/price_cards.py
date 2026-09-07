@@ -396,7 +396,7 @@ def _commission_pair(ov, default_value: float) -> tuple[float, float]:
 
 
 def _get_price_card_row(goldbridge_item_id: int, db: Session | None = None):
-    """Load a PriceCard by goldbridge id. Copies fields if we had to open a throwaway session."""
+    """Load a PriceCard by goldbridge id. Always copy fields (never return a live ORM row)."""
     from types import SimpleNamespace
     from app.models_db import PriceCard
 
@@ -413,16 +413,49 @@ def _get_price_card_row(goldbridge_item_id: int, db: Session | None = None):
         )
 
     if db is not None:
-        return db.query(PriceCard).filter(PriceCard.goldbridge_item_id == goldbridge_item_id).first()
+        return as_row(
+            db.query(PriceCard).filter(PriceCard.goldbridge_item_id == int(goldbridge_item_id)).first()
+        )
 
     from app.db import SessionLocal
     session = SessionLocal()
     try:
         return as_row(
-            session.query(PriceCard).filter(PriceCard.goldbridge_item_id == goldbridge_item_id).first()
+            session.query(PriceCard).filter(PriceCard.goldbridge_item_id == int(goldbridge_item_id)).first()
         )
     finally:
         session.close()
+
+
+def _snapshot_price_card(card):
+    """Copy the fields mirrored cards need from an ORM row or SimpleNamespace."""
+    if card is None:
+        return None
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        goldbridge_item_id=getattr(card, "goldbridge_item_id", None),
+        display_name=getattr(card, "display_name", None),
+        use_manual_price=bool(getattr(card, "use_manual_price", False)),
+        manual_buy=getattr(card, "manual_buy", None),
+        manual_sell=getattr(card, "manual_sell", None),
+        price_source_item_id=None,
+    )
+
+
+def _mirror_base_buy(src_card, source_live: dict | None) -> tuple[float | None, str]:
+    """
+    Base مثقال buy for متفرقه / نقد کارتخوان.
+
+    When id:1 is on manual, this is EXACTLY the buy the admin typed
+    (not live goldbridge, not sell, not after commission).
+    """
+    if src_card is not None and src_card.use_manual_price and src_card.manual_buy is not None:
+        return float(src_card.manual_buy), "manual"
+    if source_live is not None and source_live.get("buy") is not None:
+        return float(source_live["buy"]), "live"
+    if src_card is not None and src_card.manual_buy is not None:
+        return float(src_card.manual_buy), "manual"
+    return None, "unavailable"
 
 
 def _live_or_manual_item(card, live_item: dict | None, *, buy_only_ok: bool = False) -> dict | None:
@@ -535,15 +568,34 @@ def resolve_effective_item(
     source_id = getattr(card, "price_source_item_id", None) if card else None
     if source_id:
         source_live = _latest_items.get(int(source_id))
-        src_card = source_card if source_card is not None else _get_price_card_row(int(source_id), db)
+        src_card = _snapshot_price_card(source_card) if source_card is not None else _get_price_card_row(int(source_id), db)
         buy_only = bool(
             card
             and (is_motaferaghe_card(card.goldbridge_item_id) or is_naghd_kartkhan_card(card.goldbridge_item_id))
         )
-        source_resolved = _live_or_manual_item(src_card, source_live, buy_only_ok=buy_only)
+        if buy_only:
+            base_buy, mode = _mirror_base_buy(src_card, source_live)
+            if base_buy is None:
+                return None
+            source_resolved = {
+                "goldbridge_item_id": int(source_id),
+                "name": (src_card.display_name if src_card and src_card.display_name else None),
+                "type": GOLD_ITEM_TYPE,
+                "ayar": (source_live or {}).get("ayar"),
+                "item_weight": (source_live or {}).get("item_weight"),
+                "buy": base_buy,
+                "sell": base_buy,
+                "allow_buy": True,
+                "allow_sell": True,
+                "active": True,
+                "price_source": mode,
+            }
+            return _apply_mirrored_structure(card, source_resolved)
+
+        source_resolved = _live_or_manual_item(src_card, source_live, buy_only_ok=False)
         if not source_resolved or source_resolved.get("buy") is None:
             return None
-        if not buy_only and source_resolved.get("sell") is None:
+        if source_resolved.get("sell") is None:
             return None
         return _apply_mirrored_structure(card, source_resolved)
 
@@ -619,7 +671,8 @@ def list_admin_cards(db: Session) -> list[dict]:
     for item_id, item in sorted(_latest_items.items()):
         seen.add(item_id)
         card = existing.get(item_id)
-        effective = resolve_effective_item(card, item, db)
+        src = existing.get(int(card.price_source_item_id)) if card and getattr(card, "price_source_item_id", None) else None
+        effective = resolve_effective_item(card, item, db, source_card=src)
         result.append({
             **item,
             "goldbridge_item_id": item_id,
@@ -650,7 +703,8 @@ def list_admin_cards(db: Session) -> list[dict]:
         is_mirrored = bool(getattr(card, "price_source_item_id", None))
         if not card.is_enabled and not card.use_manual_price and not is_mirrored:
             continue
-        effective = resolve_effective_item(card, None, db)
+        src = existing.get(int(card.price_source_item_id)) if getattr(card, "price_source_item_id", None) else None
+        effective = resolve_effective_item(card, None, db, source_card=src)
         if not effective:
             # Still show the admin row so commissions can be set before feed is up.
             result.append({
@@ -882,7 +936,9 @@ def card_commissions_for_user(db: Session, user) -> list[dict]:
 
     if not user or not user.role:
         return []
-    cards = db.query(PriceCard).filter(PriceCard.is_enabled == True).all()  # noqa: E712
+    all_cards = db.query(PriceCard).all()
+    by_id = {c.goldbridge_item_id: c for c in all_cards}
+    cards = [c for c in all_cards if c.is_enabled]
     overrides = {
         row.goldbridge_item_id: row
         for row in db.query(PriceCardCommission)
@@ -894,7 +950,10 @@ def card_commissions_for_user(db: Session, user) -> list[dict]:
     result = []
     for card in cards:
         ov = overrides.get(card.goldbridge_item_id)
-        effective = resolve_effective_item(card, _latest_items.get(card.goldbridge_item_id), db)
+        src = by_id.get(int(card.price_source_item_id)) if getattr(card, "price_source_item_id", None) else None
+        effective = resolve_effective_item(
+            card, _latest_items.get(card.goldbridge_item_id), db, source_card=src
+        )
         is_manual = bool(effective and effective.get("price_source") == "manual")
         can_order = True
         if is_manual:
@@ -928,15 +987,18 @@ def get_enabled_cards_for_broadcast(db: Session) -> list[dict]:
 
     ensure_special_mirrored_cards(db)
 
-    cards = (
-        db.query(PriceCard)
-        .filter(PriceCard.is_enabled == True)  # noqa: E712
-        .order_by(PriceCard.sort_order, PriceCard.created_at)
-        .all()
-    )
+    all_cards = db.query(PriceCard).order_by(PriceCard.sort_order, PriceCard.created_at).all()
+    by_id = {c.goldbridge_item_id: c for c in all_cards}
+    cards = [c for c in all_cards if c.is_enabled]
     result = []
     for i, card in enumerate(cards):
-        item = resolve_effective_item(card, _latest_items.get(card.goldbridge_item_id), db)
+        src = by_id.get(int(card.price_source_item_id)) if getattr(card, "price_source_item_id", None) else None
+        item = resolve_effective_item(
+            card,
+            _latest_items.get(card.goldbridge_item_id),
+            db,
+            source_card=src,
+        )
         if not item or item.get("buy") is None or item.get("sell") is None:
             continue
         is_gold = item.get("type", GOLD_ITEM_TYPE) == GOLD_ITEM_TYPE

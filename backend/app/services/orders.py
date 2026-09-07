@@ -508,8 +508,13 @@ def resubmit_order_at_new_price(db: Session, order_id: str, user: User) -> Order
         raise HTTPException(status_code=400, detail="این سفارش قابل قیمت‌گذاری مجدد نیست")
 
     card = price_cards.get_card_state(db, order.goldbridge_item_id)
+    src = (
+        price_cards.get_card_state(db, int(card.price_source_item_id))
+        if card and getattr(card, "price_source_item_id", None)
+        else None
+    )
     raw_item = price_cards.resolve_effective_item(
-        card, price_cards.get_raw_item(order.goldbridge_item_id), db
+        card, price_cards.get_raw_item(order.goldbridge_item_id), db, source_card=src
     )
     if not raw_item or raw_item.get("buy") is None or raw_item.get("sell") is None:
         raise HTTPException(status_code=503, detail="قیمت لحظه‌ای در دسترس نیست، لطفا کمی صبر کنید.")

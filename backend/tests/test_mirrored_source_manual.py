@@ -99,6 +99,18 @@ def test_specials_follow_id1_manual_when_feed_is_down():
     assert mota["mirrored_source_mode"] == "manual"
 
 
+def test_uses_entered_manual_buy_not_sell_even_if_sell_missing():
+    """Base is the typed خرید field, never فروش, and sell is not required."""
+    price_cards._latest_items[1] = _live(99_999_999, 88_888_888)
+    src = _source(use_manual_price=True, manual_buy=34_500_000, manual_sell=None)
+    mota = price_cards.resolve_effective_item(_mota(), None, source_card=src)
+    naghd = price_cards.resolve_effective_item(_naghd(), None, source_card=src)
+    assert mota["buy"] == 34_500_000
+    assert mota["sell"] == 34_500_000
+    assert naghd["buy"] == 34_500_000
+    assert mota["mirrored_source_mode"] == "manual"
+
+
 def test_unavailable_when_feed_down_and_id1_not_manual():
     price_cards._latest_items.clear()
     assert price_cards.resolve_effective_item(_mota(), None, source_card=_source()) is None
@@ -113,4 +125,6 @@ if __name__ == "__main__":
     test_specials_follow_id1_manual_when_feed_is_down()
     setup_function()
     test_unavailable_when_feed_down_and_id1_not_manual()
+    setup_function()
+    test_uses_entered_manual_buy_not_sell_even_if_sell_missing()
     print("ok")
