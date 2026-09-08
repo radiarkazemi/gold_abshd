@@ -1,11 +1,18 @@
-from fastapi import APIRouter, HTTPException, Request, Depends, Header
+from fastapi import APIRouter, HTTPException, Request, Depends, Header, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.rate_limit import limiter
 from app.db import get_db
 from app.config import settings
 from app.schemas.admin import AdminLoginIn, AdminLoginOut, AdminVerifyIn
-from app.admin_auth import create_admin_token, get_current_admin
+from app.admin_auth import (
+    create_admin_token,
+    get_current_admin,
+    attach_admin_session,
+    clear_admin_session,
+)
 from app.permissions import PERMISSION_SCOPES
 from app.models_db import AdminUser
 from app.services.admin_accounts import (
@@ -40,18 +47,22 @@ async def admin_login(request: Request, payload: AdminLoginIn, db: Session = Dep
         )
         mark_login(db, admin)
         log_activity(db, admin.username, True, "login")
-        return AdminLoginOut(
-            token=create_admin_token(
-                admin.username,
-                is_super=True,
-                admin_user_id=admin.id,
-                device_id=payload.device_id,
-            ),
+        token = create_admin_token(
+            admin.username,
+            is_super=True,
+            admin_user_id=admin.id,
+            device_id=payload.device_id,
+        )
+        body = AdminLoginOut(
+            token=token,
             requires_verification=False,
             is_super=True,
             display_name=admin.full_name or "مدیر اصلی",
             permissions=list(PERMISSION_SCOPES.keys()),
         )
+        resp = JSONResponse(content=jsonable_encoder(body))
+        attach_admin_session(resp, token, payload.device_id)
+        return resp
 
     # Sub-admin: password is step 1 only. On success, send an OTP and
     # tell the frontend to go to the verification page instead of
@@ -94,19 +105,23 @@ async def admin_verify(request: Request, payload: AdminVerifyIn, db: Session = D
     perms = admin_user_permissions(sub_admin)
     log_activity(db, sub_admin.username, False, "login")
 
-    return AdminLoginOut(
-        token=create_admin_token(
-            sub_admin.username,
-            is_super=False,
-            admin_user_id=sub_admin.id,
-            permissions=perms,
-            device_id=payload.device_id,
-        ),
+    token = create_admin_token(
+        sub_admin.username,
+        is_super=False,
+        admin_user_id=sub_admin.id,
+        permissions=perms,
+        device_id=payload.device_id,
+    )
+    body = AdminLoginOut(
+        token=token,
         requires_verification=False,
         is_super=False,
         display_name=sub_admin.full_name or sub_admin.username,
         permissions=perms,
     )
+    resp = JSONResponse(content=jsonable_encoder(body))
+    attach_admin_session(resp, token, payload.device_id)
+    return resp
 
 
 @router.get("/me", response_model=AdminLoginOut)
@@ -141,26 +156,35 @@ async def admin_me(
             permissions=perms,
             device_id=device_id,
         )
-        return AdminLoginOut(
+        body = AdminLoginOut(
             token=token,
             requires_verification=False,
             is_super=True,
             display_name=row.full_name or "مدیر اصلی",
             permissions=perms,
         )
+    else:
+        perms = admin_user_permissions(row)
+        token = create_admin_token(
+            row.username,
+            is_super=False,
+            admin_user_id=row.id,
+            permissions=perms,
+            device_id=device_id,
+        )
+        body = AdminLoginOut(
+            token=token,
+            requires_verification=False,
+            is_super=False,
+            display_name=row.full_name or row.username,
+            permissions=perms,
+        )
+    resp = JSONResponse(content=jsonable_encoder(body))
+    attach_admin_session(resp, token, device_id)
+    return resp
 
-    perms = admin_user_permissions(row)
-    token = create_admin_token(
-        row.username,
-        is_super=False,
-        admin_user_id=row.id,
-        permissions=perms,
-        device_id=device_id,
-    )
-    return AdminLoginOut(
-        token=token,
-        requires_verification=False,
-        is_super=False,
-        display_name=row.full_name or row.username,
-        permissions=perms,
-    )
+
+@router.post("/logout")
+async def admin_logout(response: Response):
+    clear_admin_session(response)
+    return {"ok": True}

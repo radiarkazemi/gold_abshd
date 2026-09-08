@@ -5,7 +5,7 @@
  * Safari (iOS) ignores blob: manifest URLs, so we point at a real static
  * `/admin-manifest.json` served over HTTPS.
  */
-import { adminManifestUrl, BRAND_V, APP_BUILD_V, appleTouchIconUrl } from "../brandAssets";
+const ADMIN_APPLE_ICON = "/gt-admin-apple-touch-icon.png";
 
 const MANIFEST_LINK_ID = "goldapp-manifest-link";
 
@@ -55,10 +55,10 @@ export function adminInstallHint() {
   if (typeof window === "undefined") return "";
   if (isAdminStandalone()) return "";
   if (isIosDevice()) {
-    return "نصب پنل روی صفحه اصلی آیفون: در Safari دکمه Share (□↑) → «Add to Home Screen» / «افزودن به صفحهٔ اصلی». حتماً از داخل خود پنل مدیریت این کار را بکنید تا میانبر مستقیم به پنل باز شود.";
+    return "آیفون: فقط از Safari (نه Chrome) روی همین صفحه پنل، دکمه Share (□↑) را بزنید و «Add to Home Screen» / «افزودن به صفحهٔ اصلی» را انتخاب کنید. میانبر باید نام «پنل قصر طلا» و آیکون طلایی تیره داشته باشد — اگر آیکون مشتری آمد، میانبر را پاک کنید و دوباره از همین آدرس نصب کنید.";
   }
   if (/Android/i.test(navigator.userAgent || "")) {
-    return "برای اعلان وقتی گوشی قفل است، پنل را از منوی Chrome روی صفحهٔ اصلی نصب کنید (Add to Home screen / Install app).";
+    return "اندروید: پنل را از منوی Chrome روی صفحهٔ اصلی نصب کنید. اگر کارت اعلان می‌آید ولی صدا ندارد، در تنظیمات گوشی → اعلان‌ها → Chrome → این سایت، صدا را روشن کنید.";
   }
   return "";
 }
@@ -87,7 +87,8 @@ export function applyAdminPwaManifest() {
     appleIcon.rel = "apple-touch-icon";
     document.head.appendChild(appleIcon);
   }
-  appleIcon.setAttribute("href", "/gt-apple-touch-icon.png");
+  appleIcon.setAttribute("href", ADMIN_APPLE_ICON);
+  appleIcon.setAttribute("sizes", "180x180");
 
   return () => {
     if (previousHref) link.setAttribute("href", previousHref);

@@ -40,6 +40,18 @@
   line-height: 1.8;
 }
 
+.login__install-hint {
+  text-align: right;
+  background: rgba(200, 140, 40, 0.14);
+  border: 1px solid rgba(200, 140, 40, 0.45);
+  color: #e8c57a;
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  margin: -10px 0 18px;
+}
+
 .login__input {
   width: 100%;
   background: var(--surface-raised);

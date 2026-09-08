@@ -6,5 +6,7 @@ export const icon192Url = `/gt-icon-192.png?v=${BRAND_V}`;
 export const icon512Url = `/gt-icon-512.png?v=${BRAND_V}`;
 export const faviconUrl = `/gt-favicon-64.png?v=${BRAND_V}`;
 export const appleTouchIconUrl = `/gt-apple-touch-icon.png?v=${BRAND_V}`;
+export const adminAppleTouchIconUrl = `/gt-admin-apple-touch-icon.png?v=${BRAND_V}`;
+export const adminIcon192Url = `/gt-admin-icon-192.png?v=${BRAND_V}`;
 export const manifestUrl = `/manifest.json?v=${BRAND_V}`;
 export const adminManifestUrl = `/admin-manifest.json?v=${BRAND_V}`;

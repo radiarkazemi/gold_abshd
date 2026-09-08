@@ -233,6 +233,9 @@ def _patch_price_cards_table():
             "ALTER TABLE price_cards ADD COLUMN IF NOT EXISTS price_label_mode VARCHAR"
         ))
         conn.execute(text(
+            "ALTER TABLE price_cards ADD COLUMN IF NOT EXISTS manual_updated_at TIMESTAMP"
+        ))
+        conn.execute(text(
             "ALTER TABLE price_card_commissions ADD COLUMN IF NOT EXISTS can_order BOOLEAN NOT NULL DEFAULT true"
         ))
         conn.execute(text(

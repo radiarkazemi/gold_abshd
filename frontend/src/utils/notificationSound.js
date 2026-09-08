@@ -37,11 +37,26 @@ export async function unlockNotificationAudio() {
   }
 }
 
+export function vibrateAdminAlert(kind = "order") {
+  try {
+    if (typeof navigator === "undefined" || !navigator.vibrate) return;
+    navigator.vibrate(
+      kind === "kyc"
+        ? [160, 80, 160, 80, 280]
+        : [280, 120, 180, 120, 280, 120, 400]
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
 function playWav(url) {
   return new Promise((resolve) => {
     try {
       const audio = new Audio(url);
       audio.preload = "auto";
+      audio.playsInline = true;
+      audio.setAttribute("playsinline", "true");
       audio.volume = 1;
       const done = () => resolve(true);
       audio.addEventListener("ended", done, { once: true });
@@ -89,6 +104,8 @@ function synthBeeps(pattern) {
 
 /** Distinct metallic rising alert for new orders (not the OS default ding). */
 export async function playNotificationSound() {
+  await unlockNotificationAudio();
+  vibrateAdminAlert("order");
   const ok = await playWav(`/notify-order.wav?v=2`);
   if (ok) return;
   synthBeeps([
@@ -102,6 +119,8 @@ export async function playNotificationSound() {
 
 /** Distinct KYC chime — different rhythm from order alerts. */
 export async function playKycNotificationSound() {
+  await unlockNotificationAudio();
+  vibrateAdminAlert("kyc");
   const ok = await playWav(`/notify-kyc.wav?v=2`);
   if (ok) return;
   synthBeeps([

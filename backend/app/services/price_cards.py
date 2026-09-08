@@ -147,12 +147,37 @@ def item_price_changed_at(goldbridge_item_id: int | None) -> str | None:
     return _item_price_changed_at.get(int(goldbridge_item_id))
 
 
-def _merge_polled_items(cleaned: dict[int, dict]) -> bool:
-    """Merge poll into cache; card clocks follow goldbridge last_update_time.
+def _item_is_manual(item_id: int) -> bool:
+    """True while this item's customer quote is the admin-typed manual."""
+    cached = _manual_quotes.get(int(item_id))
+    if cached is not None:
+        return bool(cached.get("use_manual"))
+    if _card_config_cache:
+        for card in _card_config_cache:
+            if int(card.goldbridge_item_id) == int(item_id):
+                return bool(getattr(card, "use_manual_price", False))
+    return False
 
-    ``last_update_time`` from goldbridge is the authoritative per-item
-    "آخرین بروزرسانی" (frozen at the source until that item's quote moves).
-    We pass it through — we do NOT invent poll-time clocks here.
+
+def _dt_to_iso(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return _normalize_source_ts(value) or value
+    if getattr(value, "tzinfo", None) is None:
+        value = value.replace(tzinfo=timezone.utc)
+    try:
+        return value.isoformat()
+    except AttributeError:
+        return None
+
+
+def _merge_polled_items(cleaned: dict[int, dict]) -> bool:
+    """Merge poll into cache; live cards follow goldbridge last_update_time.
+
+    Manual cards keep the admin-save clock. Overwriting that stamp with
+    goldbridge ``last_update_time`` made the client «آخرین بروزرسانی»
+    show the source tick instead of when the admin typed the price.
 
     Returns True if any item's buy/sell changed (for feed-level bookkeeping).
     """
@@ -172,6 +197,12 @@ def _merge_polled_items(cleaned: dict[int, dict]) -> bool:
         if price_changed:
             any_change = True
 
+        # Always keep the live row (admin UI still shows goldbridge).
+        _latest_items[item_id] = item
+
+        if _item_is_manual(item_id):
+            continue
+
         src_ts = _normalize_source_ts(item.get("last_update_time"))
         if src_ts:
             _item_price_changed_at[item_id] = src_ts
@@ -180,11 +211,7 @@ def _merge_polled_items(cleaned: dict[int, dict]) -> bool:
                 newest_src_ms = src_ms
                 newest_src_ts = src_ts
         elif item_id not in _item_price_changed_at:
-            # Manual/synthetic rows without a source stamp — seed once.
             _item_price_changed_at[item_id] = now
-
-        # Merge by id so a truncated poll cannot drop other cards.
-        _latest_items[item_id] = item
 
     if newest_src_ts and (
         _latest_updated_at is None
@@ -222,26 +249,34 @@ def _remember_manual_quote(
     use_manual: bool,
     buy,
     sell,
+    updated_at: str | None = None,
 ) -> None:
     _manual_quotes[int(goldbridge_item_id)] = {
         "use_manual": bool(use_manual),
         "buy": buy,
         "sell": sell,
+        "updated_at": updated_at,
     }
+    if use_manual and updated_at:
+        mark_item_price_changed(goldbridge_item_id, updated_at)
 
 
 def _hydrate_manual_quotes_from_cards(cards) -> None:
     """Fill missing cache entries only — never clobber a just-saved quote."""
     for card in cards:
         iid = int(card.goldbridge_item_id)
-        if iid in _manual_quotes:
-            continue
-        _remember_manual_quote(
-            iid,
-            use_manual=bool(getattr(card, "use_manual_price", False)),
-            buy=getattr(card, "manual_buy", None),
-            sell=getattr(card, "manual_sell", None),
-        )
+        ts = _dt_to_iso(getattr(card, "manual_updated_at", None))
+        if iid not in _manual_quotes:
+            _remember_manual_quote(
+                iid,
+                use_manual=bool(getattr(card, "use_manual_price", False)),
+                buy=getattr(card, "manual_buy", None),
+                sell=getattr(card, "manual_sell", None),
+                updated_at=ts,
+            )
+        elif bool(getattr(card, "use_manual_price", False)) and ts:
+            if iid not in _item_price_changed_at:
+                mark_item_price_changed(iid, ts)
 
 
 def _card_snapshot(card):
@@ -260,6 +295,7 @@ def _card_snapshot(card):
         override_source_restriction=bool(getattr(card, "override_source_restriction", False)),
         sort_order=card.sort_order or 0,
         created_at=getattr(card, "created_at", None),
+        manual_updated_at=getattr(card, "manual_updated_at", None),
     )
 
 
@@ -984,15 +1020,23 @@ def set_card_manual_price(
     card.use_manual_price = use_manual_price
     card.manual_buy = manual_buy
     card.manual_sell = manual_sell
+    saved_at = None
     if use_manual_price:
         card.is_enabled = True
+        card.manual_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        saved_at = mark_item_price_changed(goldbridge_item_id, _dt_to_iso(card.manual_updated_at))
+    else:
+        live = _latest_items.get(int(goldbridge_item_id))
+        src_ts = _normalize_source_ts((live or {}).get("last_update_time"))
+        if src_ts:
+            mark_item_price_changed(goldbridge_item_id, src_ts)
     _remember_manual_quote(
         goldbridge_item_id,
         use_manual=use_manual_price,
         buy=manual_buy,
         sell=manual_sell,
+        updated_at=saved_at,
     )
-    mark_item_price_changed(goldbridge_item_id)
     db.commit()
     _patch_cached_card(
         goldbridge_item_id,
@@ -1000,6 +1044,7 @@ def set_card_manual_price(
         manual_buy=manual_buy,
         manual_sell=manual_sell,
         is_enabled=True if use_manual_price else bool(card.is_enabled),
+        manual_updated_at=card.manual_updated_at,
     )
 
 
@@ -1203,9 +1248,14 @@ def get_enabled_cards_for_broadcast(db: Session | None = None) -> list[dict]:
             gram18_buy = None
             gram18_sell = None
             pricing_mode = None
-        # Clock freezes until this card's source quote actually changes.
+        # Live cards: goldbridge last_update_time. Manual / mirrored-manual:
+        # the admin-save stamp on the source item (id:1 for متفرقه / نقد کارتخوان).
         source_id = card.price_source_item_id or card.goldbridge_item_id
         card_updated_at = item_price_changed_at(source_id)
+        if item.get("price_source") == "manual" or item.get("mirrored_source_mode") == "manual":
+            src_card = by_id.get(int(source_id))
+            manual_ts = _dt_to_iso(getattr(src_card, "manual_updated_at", None)) if src_card else None
+            card_updated_at = item_price_changed_at(source_id) or manual_ts
         result.append({
             "goldbridge_item_id": card.goldbridge_item_id,
             "name": card.display_name or item.get("name") or f"#{card.goldbridge_item_id}",

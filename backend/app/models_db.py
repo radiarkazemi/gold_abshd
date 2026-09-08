@@ -406,6 +406,9 @@ class PriceCard(Base):
     use_manual_price = Column(Boolean, default=False, nullable=False)
     manual_buy = Column(Float, nullable=True)   # مثقال۱۷ تومان
     manual_sell = Column(Float, nullable=True)  # مثقال۱۷ تومان
+    # When the admin last saved a manual quote. Client «آخرین بروزرسانی»
+    # uses this instead of goldbridge last_update_time while manual is on.
+    manual_updated_at = Column(DateTime, nullable=True)
     # Mirror another goldbridge item's live buy/sell (e.g. متفرقه / نقد کارتخوان → id 1).
     # When set, resolve_effective_item copies prices from that source id.
     price_source_item_id = Column(Integer, nullable=True)

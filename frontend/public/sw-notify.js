@@ -140,10 +140,8 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     (async () => {
       const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      let focused = false;
       for (const client of clients) {
         try {
-          if (client.focused) focused = true;
           client.postMessage({
             type: "ADMIN_PUSH_ALERT",
             kind,
@@ -156,16 +154,15 @@ self.addEventListener("push", (event) => {
         }
       }
 
-      // Panel in front: in-app brief card + custom WAV only (no OS ding/card).
-      if (focused) return;
-
-      // Background / locked: ALWAYS use an audible OS notification.
+      // Always show a non-silent OS notification. Android in-page Audio is
+      // often blocked, so skipping the OS banner while focused left only a
+      // mute in-app card. Focused clients still play the custom WAV too.
       // Previously we set silent=true whenever any (frozen) client existed;
       // Android then showed a mute banner and the suspended page never played
       // the custom WAV — alerts felt "very late" until the user unlocked.
       await showAdminNotification(payload.title || "آبشده قصر طلا", {
         body: payload.body || "اعلان جدید از پنل مدیریت",
-        tag: payload.tag || `${kind}-${Date.now()}`,
+        tag: payload.tag || `${kind}-audible-${Date.now()}`,
         icon: payload.icon || "/gt-icon-192.png",
         badge: payload.badge || "/gt-icon-192.png",
         image: payload.image || payload.icon || "/gt-icon-192.png",

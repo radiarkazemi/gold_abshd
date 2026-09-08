@@ -24,6 +24,19 @@ function apiUrl(pathWithQuery) {
 import { getDeviceId, getDeviceInfo, getDeviceFingerprint, getAdminDeviceId } from "./utils/deviceId";
 
 import { decodePayload } from "./utils/payloadCodec";
+
+if (typeof window !== "undefined" && !window.__goldappAdminCredsWrapped) {
+  window.__goldappAdminCredsWrapped = true;
+  const origFetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    const url = typeof input === "string" ? input : input?.url || "";
+    if (url.includes("/api/admin")) {
+      return origFetch(input, { ...init, credentials: "include" });
+    }
+    return origFetch(input, init);
+  };
+}
+
 const TOKEN_KEY = "goldapp_token";
 
 export function getToken() {
@@ -52,6 +65,7 @@ export function setAdminToken(token) {
 export function clearAdminToken() {
   localStorage.removeItem(ADMIN_TOKEN_KEY);
   localStorage.removeItem(ADMIN_IDENTITY_KEY);
+  fetch(`${API_BASE}/api/admin/auth/logout`, { method: "POST", credentials: "include" }).catch(() => {});
 }
 
 export function setAdminIdentity(identity) {

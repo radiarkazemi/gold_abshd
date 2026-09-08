@@ -567,23 +567,25 @@ function AdminPanel({ onLogout, identity }) {
 export default function AdminPage() {
   const [loggedIn, setLoggedIn] = useState(!!getAdminToken());
   const [identity, setIdentity] = useState(() => getAdminIdentity());
-  const [sessionReady, setSessionReady] = useState(!getAdminToken());
+  const [sessionReady, setSessionReady] = useState(false);
 
   useEffect(() => {
-    if (!loggedIn) {
-      setSessionReady(true);
-      return undefined;
-    }
     let cancelled = false;
-    setSessionReady(false);
+
+    function applySession(data) {
+      setIdentity({
+        is_super: data.is_super,
+        permissions: data.permissions || [],
+        display_name: data.display_name || "",
+      });
+      setLoggedIn(true);
+    }
+
+    // Cookie session covers iOS Safari vs home-screen PWA isolated localStorage.
     refreshAdminSession()
       .then((data) => {
         if (cancelled) return;
-        setIdentity({
-          is_super: data.is_super,
-          permissions: data.permissions || [],
-          display_name: data.display_name || "",
-        });
+        applySession(data);
         setSessionReady(true);
       })
       .catch((e) => {
@@ -600,11 +602,7 @@ export default function AdminPage() {
       refreshAdminSession()
         .then((data) => {
           if (cancelled) return;
-          setIdentity({
-            is_super: data.is_super,
-            permissions: data.permissions || [],
-            display_name: data.display_name || "",
-          });
+          applySession(data);
         })
         .catch((e) => {
           if (cancelled) return;
@@ -620,7 +618,7 @@ export default function AdminPage() {
       cancelled = true;
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [loggedIn]);
+  }, []);
 
   function handleLogout() {
     clearAdminToken();
@@ -632,12 +630,12 @@ export default function AdminPage() {
     setLoggedIn(true);
   }
 
-  if (!loggedIn) {
-    return <AdminLoginPage onLoggedIn={handleLoggedIn} />;
-  }
-
   if (!sessionReady) {
     return <p className="myorders__empty">در حال آماده‌سازی پنل…</p>;
+  }
+
+  if (!loggedIn) {
+    return <AdminLoginPage onLoggedIn={handleLoggedIn} />;
   }
 
   return <AdminPanel onLogout={handleLogout} identity={identity} />;

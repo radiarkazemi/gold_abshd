@@ -149,21 +149,15 @@ async function showOsNotification(title, options) {
 
 /**
  * Fire an OS notification for a new order.
- * - Desktop: only when the tab/window is not visible.
- * - Mobile focused: skip OS ding (in-app custom WAV + banner already play).
- * - Mobile background: rich brief popup card via service worker.
+ * Android ignores the `sound` option and often blocks in-page Audio while
+ * the panel is focused — so we always show a non-silent OS notification.
+ * Desktop still skips the OS toast when the window is already in front.
  */
 export function notifyNewOrder(order) {
   if (!notificationsSupported()) return false;
   if (Notification.permission !== "granted") return false;
 
   const mobile = isMobileClient();
-  const pageVisible =
-    typeof document !== "undefined" && !document.hidden && document.hasFocus?.() !== false;
-
-  // While the admin panel is in front, custom sound + in-app banner are enough.
-  // Firing an OS notification here only adds the phone's default ding.
-  if (pageVisible) return false;
   if (!mobile && typeof document !== "undefined" && !document.hidden) {
     return false;
   }
@@ -175,7 +169,7 @@ export function notifyNewOrder(order) {
     body,
     dir: "rtl",
     lang: "fa",
-    tag: order?.id ? `order-${order.id}` : `new-order-${Date.now()}`,
+    tag: order?.id ? `order-audible-${order.id}` : `new-order-audible-${Date.now()}`,
     renotify: true,
     requireInteraction: true,
     silent: false,
@@ -204,9 +198,6 @@ export function notifyNewKyc(user) {
   if (Notification.permission !== "granted") return false;
 
   const mobile = isMobileClient();
-  const pageVisible =
-    typeof document !== "undefined" && !document.hidden && document.hasFocus?.() !== false;
-  if (pageVisible) return false;
   if (!mobile && typeof document !== "undefined" && !document.hidden) {
     return false;
   }
@@ -221,7 +212,7 @@ export function notifyNewKyc(user) {
     body,
     dir: "rtl",
     lang: "fa",
-    tag: user?.user_id ? `kyc-${user.user_id}` : `new-kyc-${Date.now()}`,
+    tag: user?.user_id ? `kyc-audible-${user.user_id}` : `new-kyc-audible-${Date.now()}`,
     renotify: true,
     requireInteraction: true,
     silent: false,

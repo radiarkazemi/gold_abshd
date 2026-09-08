@@ -9,6 +9,8 @@ const BRAND_FILES = [
   "gt-icon-512.png",
   "gt-apple-touch-icon.png",
   "gt-favicon-64.png",
+  "gt-admin-apple-touch-icon.png",
+  "gt-admin-icon-192.png",
 ];
 
 const LEGACY_DIST_ICONS = [
@@ -101,6 +103,23 @@ function brandIcons(brandVersion) {
   ];
 }
 
+function adminBrandIcons(brandVersion) {
+  return [
+    {
+      src: `/gt-admin-icon-192.png?v=${brandVersion}`,
+      sizes: "192x192",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: `/gt-admin-apple-touch-icon.png?v=${brandVersion}`,
+      sizes: "180x180",
+      type: "image/png",
+      purpose: "any",
+    },
+  ];
+}
+
 function writeManifest(publicDir, brandVersion) {
   const manifestPath = resolve(publicDir, "manifest.json");
   const manifest = {
@@ -139,7 +158,7 @@ function writeManifest(publicDir, brandVersion) {
     dir: "rtl",
     lang: "fa",
     id: `/admin-hs-panel?brand=${brandVersion}`,
-    icons: brandIcons(brandVersion),
+    icons: adminBrandIcons(brandVersion),
   };
   writeFileSync(adminManifestPath, `${JSON.stringify(adminManifest, null, 2)}\n`);
 }
@@ -153,6 +172,8 @@ export const icon192Url = \`/gt-icon-192.png?v=\${BRAND_V}\`;
 export const icon512Url = \`/gt-icon-512.png?v=\${BRAND_V}\`;
 export const faviconUrl = \`/gt-favicon-64.png?v=\${BRAND_V}\`;
 export const appleTouchIconUrl = \`/gt-apple-touch-icon.png?v=\${BRAND_V}\`;
+export const adminAppleTouchIconUrl = \`/gt-admin-apple-touch-icon.png?v=\${BRAND_V}\`;
+export const adminIcon192Url = \`/gt-admin-icon-192.png?v=\${BRAND_V}\`;
 export const manifestUrl = \`/manifest.json?v=\${BRAND_V}\`;
 export const adminManifestUrl = \`/admin-manifest.json?v=\${BRAND_V}\`;
 `;
@@ -200,7 +221,7 @@ export function brandStampPlugin() {
       writeVersionFile(publicDir, brandVersion, buildVersion);
     },
     transformIndexHtml(html) {
-      const adminBootstrap = `<script>(function(){var p=location.pathname.replace(/\\/+$/, "")||"/";if(p!=="/admin-hs-panel")return;var link=document.querySelector('link[rel="manifest"]');if(link)link.href="/admin-manifest.json";document.title="پنل مدیریت قصر طلا";var appleTitle=document.querySelector('meta[name="apple-mobile-web-app-title"]');if(appleTitle)appleTitle.content="پنل قصر طلا";var appleIcon=document.querySelector('link[rel="apple-touch-icon"]');if(appleIcon)appleIcon.href="/gt-apple-touch-icon.png";})();</script>`;
+      const adminBootstrap = `<script>(function(){var p=location.pathname.replace(/\\/+$/, "")||"/";if(p!=="/admin-hs-panel")return;var link=document.querySelector('link[rel="manifest"]');if(link)link.href="/admin-manifest.json";document.title="پنل مدیریت قصر طلا";var appleTitle=document.querySelector('meta[name="apple-mobile-web-app-title"]');if(appleTitle)appleTitle.content="پنل قصر طلا";var appleIcon=document.querySelector('link[rel="apple-touch-icon"]');if(appleIcon){appleIcon.href="/gt-admin-apple-touch-icon.png";appleIcon.setAttribute("sizes","180x180");}})();</script>`;
       return html
         .replaceAll('href="/manifest.json"', `href="/manifest.json?v=${brandVersion}"`)
         .replaceAll('href="/gt-favicon-64.png"', `href="/gt-favicon-64.png?v=${brandVersion}"`)

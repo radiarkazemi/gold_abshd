@@ -2,9 +2,9 @@ import PriceButton from "./PriceButton";
 import { formatTehranMonthDayTime, formatTehranDateTime } from "../utils/tehranTime";
 
 /**
- * Show goldbridge's per-item last_update_time as آخرین بروزرسانی.
- * That stamp is authoritative: it freezes at the source until THAT
- * item's quote changes, then jumps to the new source time.
+ * Show card.updated_at as آخرین بروزرسانی.
+ * Live cards use goldbridge last_update_time; manual cards use the
+ * admin-save stamp so the clock matches when the typed price was set.
  */
 export default function PriceCardRow({ card, prevCard, onOrder, disabled, priceLabelMode }) {
   const effectiveMode = card?.price_label_mode || priceLabelMode;

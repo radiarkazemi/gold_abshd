@@ -15,16 +15,32 @@ export function getDeviceId() {
   return id;
 }
 
+const ADMIN_DEVICE_COOKIE = "goldapp_admin_device";
+
+function readCookie(name) {
+  if (typeof document === "undefined") return "";
+  const prefix = `${name}=`;
+  const hit = document.cookie.split("; ").find((row) => row.startsWith(prefix));
+  return hit ? decodeURIComponent(hit.slice(prefix.length)) : "";
+}
+
+function writeAdminDeviceCookie(id) {
+  if (typeof document === "undefined") return;
+  document.cookie = `${ADMIN_DEVICE_COOKIE}=${encodeURIComponent(id)}; Path=/; Max-Age=${60 * 60 * 24 * 400}; SameSite=Lax; Secure`;
+}
+
 /** Separate device id for the admin panel (not shared with the client app). */
 export function getAdminDeviceId() {
-  let id = localStorage.getItem(ADMIN_DEVICE_ID_KEY);
-
-  if (!id) {
-    id = uuidv4();
+  try {
+    const fromCookie = readCookie(ADMIN_DEVICE_COOKIE);
+    let id = fromCookie || localStorage.getItem(ADMIN_DEVICE_ID_KEY);
+    if (!id) id = uuidv4();
     localStorage.setItem(ADMIN_DEVICE_ID_KEY, id);
+    if (fromCookie !== id) writeAdminDeviceCookie(id);
+    return id;
+  } catch {
+    return "unknown-admin-device";
   }
-
-  return id;
 }
 
 export function getDeviceInfo() {
