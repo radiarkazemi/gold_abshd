@@ -218,7 +218,7 @@ def notify_new_order(db: Session, order: dict | None) -> int:
             "badge": "/gt-icon-192.png",
             "image": "/gt-icon-192.png",
             "vibrate": [280, 120, 180, 120, 280, 120, 400],
-            "data": {"type": "new_order", "orderId": order.get("id"), "url": "/admin-hs-panel"},
+            "data": {"type": "new_order", "orderId": order.get("id"), "url": "/admin-hs-panel/"},
         },
     )
 
@@ -241,6 +241,6 @@ def notify_new_kyc(db: Session, user: dict | None) -> int:
             "badge": "/gt-icon-192.png",
             "image": "/gt-icon-192.png",
             "vibrate": [160, 80, 160, 80, 280],
-            "data": {"type": "new_kyc", "userId": user.get("user_id"), "url": "/admin-hs-panel"},
+            "data": {"type": "new_kyc", "userId": user.get("user_id"), "url": "/admin-hs-panel/"},
         },
     )
