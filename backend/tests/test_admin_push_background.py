@@ -9,11 +9,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.services import admin_push
 from app.routers import orders as orders_router
+from app.routers import kyc as kyc_router
 
 
 def test_submit_order_schedules_background_push():
     params = inspect.signature(orders_router.submit_order).parameters
     assert "background_tasks" in params
+
+
+def test_kyc_submit_schedules_background_push():
+    params = list(inspect.signature(kyc_router.submit_my_kyc).parameters)
+    assert params[0] == "background_tasks"
 
 
 def test_retry_routes_schedule_background_push():
