@@ -19,6 +19,12 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+// Chrome Android treats a worker without fetch as a page shortcut, not a
+// real installable web app. Pass through the network; do not cache.
+self.addEventListener("fetch", (event) => {
+  event.respondWith(fetch(event.request));
+});
+
 const ADMIN_PATH = "/admin-hs-panel";
 
 function absoluteUrl(path) {

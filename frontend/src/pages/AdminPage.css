@@ -1583,6 +1583,24 @@
   line-height: 1.55;
 }
 
+.admin-install-btn {
+  width: 100%;
+  border: none;
+  background: var(--gold-dim);
+  color: #1a1508;
+  border-radius: var(--radius-sm);
+  padding: 12px 0;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+
+.admin-install-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* --- Admin KYC review --- */
 .admin-kyc {
   display: flex;

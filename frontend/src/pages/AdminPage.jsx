@@ -23,11 +23,12 @@ import {
   notifyNewOrder,
   notifyNewKyc,
   registerNotifyServiceWorker,
-  subscribeAdminPush,
+  subscribeAdminPushDetailed,
   pushSupportInfo,
 } from "../utils/desktopNotify";
 import { applyAdminPwaManifest, adminInstallHint } from "../utils/adminManifest";
 import AdminNotifyBanner from "../components/AdminNotifyBanner";
+import AdminInstallBar from "../components/AdminInstallBar";
 import { orderGoldWeight, orderTotalMoney, summarizeOrders } from "../utils/orderCalc";
 import { formatCashStatus } from "../utils/balanceFormat";
 import { remainingFromOrder } from "../utils/orderCountdown";
@@ -170,19 +171,18 @@ function AdminPanel({ onLogout, identity }) {
       await registerNotifyServiceWorker();
       const perm = await ensureNotificationPermission();
       if (perm === "granted") {
-        const ok = await subscribeAdminPush();
-        if (!ok && info.secureContext) {
-          setPushHint(
-            [
-              "ثبت اعلان پس‌زمینه ناموفق بود — یک‌بار از پنل خارج شوید و دوباره وارد شوید.",
-              installTip,
-            ]
-              .filter(Boolean)
-              .join(" ")
-          );
-        } else if (ok && installTip) {
+        const push = await subscribeAdminPushDetailed();
+        if (!push.ok && info.secureContext) {
+          const why =
+            push.reason === "need-install"
+              ? "اعلان پس‌زمینه بعد از نصب اپ فعال می‌شود. دکمه «نصب اپ پنل» را بزنید (فقط Install، نه Create shortcut)."
+              : push.reason === "auth"
+                ? "نشست ادمین برای اعلان تازه نیست — یک‌بار خارج شوید و دوباره وارد شوید."
+                : "ثبت اعلان پس‌زمینه ناموفق بود. اول اپ را نصب کنید، بعد دوباره وارد شوید.";
+          setPushHint([why, installTip].filter(Boolean).join(" "));
+        } else if (push.ok && installTip) {
           setPushHint(installTip);
-        } else if (ok) {
+        } else if (push.ok) {
           setPushHint("");
         }
       } else if (perm === "denied") {
@@ -365,6 +365,7 @@ function AdminPanel({ onLogout, identity }) {
           }}
         />
       )}
+      <AdminInstallBar />
       {pushHint && <p className="admin-push-hint">{pushHint}</p>}
       {newOrderFlash && (
         <div className="new-order-flash">سفارش جدید دریافت شد</div>

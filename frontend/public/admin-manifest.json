@@ -5,21 +5,29 @@
   "start_url": "/admin-hs-panel?source=pwa",
   "scope": "/admin-hs-panel",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "prefer_related_applications": false,
   "orientation": "portrait",
   "background_color": "#12100b",
   "theme_color": "#12100b",
   "dir": "rtl",
   "lang": "fa",
-  "id": "/admin-hs-panel?brand=8e62aa32994b",
+  "id": "/admin-hs-panel?brand=admin-pwa",
   "icons": [
     {
-      "src": "/gt-admin-icon-192.png?v=8e62aa32994b",
+      "src": "/gt-admin-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/gt-admin-apple-touch-icon.png?v=8e62aa32994b",
+      "src": "/gt-admin-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/gt-admin-apple-touch-icon.png",
       "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"

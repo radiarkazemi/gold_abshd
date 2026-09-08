@@ -55,10 +55,10 @@ export function adminInstallHint() {
   if (typeof window === "undefined") return "";
   if (isAdminStandalone()) return "";
   if (isIosDevice()) {
-    return "آیفون: فقط از Safari (نه Chrome) روی همین صفحه پنل، دکمه Share (□↑) را بزنید و «Add to Home Screen» / «افزودن به صفحهٔ اصلی» را انتخاب کنید. میانبر باید نام «پنل قصر طلا» و آیکون طلایی تیره داشته باشد — اگر آیکون مشتری آمد، میانبر را پاک کنید و دوباره از همین آدرس نصب کنید.";
+    return "آیفون: فقط از Safari روی همین صفحه، Share (□↑) → «Add to Home Screen». میانبر باید نام «پنل قصر طلا» باشد.";
   }
   if (/Android/i.test(navigator.userAgent || "")) {
-    return "اندروید: پنل را از منوی Chrome روی صفحهٔ اصلی نصب کنید. اگر کارت اعلان می‌آید ولی صدا ندارد، در تنظیمات گوشی → اعلان‌ها → Chrome → این سایت، صدا را روشن کنید.";
+    return "اندروید: دکمه «نصب اپ پنل» را بزنید. اگر Chrome دو گزینه داد، فقط Install را بزنید — Create shortcut را نزنید.";
   }
   return "";
 }

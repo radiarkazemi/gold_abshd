@@ -11,6 +11,7 @@ const BRAND_FILES = [
   "gt-favicon-64.png",
   "gt-admin-apple-touch-icon.png",
   "gt-admin-icon-192.png",
+  "gt-admin-icon-512.png",
 ];
 
 const LEGACY_DIST_ICONS = [
@@ -112,6 +113,12 @@ function adminBrandIcons(brandVersion) {
       purpose: "any",
     },
     {
+      src: `/gt-admin-icon-512.png?v=${brandVersion}`,
+      sizes: "512x512",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
       src: `/gt-admin-apple-touch-icon.png?v=${brandVersion}`,
       sizes: "180x180",
       type: "image/png",
@@ -158,6 +165,8 @@ function writeManifest(publicDir, brandVersion) {
     dir: "rtl",
     lang: "fa",
     id: `/admin-hs-panel?brand=${brandVersion}`,
+    display_override: ["standalone", "minimal-ui"],
+    prefer_related_applications: false,
     icons: adminBrandIcons(brandVersion),
   };
   writeFileSync(adminManifestPath, `${JSON.stringify(adminManifest, null, 2)}\n`);
@@ -174,6 +183,7 @@ export const faviconUrl = \`/gt-favicon-64.png?v=\${BRAND_V}\`;
 export const appleTouchIconUrl = \`/gt-apple-touch-icon.png?v=\${BRAND_V}\`;
 export const adminAppleTouchIconUrl = \`/gt-admin-apple-touch-icon.png?v=\${BRAND_V}\`;
 export const adminIcon192Url = \`/gt-admin-icon-192.png?v=\${BRAND_V}\`;
+export const adminIcon512Url = \`/gt-admin-icon-512.png?v=\${BRAND_V}\`;
 export const manifestUrl = \`/manifest.json?v=\${BRAND_V}\`;
 export const adminManifestUrl = \`/admin-manifest.json?v=\${BRAND_V}\`;
 `;

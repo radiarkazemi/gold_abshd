@@ -271,36 +271,70 @@ function urlBase64ToUint8Array(base64String) {
  * Subscribe this admin device to Web Push so orders still alert with
  * sound when the phone is locked / the PWA is backgrounded.
  */
+async function waitForServiceWorkerController(timeoutMs = 4000) {
+  if (navigator.serviceWorker.controller) return;
+  await new Promise((resolve) => {
+    const timer = setTimeout(resolve, timeoutMs);
+    navigator.serviceWorker.addEventListener(
+      "controllerchange",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true }
+    );
+  });
+}
+
+/**
+ * Subscribe this admin device to Web Push so orders still alert with
+ * sound when the phone is locked / the PWA is backgrounded.
+ * Returns { ok, reason } so the panel can show an actionable tip.
+ */
 export async function subscribeAdminPush() {
-  if (typeof window === "undefined") return false;
+  const result = await subscribeAdminPushDetailed();
+  return result.ok;
+}
+
+export async function subscribeAdminPushDetailed() {
+  if (typeof window === "undefined") return { ok: false, reason: "unsupported" };
   const info = pushSupportInfo();
   if (!info.canSubscribe) {
     console.warn("Admin push unavailable:", info);
-    return false;
+    return { ok: false, reason: "unsupported" };
   }
-  if (Notification.permission !== "granted") return false;
+  if (Notification.permission !== "granted") {
+    return { ok: false, reason: "permission" };
+  }
 
   try {
     const reg = (await registerNotifyServiceWorker()) || (await navigator.serviceWorker.ready);
-    if (!reg?.pushManager) return false;
+    if (!reg?.pushManager) return { ok: false, reason: "no-sw" };
+    await waitForServiceWorkerController();
 
     const keyRes = await fetch(`${API_BASE}/api/admin/push/vapid-public-key`, {
       headers: { ...adminAuthHeaders() },
     });
     if (!keyRes.ok) {
       console.warn("VAPID public key fetch failed", keyRes.status);
-      return false;
+      return { ok: false, reason: keyRes.status === 401 ? "auth" : "vapid" };
     }
     const { public_key: publicKey } = await keyRes.json();
-    if (!publicKey) return false;
+    if (!publicKey) return { ok: false, reason: "vapid" };
 
+    const appKey = urlBase64ToUint8Array(publicKey);
     let sub = await reg.pushManager.getSubscription();
-    if (!sub) {
-      sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey),
-      });
+    if (sub) {
+      try {
+        await sub.unsubscribe();
+      } catch {
+        /* ignore — we will try a fresh subscribe */
+      }
     }
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: appKey,
+    });
 
     const json = sub.toJSON();
     const res = await fetch(`${API_BASE}/api/admin/push/subscribe`, {
@@ -313,11 +347,15 @@ export async function subscribeAdminPush() {
     });
     if (!res.ok) {
       console.warn("Admin push subscribe POST failed", res.status);
-      return false;
+      return { ok: false, reason: res.status === 401 ? "auth" : "server" };
     }
-    return true;
+    return { ok: true };
   } catch (e) {
     console.warn("Admin push subscribe failed:", e);
-    return false;
+    const name = e?.name || "";
+    if (name === "NotAllowedError" || name === "AbortError") {
+      return { ok: false, reason: "need-install" };
+    }
+    return { ok: false, reason: "subscribe" };
   }
 }
