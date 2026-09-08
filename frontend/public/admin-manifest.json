@@ -5,14 +5,12 @@
   "start_url": "/admin-hs-panel/?source=pwa",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["standalone", "minimal-ui"],
-  "prefer_related_applications": false,
   "orientation": "portrait",
   "background_color": "#12100b",
   "theme_color": "#12100b",
   "dir": "rtl",
   "lang": "fa",
-  "id": "ghasrtala-admin-panel",
+  "id": "/admin-hs-panel/",
   "icons": [
     {
       "src": "/gt-admin-icon-192.png",

@@ -127,40 +127,15 @@ function adminBrandIcons(brandVersion) {
   ];
 }
 
-function writeManifest(publicDir, brandVersion) {
-  const manifestPath = resolve(publicDir, "manifest.json");
-  const manifest = {
-    name: "آبشده قصر طلا",
-    short_name: "آبشده قصر طلا",
-    description: "خرید و فروش آنلاین طلا",
-    start_url: "/?source=pwa",
-    scope: "/",
-    // Browser-only: a standalone customer PWA with scope "/" made Android
-    // refuse a second real install and only offer "Add shortcut" for admin.
-    display: "browser",
-    orientation: "portrait",
-    // Splash only. Do NOT ship maskable icons — Chrome fills those with this
-    // color and produces the black circular plate on Android shortcuts.
-    background_color: "#12100b",
-    theme_color: "#12100b",
-    dir: "rtl",
-    lang: "fa",
-    // Changing id when icons change nudges Chromium to refresh the installed icon.
-    id: `/?brand=${brandVersion}`,
-    icons: brandIcons(brandVersion),
-  };
-  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  // Static HTTPS URL — Safari ignores blob: manifests for Add to Home Screen.
-  const adminManifestPath = resolve(publicDir, "admin-manifest.json");
-  const adminManifest = {
+function adminPwaManifest(brandVersion) {
+  // Chrome Android's ⋮ menu often reads origin /manifest.json, not the
+  // page <link rel="manifest">. Keep that file as the admin standalone app
+  // so the menu shows Install app (not Add shortcut).
+  return {
     name: "پنل مدیریت قصر طلا",
     short_name: "پنل قصر طلا",
     description: "پنل مدیریت آبشده قصر طلا",
     start_url: ADMIN_START_URL,
-    // Same-origin as the site, scope "/" — this is the install path Chrome
-    // already accepted for the customer app. A nested /admin-hs-panel/ scope
-    // plus a second SW made Android drop Install and leave only a shortcut.
     scope: "/",
     display: "standalone",
     orientation: "portrait",
@@ -168,12 +143,34 @@ function writeManifest(publicDir, brandVersion) {
     theme_color: "#12100b",
     dir: "rtl",
     lang: "fa",
-    id: "ghasrtala-admin-panel",
-    display_override: ["standalone", "minimal-ui"],
-    prefer_related_applications: false,
+    id: "/admin-hs-panel/",
     icons: adminBrandIcons(brandVersion),
   };
-  writeFileSync(adminManifestPath, `${JSON.stringify(adminManifest, null, 2)}\n`);
+}
+
+function writeManifest(publicDir, brandVersion) {
+  const adminManifest = adminPwaManifest(brandVersion);
+  writeFileSync(resolve(publicDir, "manifest.json"), `${JSON.stringify(adminManifest, null, 2)}\n`);
+  writeFileSync(resolve(publicDir, "admin-manifest.json"), `${JSON.stringify(adminManifest, null, 2)}\n`);
+
+  // Customer homepage only — not installable on Android (display:browser).
+  // iPhone still uses apple-touch-icon / apple-mobile-web-app-* on index.html.
+  const clientManifest = {
+    name: "آبشده قصر طلا",
+    short_name: "آبشده قصر طلا",
+    description: "خرید و فروش آنلاین طلا",
+    start_url: "/?source=pwa",
+    scope: "/",
+    display: "browser",
+    orientation: "portrait",
+    background_color: "#12100b",
+    theme_color: "#12100b",
+    dir: "rtl",
+    lang: "fa",
+    id: `/?brand=${brandVersion}`,
+    icons: brandIcons(brandVersion),
+  };
+  writeFileSync(resolve(publicDir, "client-manifest.json"), `${JSON.stringify(clientManifest, null, 2)}\n`);
 }
 
 function writeBrandModule(srcDir, brandVersion, buildVersion) {
@@ -226,7 +223,7 @@ function writeAdminHtml(outDir, brandVersion) {
   let html = readFileSync(indexPath, "utf8");
   html = html
     .replace(/<title>[^<]*<\/title>/, "<title>پنل مدیریت قصر طلا</title>")
-    .replace(/href="\/manifest\.json[^"]*"/, 'href="/admin-manifest.json"')
+    .replace(/href="\/(?:manifest|client-manifest|admin-manifest)\.json[^"]*"/, 'href="/admin-manifest.json"')
     .replace(
       /name="apple-mobile-web-app-title" content="[^"]*"/,
       'name="apple-mobile-web-app-title" content="پنل قصر طلا"'
@@ -265,7 +262,8 @@ export function brandStampPlugin() {
     transformIndexHtml(html) {
       const adminBootstrap = `<script>(function(){var p=location.pathname.replace(/\\/+$/, "")||"/";if(p!=="/admin-hs-panel")return;var link=document.querySelector('link[rel="manifest"]');if(link)link.href="/admin-manifest.json";document.title="پنل مدیریت قصر طلا";var appleTitle=document.querySelector('meta[name="apple-mobile-web-app-title"]');if(appleTitle)appleTitle.content="پنل قصر طلا";var appleIcon=document.querySelector('link[rel="apple-touch-icon"]');if(appleIcon){appleIcon.href="/gt-admin-apple-touch-icon.png";appleIcon.setAttribute("sizes","180x180");}})();</script>`;
       return html
-        .replaceAll('href="/manifest.json"', `href="/manifest.json?v=${brandVersion}"`)
+        .replaceAll('href="/client-manifest.json"', `href="/client-manifest.json?v=${brandVersion}"`)
+        .replaceAll('href="/manifest.json"', `href="/client-manifest.json?v=${brandVersion}"`)
         .replaceAll('href="/gt-favicon-64.png"', `href="/gt-favicon-64.png?v=${brandVersion}"`)
         .replaceAll('href="/gt-icon-192.png"', `href="/gt-icon-192.png?v=${brandVersion}"`)
         .replaceAll('href="/gt-icon-512.png"', `href="/gt-icon-512.png?v=${brandVersion}"`)
@@ -275,8 +273,8 @@ export function brandStampPlugin() {
           'href="/gt-apple-touch-icon.png"'
         )
         .replace(
-          `<link rel="manifest" href="/manifest.json?v=${brandVersion}" />`,
-          `<link rel="manifest" href="/manifest.json?v=${brandVersion}" />\n    ${adminBootstrap}`
+          `<link rel="manifest" href="/client-manifest.json?v=${brandVersion}" />`,
+          `<link rel="manifest" href="/client-manifest.json?v=${brandVersion}" />\n    ${adminBootstrap}`
         )
         .replace(
           "</head>",

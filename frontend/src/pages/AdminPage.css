@@ -1598,6 +1598,13 @@
   margin: 0;
 }
 
+.admin-install-steps--ok {
+  background: rgba(80, 140, 70, 0.16);
+  border-color: rgba(120, 180, 90, 0.45);
+  color: #d8efc8;
+  margin-bottom: 12px;
+}
+
 .admin-install-btn {
   width: 100%;
   border: none;

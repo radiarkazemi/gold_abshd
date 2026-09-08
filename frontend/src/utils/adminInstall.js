@@ -1,6 +1,7 @@
 /**
  * Android Chrome PWA install (the real "Install" prompt, not a shortcut).
- * beforeinstallprompt only fires when the page is installable.
+ * Do NOT call preventDefault() on beforeinstallprompt — that replaces
+ * Chrome's "Install app" menu item with "Add shortcut" / "Create shortcut".
  */
 
 let deferredPrompt = null;
@@ -18,7 +19,6 @@ function emit() {
 
 if (typeof window !== "undefined") {
   window.addEventListener("beforeinstallprompt", (event) => {
-    event.preventDefault();
     deferredPrompt = event;
     emit();
   });

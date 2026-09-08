@@ -175,7 +175,7 @@ function AdminPanel({ onLogout, identity }) {
         if (!push.ok && info.secureContext) {
           const why =
             push.reason === "need-install"
-              ? "اعلان پس‌زمینه بعد از نصب اپ فعال می‌شود. دکمه «نصب اپ پنل» را بزنید (فقط Install، نه Create shortcut)."
+              ? "اعلان پس‌زمینه بعد از نصب اپ فعال می‌شود. منوی Chrome → Install app را بزنید (نه Add shortcut)."
               : push.reason === "auth"
                 ? "نشست ادمین برای اعلان تازه نیست — یک‌بار خارج شوید و دوباره وارد شوید."
                 : "ثبت اعلان پس‌زمینه ناموفق بود. اول اپ را نصب کنید، بعد دوباره وارد شوید.";

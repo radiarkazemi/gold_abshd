@@ -65,7 +65,7 @@ export function adminInstallHint() {
     return "آیفون: فقط از Safari روی همین صفحه، Share (□↑) → «Add to Home Screen». میانبر باید نام «پنل قصر طلا» باشد.";
   }
   if (/Android/i.test(navigator.userAgent || "")) {
-    return "اندروید: اگر فقط Add shortcut می‌بینید، اول اپ «آبشده قصر طلا» را Uninstall کنید (کل سایت را قفل کرده). میانبر قدیمی را هم پاک کنید، Chrome را کامل ببندید، دوباره همین صفحه را باز کنید، بعد Install.";
+    return "اندروید: منوی Chrome (⋮) → Install app. اگر فقط Add shortcut است، اپ مشتری روی این گوشی لازم نیست؛ Chrome → Settings → Site settings → ghasrtala.ir → Clear & reset، میانبرهای قدیمی را پاک کنید، Chrome را ببندید و همین صفحه را دوباره باز کنید.";
   }
   return "";
 }

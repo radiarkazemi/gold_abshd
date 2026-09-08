@@ -43,6 +43,17 @@ if (typeof window !== "undefined") {
 // Do NOT auto-reload on updates — show an in-app prompt (keeps login).
 if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
   const swUrl = `/sw-notify.js?v=${APP_BUILD_V || BRAND_V}`;
+  if (navigator.serviceWorker.getRegistrations) {
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      for (const reg of regs) {
+        const script = reg.active?.scriptURL || reg.waiting?.scriptURL || reg.installing?.scriptURL || "";
+        const scope = reg.scope || "";
+        if (script.includes("/admin-hs-panel/sw.js") || scope.endsWith("/admin-hs-panel/")) {
+          reg.unregister().catch(() => {});
+        }
+      }
+    }).catch(() => {});
+  }
   const ready = navigator.serviceWorker.register(swUrl, { scope: "/", updateViaCache: "none" }).catch(() => null);
   if (typeof window !== "undefined" && isAdminPanelPath()) {
     ready?.then(async (reg) => {
