@@ -79,6 +79,7 @@ export default function App() {
             <Route path="/about" element={<Protected><AboutPage /></Protected>} />
             <Route path="/reygiri" element={<Protected><ReygiriLinksPage /></Protected>} />
             <Route path={ADMIN_PATH} element={<AdminPage />} />
+            <Route path={`${ADMIN_PATH}/*`} element={<AdminPage />} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>

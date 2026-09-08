@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+import logging
 
 from app.db import get_db
 from app.admin_auth import require_permission
@@ -12,6 +13,9 @@ from app.schemas.price_cards import (
     SetCardRoleCommissionIn,
 )
 from app.services import price_cards
+from app.ws_manager import manager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin/price-cards", tags=["admin-price-cards"])
 
@@ -79,7 +83,12 @@ async def set_manual_price(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return price_cards.list_admin_cards(db)
+    cards = price_cards.list_admin_cards(db)
+    try:
+        await manager.broadcast_price(price_cards.build_broadcast_payload())
+    except Exception:
+        logger.warning("immediate price broadcast after manual save failed", exc_info=True)
+    return cards
 
 
 @router.put("/{goldbridge_item_id}/role-commission", response_model=list[AdminPriceCardOut])

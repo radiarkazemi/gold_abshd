@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -20,6 +20,7 @@ from app.services.orders import (
 from app.services.trading_status import is_trading_online
 from app.services import price_cards
 from app.services.kyc import require_kyc_approved
+from app.services import admin_push
 
 router = APIRouter(tags=["orders"])
 
@@ -27,6 +28,7 @@ router = APIRouter(tags=["orders"])
 @router.post("/api/orders", response_model=OrderOut)
 async def submit_order(
     order_in: OrderCreateIn,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -81,13 +83,10 @@ async def submit_order(
         order_in.value, order_in.description, order_in.goldbridge_item_id, raw_item,
     )
 
-    await manager.broadcast_to_admins({"type": "new_order", "order": order_to_dict(db, order)})
-
-    try:
-        from app.services import admin_push
-        admin_push.notify_new_order(db, order_to_dict(db, order))
-    except Exception:
-        pass
+    payload = order_to_dict(db, order)
+    await manager.broadcast_to_admins({"type": "new_order", "order": payload})
+    # FCM/web-push can take several seconds; do not block the customer POST.
+    background_tasks.add_task(admin_push.notify_new_order_isolated, payload)
 
     return order_to_customer_out(order)
 
@@ -138,6 +137,7 @@ async def cancel_my_order(
 @router.post("/api/my/orders/{order_id}/retry", response_model=OrderOut)
 async def retry_my_order(
     order_id: str,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -147,18 +147,16 @@ async def retry_my_order(
     alert/sound as a fresh submission - they need to notice it again.
     """
     order = retry_pending_order_db(db, order_id, current_user.id)
-    await manager.broadcast_to_admins({"type": "new_order", "order": order_to_dict(db, order)})
-    try:
-        from app.services import admin_push
-        admin_push.notify_new_order(db, order_to_dict(db, order))
-    except Exception:
-        pass
+    payload = order_to_dict(db, order)
+    await manager.broadcast_to_admins({"type": "new_order", "order": payload})
+    background_tasks.add_task(admin_push.notify_new_order_isolated, payload)
     return order_to_customer_out(order)
 
 
 @router.post("/api/my/orders/{order_id}/retry-new-price", response_model=OrderOut)
 async def retry_my_order_at_new_price(
     order_id: str,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -178,12 +176,9 @@ async def retry_my_order_at_new_price(
         )
     require_kyc_approved(current_user)
     order = resubmit_order_at_new_price_db(db, order_id, current_user)
-    await manager.broadcast_to_admins({"type": "new_order", "order": order_to_dict(db, order)})
-    try:
-        from app.services import admin_push
-        admin_push.notify_new_order(db, order_to_dict(db, order))
-    except Exception:
-        pass
+    payload = order_to_dict(db, order)
+    await manager.broadcast_to_admins({"type": "new_order", "order": payload})
+    background_tasks.add_task(admin_push.notify_new_order_isolated, payload)
     return order_to_customer_out(order)
 
 

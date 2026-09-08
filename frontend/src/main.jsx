@@ -3,14 +3,24 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.jsx";
 import { APP_BUILD_V, BRAND_V } from "./brandAssets.js";
-import { applyAdminPwaManifest } from "./utils/adminManifest.js";
+import { applyAdminPwaManifest, isAdminPanelPath, ADMIN_PANEL_SCOPE } from "./utils/adminManifest.js";
+
 import { signalAppUpdateAvailable, APPLIED_UPDATE_KEY } from "./components/UpdatePrompt.jsx";
 
 // Admin PWA: swap manifest/title before React mounts (Safari reads head early).
+// Keep a trailing slash so the URL stays inside scope /admin-hs-panel/.
 if (typeof window !== "undefined") {
-  const path = window.location.pathname.replace(/\/+$/, "") || "/";
-  if (path === "/admin-hs-panel") {
+  if (isAdminPanelPath()) {
     applyAdminPwaManifest();
+    try {
+      const url = new URL(window.location.href);
+      if (url.pathname !== ADMIN_PANEL_SCOPE) {
+        url.pathname = ADMIN_PANEL_SCOPE;
+        window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+      }
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -28,10 +38,41 @@ if (typeof window !== "undefined") {
 }
 
 // Register SW with the deploy build id so every code release can be detected.
-// Do NOT auto-reload — show an in-app update prompt instead (keeps login).
+// Admin uses the same root SW as the rest of the site. A nested admin-only
+// worker left the page uncontrolled, so Android offered only a shortcut.
+// Do NOT auto-reload on updates — show an in-app prompt (keeps login).
 if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
   const swUrl = `/sw-notify.js?v=${APP_BUILD_V || BRAND_V}`;
-  const ready = navigator.serviceWorker.register(swUrl, { scope: "/" }).catch(() => null);
+  if (navigator.serviceWorker.getRegistrations) {
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      for (const reg of regs) {
+        const script = reg.active?.scriptURL || reg.waiting?.scriptURL || reg.installing?.scriptURL || "";
+        const scope = reg.scope || "";
+        if (script.includes("/admin-hs-panel/sw.js") || scope.endsWith("/admin-hs-panel/")) {
+          reg.unregister().catch(() => {});
+        }
+      }
+    }).catch(() => {});
+  }
+  const ready = navigator.serviceWorker.register(swUrl, { scope: "/", updateViaCache: "none" }).catch(() => null);
+  if (typeof window !== "undefined" && isAdminPanelPath()) {
+    ready?.then(async (reg) => {
+      if (!reg) return;
+      try {
+        await navigator.serviceWorker.ready;
+      } catch {
+        return;
+      }
+      if (navigator.serviceWorker.controller) return;
+      try {
+        if (sessionStorage.getItem("goldapp_admin_sw_kick") === (APP_BUILD_V || BRAND_V)) return;
+        sessionStorage.setItem("goldapp_admin_sw_kick", APP_BUILD_V || BRAND_V);
+      } catch {
+        return;
+      }
+      window.location.reload();
+    });
+  }
   ready?.then((reg) => {
     if (!reg) return;
     const ping = () => reg.update().catch(() => {});

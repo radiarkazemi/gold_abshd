@@ -61,6 +61,13 @@ _latest_updated_at: str | None = None
 # Per-item: last time that item's buy/sell actually changed (not every poll).
 _item_price_changed_at: dict[int, str] = {}
 _lock = asyncio.Lock()
+# Admin-typed manuals, keyed by goldbridge_item_id. Same idea as _latest_items:
+# WS / mirrored cards read this instead of waiting on Postgres.
+_manual_quotes: dict[int, dict] = {}
+# Snapshot of PriceCard config for the 0.25s broadcast loop (no DB on hot path).
+_card_config_cache: list | None = None
+# After متفرقه / نقد کارتخوان rows exist and match spec, skip ensure() entirely.
+_specials_ready = False
 
 
 def get_raw_items() -> dict[int, dict]:
@@ -140,12 +147,37 @@ def item_price_changed_at(goldbridge_item_id: int | None) -> str | None:
     return _item_price_changed_at.get(int(goldbridge_item_id))
 
 
-def _merge_polled_items(cleaned: dict[int, dict]) -> bool:
-    """Merge poll into cache; card clocks follow goldbridge last_update_time.
+def _item_is_manual(item_id: int) -> bool:
+    """True while this item's customer quote is the admin-typed manual."""
+    cached = _manual_quotes.get(int(item_id))
+    if cached is not None:
+        return bool(cached.get("use_manual"))
+    if _card_config_cache:
+        for card in _card_config_cache:
+            if int(card.goldbridge_item_id) == int(item_id):
+                return bool(getattr(card, "use_manual_price", False))
+    return False
 
-    ``last_update_time`` from goldbridge is the authoritative per-item
-    "آخرین بروزرسانی" (frozen at the source until that item's quote moves).
-    We pass it through — we do NOT invent poll-time clocks here.
+
+def _dt_to_iso(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return _normalize_source_ts(value) or value
+    if getattr(value, "tzinfo", None) is None:
+        value = value.replace(tzinfo=timezone.utc)
+    try:
+        return value.isoformat()
+    except AttributeError:
+        return None
+
+
+def _merge_polled_items(cleaned: dict[int, dict]) -> bool:
+    """Merge poll into cache; live cards follow goldbridge last_update_time.
+
+    Manual cards keep the admin-save clock. Overwriting that stamp with
+    goldbridge ``last_update_time`` made the client «آخرین بروزرسانی»
+    show the source tick instead of when the admin typed the price.
 
     Returns True if any item's buy/sell changed (for feed-level bookkeeping).
     """
@@ -165,6 +197,12 @@ def _merge_polled_items(cleaned: dict[int, dict]) -> bool:
         if price_changed:
             any_change = True
 
+        # Always keep the live row (admin UI still shows goldbridge).
+        _latest_items[item_id] = item
+
+        if _item_is_manual(item_id):
+            continue
+
         src_ts = _normalize_source_ts(item.get("last_update_time"))
         if src_ts:
             _item_price_changed_at[item_id] = src_ts
@@ -173,11 +211,7 @@ def _merge_polled_items(cleaned: dict[int, dict]) -> bool:
                 newest_src_ms = src_ms
                 newest_src_ts = src_ts
         elif item_id not in _item_price_changed_at:
-            # Manual/synthetic rows without a source stamp — seed once.
             _item_price_changed_at[item_id] = now
-
-        # Merge by id so a truncated poll cannot drop other cards.
-        _latest_items[item_id] = item
 
     if newest_src_ts and (
         _latest_updated_at is None
@@ -209,13 +243,112 @@ def is_special_mirrored_card(goldbridge_item_id: int) -> bool:
     )
 
 
+def _remember_manual_quote(
+    goldbridge_item_id: int,
+    *,
+    use_manual: bool,
+    buy,
+    sell,
+    updated_at: str | None = None,
+) -> None:
+    _manual_quotes[int(goldbridge_item_id)] = {
+        "use_manual": bool(use_manual),
+        "buy": buy,
+        "sell": sell,
+        "updated_at": updated_at,
+    }
+    if use_manual and updated_at:
+        mark_item_price_changed(goldbridge_item_id, updated_at)
+
+
+def _hydrate_manual_quotes_from_cards(cards) -> None:
+    """Fill missing cache entries only — never clobber a just-saved quote."""
+    for card in cards:
+        iid = int(card.goldbridge_item_id)
+        ts = _dt_to_iso(getattr(card, "manual_updated_at", None))
+        if iid not in _manual_quotes:
+            _remember_manual_quote(
+                iid,
+                use_manual=bool(getattr(card, "use_manual_price", False)),
+                buy=getattr(card, "manual_buy", None),
+                sell=getattr(card, "manual_sell", None),
+                updated_at=ts,
+            )
+        elif bool(getattr(card, "use_manual_price", False)) and ts:
+            if iid not in _item_price_changed_at:
+                mark_item_price_changed(iid, ts)
+
+
+def _card_snapshot(card):
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        goldbridge_item_id=int(card.goldbridge_item_id),
+        display_name=card.display_name,
+        use_manual_price=bool(getattr(card, "use_manual_price", False)),
+        manual_buy=getattr(card, "manual_buy", None),
+        manual_sell=getattr(card, "manual_sell", None),
+        price_source_item_id=getattr(card, "price_source_item_id", None),
+        price_label_mode=getattr(card, "price_label_mode", None),
+        is_enabled=bool(card.is_enabled),
+        orderable_buy=bool(card.orderable_buy),
+        orderable_sell=bool(card.orderable_sell),
+        override_source_restriction=bool(getattr(card, "override_source_restriction", False)),
+        sort_order=card.sort_order or 0,
+        created_at=getattr(card, "created_at", None),
+        manual_updated_at=getattr(card, "manual_updated_at", None),
+    )
+
+
+def _invalidate_card_config_cache() -> None:
+    global _card_config_cache
+    _card_config_cache = None
+
+
+def _store_card_snapshots(rows) -> list:
+    global _card_config_cache
+    snaps = [_card_snapshot(c) for c in rows]
+    snaps.sort(key=lambda c: (c.sort_order or 0, str(c.created_at or ""), int(c.goldbridge_item_id)))
+    _card_config_cache = snaps
+    return snaps
+
+
+def _patch_cached_card(goldbridge_item_id: int, **fields) -> None:
+    if _card_config_cache is None:
+        return
+    iid = int(goldbridge_item_id)
+    for card in _card_config_cache:
+        if int(card.goldbridge_item_id) == iid:
+            for key, value in fields.items():
+                setattr(card, key, value)
+            return
+    _invalidate_card_config_cache()
+
+
+def _load_card_snapshots(db: Session) -> list:
+    if _card_config_cache is not None:
+        return _card_config_cache
+    from app.models_db import PriceCard
+    rows = db.query(PriceCard).all()
+    snaps = _store_card_snapshots(rows)
+    _hydrate_manual_quotes_from_cards(snaps)
+    return snaps
+
+
 def ensure_special_mirrored_cards(db: Session | None = None) -> None:
     """Idempotently create متفرقه / نقد کارتخوان rows (mirror item id 1).
 
     Product identity fields stay synced; admin-controlled visibility
     (`is_enabled`) and side toggles are only set on first create so
     «نمایش به مشتری» unticks persist.
+
+    After the rows match spec, later calls are a no-op — the old
+    always-assign + commit path rewrote these two rows on every WS tick
+    (~4×/s) and blocked id:1 manual saves.
     """
+    global _specials_ready
+    if _specials_ready:
+        return
+
     from app.db import SessionLocal
     from app.models_db import PriceCard
 
@@ -223,6 +356,8 @@ def ensure_special_mirrored_cards(db: Session | None = None) -> None:
     if owns_session:
         db = SessionLocal()
     try:
+        dirty = False
+        found = 0
         for spec in SPECIAL_MIRRORED_CARDS:
             card = (
                 db.query(PriceCard)
@@ -237,16 +372,32 @@ def ensure_special_mirrored_cards(db: Session | None = None) -> None:
                 card.orderable_buy = spec["orderable_buy"]
                 card.orderable_sell = spec["orderable_sell"]
                 card.sort_order = spec["sort_order"]
-            # Always keep product identity / pricing rules in sync.
-            card.display_name = spec["display_name"]
-            card.price_source_item_id = spec["price_source_item_id"]
-            card.price_label_mode = spec["price_label_mode"]
-            card.override_source_restriction = True
+                dirty = True
+            if card.display_name != spec["display_name"]:
+                card.display_name = spec["display_name"]
+                dirty = True
+            if card.price_source_item_id != spec["price_source_item_id"]:
+                card.price_source_item_id = spec["price_source_item_id"]
+                dirty = True
+            if card.price_label_mode != spec["price_label_mode"]:
+                card.price_label_mode = spec["price_label_mode"]
+                dirty = True
+            if not card.override_source_restriction:
+                card.override_source_restriction = True
+                dirty = True
             # Mirrored cards always follow the source feed — not own manuals.
-            card.use_manual_price = False
+            if card.use_manual_price:
+                card.use_manual_price = False
+                dirty = True
             if card.sort_order is None or card.sort_order == 0:
                 card.sort_order = spec["sort_order"]
-        db.commit()
+                dirty = True
+            found += 1
+        if dirty:
+            db.commit()
+            _invalidate_card_config_cache()
+        if found == len(SPECIAL_MIRRORED_CARDS):
+            _specials_ready = True
     except Exception:
         db.rollback()
         raise
@@ -442,19 +593,39 @@ def _snapshot_price_card(card):
     )
 
 
-def _mirror_base_buy(src_card, source_live: dict | None) -> tuple[float | None, str]:
+def _manual_quote_for(item_id: int | None) -> dict | None:
+    if item_id is None:
+        return None
+    return _manual_quotes.get(int(item_id))
+
+
+def _mirror_base_buy(
+    src_card,
+    source_live: dict | None,
+    source_id: int | None = None,
+) -> tuple[float | None, str]:
     """
     Base مثقال buy for متفرقه / نقد کارتخوان.
 
     When id:1 is on manual, this is EXACTLY the buy the admin typed
     (not live goldbridge, not sell, not after commission).
+
+    In-memory `_manual_quotes` wins over a stale ORM snapshot so the two
+    mirrored cards move as soon as the admin saves id:1.
     """
-    if src_card is not None and src_card.use_manual_price and src_card.manual_buy is not None:
+    sid = source_id
+    if sid is None and src_card is not None:
+        sid = getattr(src_card, "goldbridge_item_id", None)
+    if sid is None:
+        sid = DEFAULT_PRICE_SOURCE_ITEM_ID
+    cached = _manual_quote_for(sid)
+    if cached is not None:
+        if cached.get("use_manual") and cached.get("buy") is not None:
+            return float(cached["buy"]), "manual"
+    elif src_card is not None and src_card.use_manual_price and src_card.manual_buy is not None:
         return float(src_card.manual_buy), "manual"
     if source_live is not None and source_live.get("buy") is not None:
         return float(source_live["buy"]), "live"
-    if src_card is not None and src_card.manual_buy is not None:
-        return float(src_card.manual_buy), "manual"
     return None, "unavailable"
 
 
@@ -462,21 +633,24 @@ def _live_or_manual_item(card, live_item: dict | None, *, buy_only_ok: bool = Fa
     """
     This card's own live vs manual quotes — no mirroring.
 
-    Manual wins when the admin enables use_manual_price, or as a fallback
-    when the live feed has no usable buy/sell but manuals are filled in.
+    Manual is used only while the admin has use_manual_price enabled.
+    Unticking that flag returns to goldbridge immediately; leftover
+    typed numbers are not a silent fallback.
     """
+    cached = _manual_quote_for(getattr(card, "goldbridge_item_id", None)) if card else None
+    manual_buy = cached.get("buy") if cached and cached.get("buy") is not None else (card.manual_buy if card else None)
+    manual_sell = cached.get("sell") if cached and cached.get("sell") is not None else (card.manual_sell if card else None)
+    if cached is not None:
+        flagged_manual = bool(cached.get("use_manual"))
+    else:
+        flagged_manual = bool(card and card.use_manual_price)
+
     has_live_buy = bool(live_item and live_item.get("buy") is not None)
     has_live_sell = bool(live_item and live_item.get("sell") is not None)
     has_live_prices = has_live_buy and (buy_only_ok or has_live_sell)
 
-    manuals_ok = bool(
-        card
-        and card.manual_buy is not None
-        and card.manual_sell is not None
-    )
-    use_manual = bool(card and card.use_manual_price and manuals_ok) or (
-        not has_live_prices and manuals_ok
-    )
+    manuals_ok = bool(card and manual_buy is not None and manual_sell is not None)
+    use_manual = bool(card and flagged_manual and manuals_ok)
     if use_manual:
         base = dict(live_item) if live_item else {
             "goldbridge_item_id": card.goldbridge_item_id,
@@ -491,8 +665,8 @@ def _live_or_manual_item(card, live_item: dict | None, *, buy_only_ok: bool = Fa
         base["goldbridge_item_id"] = card.goldbridge_item_id
         if card.display_name:
             base["name"] = card.display_name
-        base["buy"] = float(card.manual_buy)
-        base["sell"] = float(card.manual_sell)
+        base["buy"] = float(manual_buy)
+        base["sell"] = float(manual_sell)
         base["price_source"] = "manual"
         base["active"] = True
         return base
@@ -556,25 +730,30 @@ def resolve_effective_item(
     NOT hide priced items from customers (most coins sit at active=False
     while still carrying valid buy/sell).
 
-    Manual wins when the admin explicitly enables use_manual_price, or
-    as a fallback when the live feed has no buy/sell at all but manuals
-    are filled in.
+    Manual is used only while the admin has use_manual_price enabled.
+    Unticking it returns every card — including متفرقه / نقد کارتخوان —
+    to the goldbridge quote immediately.
 
     Mirrored cards (price_source_item_id, e.g. متفرقه / نقد کارتخوان)
-    follow the *effective* source card — so if id:1 is switched to
-    manual while goldbridge is down, these two cards use id:1's manual
-    buy/sell, then apply the same متفرقه / نقد کارتخوان formulas as live.
+    follow the *effective* source card: id:1 live when that flag is
+    off, id:1 typed buy when it is on.
     """
     source_id = getattr(card, "price_source_item_id", None) if card else None
     if source_id:
         source_live = _latest_items.get(int(source_id))
-        src_card = _snapshot_price_card(source_card) if source_card is not None else _get_price_card_row(int(source_id), db)
+        if source_card is not None:
+            src_card = _snapshot_price_card(source_card)
+        elif _manual_quote_for(int(source_id)) is not None:
+            # Fresh typed manuals are already in memory — skip a Postgres round-trip.
+            src_card = None
+        else:
+            src_card = _get_price_card_row(int(source_id), db)
         buy_only = bool(
             card
             and (is_motaferaghe_card(card.goldbridge_item_id) or is_naghd_kartkhan_card(card.goldbridge_item_id))
         )
         if buy_only:
-            base_buy, mode = _mirror_base_buy(src_card, source_live)
+            base_buy, mode = _mirror_base_buy(src_card, source_live, source_id=int(source_id))
             if base_buy is None:
                 return None
             source_resolved = {
@@ -628,15 +807,21 @@ def effective_orderable(card, item: dict) -> tuple[bool, bool]:
     )
 
 
-def _role_commissions_for_card(db: Session, goldbridge_item_id: int, roles: list) -> list[dict]:
+def _role_commissions_for_card(
+    db: Session,
+    goldbridge_item_id: int,
+    roles: list,
+    overrides: dict | None = None,
+) -> list[dict]:
     from app.models_db import PriceCardCommission
 
-    overrides = {
-        row.role_id: row
-        for row in db.query(PriceCardCommission)
-        .filter(PriceCardCommission.goldbridge_item_id == goldbridge_item_id)
-        .all()
-    }
+    if overrides is None:
+        overrides = {
+            row.role_id: row
+            for row in db.query(PriceCardCommission)
+            .filter(PriceCardCommission.goldbridge_item_id == goldbridge_item_id)
+            .all()
+        }
     result = []
     for role in roles:
         ov = overrides.get(role.id)
@@ -659,12 +844,18 @@ def _role_commissions_for_card(db: Session, goldbridge_item_id: int, roles: list
 def list_admin_cards(db: Session) -> list[dict]:
     """Every known goldbridge item + enabled/mirrored/manual-only cards, with
     admin toggles, manuals, and per-role commission overrides."""
-    from app.models_db import PriceCard, Role
+    from app.models_db import PriceCard, PriceCardCommission, Role
 
     ensure_special_mirrored_cards(db)
 
-    existing = {c.goldbridge_item_id: c for c in db.query(PriceCard).all()}
+    existing_rows = db.query(PriceCard).all()
+    existing = {c.goldbridge_item_id: c for c in existing_rows}
+    _hydrate_manual_quotes_from_cards(existing_rows)
+    _store_card_snapshots(existing_rows)
     roles = db.query(Role).order_by(Role.name).all()
+    commissions_by_item: dict[int, dict] = {}
+    for row in db.query(PriceCardCommission).all():
+        commissions_by_item.setdefault(row.goldbridge_item_id, {})[row.role_id] = row
     result = []
     seen = set()
 
@@ -693,7 +884,7 @@ def list_admin_cards(db: Session) -> list[dict]:
             "price_source": effective["price_source"] if effective else "unavailable",
             "mirrored_source_mode": (effective or {}).get("mirrored_source_mode"),
             "sort_order": card.sort_order if card else 0,
-            "role_commissions": _role_commissions_for_card(db, item_id, roles),
+            "role_commissions": _role_commissions_for_card(db, item_id, roles, commissions_by_item.get(item_id, {})),
         })
 
     for item_id, card in existing.items():
@@ -733,7 +924,7 @@ def list_admin_cards(db: Session) -> list[dict]:
                 "price_source": "unavailable",
                 "mirrored_source_mode": None,
                 "sort_order": card.sort_order,
-                "role_commissions": _role_commissions_for_card(db, item_id, roles),
+                "role_commissions": _role_commissions_for_card(db, item_id, roles, commissions_by_item.get(item_id, {})),
             })
             continue
         result.append({
@@ -762,7 +953,7 @@ def list_admin_cards(db: Session) -> list[dict]:
             "price_source": effective.get("price_source", "mirrored"),
             "mirrored_source_mode": effective.get("mirrored_source_mode"),
             "sort_order": card.sort_order,
-            "role_commissions": _role_commissions_for_card(db, item_id, roles),
+            "role_commissions": _role_commissions_for_card(db, item_id, roles, commissions_by_item.get(item_id, {})),
         })
 
     result.sort(key=lambda c: (c.get("sort_order") or 0, c.get("goldbridge_item_id") or 0))
@@ -788,6 +979,7 @@ def set_card_enabled(db: Session, goldbridge_item_id: int, is_enabled: bool,
     if sort_order is not None:
         card.sort_order = sort_order
     db.commit()
+    _invalidate_card_config_cache()
 
 
 def set_card_orderable_sides(db: Session, goldbridge_item_id: int, orderable_buy: bool, orderable_sell: bool):
@@ -802,12 +994,14 @@ def set_card_orderable_sides(db: Session, goldbridge_item_id: int, orderable_buy
     if orderable_buy or orderable_sell:
         card.is_enabled = True
     db.commit()
+    _invalidate_card_config_cache()
 
 
 def set_card_override(db: Session, goldbridge_item_id: int, override: bool):
     card = _get_or_create_card(db, goldbridge_item_id)
     card.override_source_restriction = override
     db.commit()
+    _invalidate_card_config_cache()
 
 
 def set_card_manual_price(
@@ -826,10 +1020,32 @@ def set_card_manual_price(
     card.use_manual_price = use_manual_price
     card.manual_buy = manual_buy
     card.manual_sell = manual_sell
+    saved_at = None
     if use_manual_price:
         card.is_enabled = True
-    mark_item_price_changed(goldbridge_item_id)
+        card.manual_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        saved_at = mark_item_price_changed(goldbridge_item_id, _dt_to_iso(card.manual_updated_at))
+    else:
+        live = _latest_items.get(int(goldbridge_item_id))
+        src_ts = _normalize_source_ts((live or {}).get("last_update_time"))
+        if src_ts:
+            mark_item_price_changed(goldbridge_item_id, src_ts)
+    _remember_manual_quote(
+        goldbridge_item_id,
+        use_manual=use_manual_price,
+        buy=manual_buy,
+        sell=manual_sell,
+        updated_at=saved_at,
+    )
     db.commit()
+    _patch_cached_card(
+        goldbridge_item_id,
+        use_manual_price=bool(use_manual_price),
+        manual_buy=manual_buy,
+        manual_sell=manual_sell,
+        is_enabled=True if use_manual_price else bool(card.is_enabled),
+        manual_updated_at=card.manual_updated_at,
+    )
 
 
 def set_card_role_commission(
@@ -975,28 +1191,37 @@ def get_card_state(db: Session, goldbridge_item_id: int):
     return db.query(PriceCard).filter(PriceCard.goldbridge_item_id == goldbridge_item_id).first()
 
 
-def build_broadcast_payload(db: Session) -> dict:
+def build_broadcast_payload(db: Session | None = None) -> dict:
     return {
         "cards": get_enabled_cards_for_broadcast(db),
         "updated_at": _latest_updated_at,
     }
 
 
-def get_enabled_cards_for_broadcast(db: Session) -> list[dict]:
-    from app.models_db import PriceCard
+def get_enabled_cards_for_broadcast(db: Session | None = None) -> list[dict]:
+    snapshots = _card_config_cache
+    owns_session = False
+    if snapshots is None:
+        if db is None:
+            from app.db import SessionLocal
+            db = SessionLocal()
+            owns_session = True
+        try:
+            ensure_special_mirrored_cards(db)
+            snapshots = _load_card_snapshots(db)
+        finally:
+            if owns_session:
+                db.close()
 
-    ensure_special_mirrored_cards(db)
-
-    all_cards = db.query(PriceCard).order_by(PriceCard.sort_order, PriceCard.created_at).all()
-    by_id = {c.goldbridge_item_id: c for c in all_cards}
-    cards = [c for c in all_cards if c.is_enabled]
+    by_id = {c.goldbridge_item_id: c for c in snapshots}
+    cards = [c for c in snapshots if c.is_enabled]
     result = []
     for i, card in enumerate(cards):
         src = by_id.get(int(card.price_source_item_id)) if getattr(card, "price_source_item_id", None) else None
         item = resolve_effective_item(
             card,
             _latest_items.get(card.goldbridge_item_id),
-            db,
+            None,
             source_card=src,
         )
         if not item or item.get("buy") is None or item.get("sell") is None:
@@ -1023,9 +1248,14 @@ def get_enabled_cards_for_broadcast(db: Session) -> list[dict]:
             gram18_buy = None
             gram18_sell = None
             pricing_mode = None
-        # Clock freezes until this card's source quote actually changes.
+        # Live cards: goldbridge last_update_time. Manual / mirrored-manual:
+        # the admin-save stamp on the source item (id:1 for متفرقه / نقد کارتخوان).
         source_id = card.price_source_item_id or card.goldbridge_item_id
         card_updated_at = item_price_changed_at(source_id)
+        if item.get("price_source") == "manual" or item.get("mirrored_source_mode") == "manual":
+            src_card = by_id.get(int(source_id))
+            manual_ts = _dt_to_iso(getattr(src_card, "manual_updated_at", None)) if src_card else None
+            card_updated_at = item_price_changed_at(source_id) or manual_ts
         result.append({
             "goldbridge_item_id": card.goldbridge_item_id,
             "name": card.display_name or item.get("name") or f"#{card.goldbridge_item_id}",

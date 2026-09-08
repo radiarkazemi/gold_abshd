@@ -17,6 +17,9 @@ import logging
 import os
 from datetime import datetime
 
+# Hung FCM/web-push must not stall the customer's order POST.
+WEBPUSH_TIMEOUT_SECONDS = 8
+
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -146,6 +149,7 @@ def _send_one(db: Session, row, payload: dict, vapid_private: str) -> bool:
             vapid_private_key=vapid_private,
             vapid_claims=_vapid_claims(),
             ttl=86400,
+            timeout=WEBPUSH_TIMEOUT_SECONDS,
             headers={
                 "Urgency": "high",
                 # Unique topic per alert so FCM does not collapse distinct orders.
@@ -218,9 +222,37 @@ def notify_new_order(db: Session, order: dict | None) -> int:
             "badge": "/gt-icon-192.png",
             "image": "/gt-icon-192.png",
             "vibrate": [280, 120, 180, 120, 280, 120, 400],
-            "data": {"type": "new_order", "orderId": order.get("id"), "url": "/admin-hs-panel"},
+            "data": {"type": "new_order", "orderId": order.get("id"), "url": "/admin-hs-panel/"},
         },
     )
+
+
+def notify_new_order_isolated(order: dict | None) -> int:
+    """Own DB session so FastAPI can run this after the HTTP response."""
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        return notify_new_order(db, order)
+    except Exception:
+        logger.exception("[push] isolated new-order notify failed")
+        return 0
+    finally:
+        db.close()
+
+
+def notify_new_kyc_isolated(user: dict | None) -> int:
+    """Own DB session so FastAPI can run this after the HTTP response."""
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        return notify_new_kyc(db, user)
+    except Exception:
+        logger.exception("[push] isolated new-kyc notify failed")
+        return 0
+    finally:
+        db.close()
 
 
 def notify_new_kyc(db: Session, user: dict | None) -> int:
@@ -241,6 +273,6 @@ def notify_new_kyc(db: Session, user: dict | None) -> int:
             "badge": "/gt-icon-192.png",
             "image": "/gt-icon-192.png",
             "vibrate": [160, 80, 160, 80, 280],
-            "data": {"type": "new_kyc", "userId": user.get("user_id"), "url": "/admin-hs-panel"},
+            "data": {"type": "new_kyc", "userId": user.get("user_id"), "url": "/admin-hs-panel/"},
         },
     )

@@ -23,11 +23,12 @@ import {
   notifyNewOrder,
   notifyNewKyc,
   registerNotifyServiceWorker,
-  subscribeAdminPush,
+  subscribeAdminPushDetailed,
   pushSupportInfo,
 } from "../utils/desktopNotify";
 import { applyAdminPwaManifest, adminInstallHint } from "../utils/adminManifest";
 import AdminNotifyBanner from "../components/AdminNotifyBanner";
+import AdminInstallBar from "../components/AdminInstallBar";
 import { orderGoldWeight, orderTotalMoney, summarizeOrders } from "../utils/orderCalc";
 import { formatCashStatus } from "../utils/balanceFormat";
 import { remainingFromOrder } from "../utils/orderCountdown";
@@ -170,19 +171,18 @@ function AdminPanel({ onLogout, identity }) {
       await registerNotifyServiceWorker();
       const perm = await ensureNotificationPermission();
       if (perm === "granted") {
-        const ok = await subscribeAdminPush();
-        if (!ok && info.secureContext) {
-          setPushHint(
-            [
-              "ثبت اعلان پس‌زمینه ناموفق بود — یک‌بار از پنل خارج شوید و دوباره وارد شوید.",
-              installTip,
-            ]
-              .filter(Boolean)
-              .join(" ")
-          );
-        } else if (ok && installTip) {
+        const push = await subscribeAdminPushDetailed();
+        if (!push.ok && info.secureContext) {
+          const why =
+            push.reason === "need-install"
+              ? "اعلان پس‌زمینه بعد از نصب اپ فعال می‌شود. منوی Chrome → Install app را بزنید (نه Add shortcut)."
+              : push.reason === "auth"
+                ? "نشست ادمین برای اعلان تازه نیست — یک‌بار خارج شوید و دوباره وارد شوید."
+                : "ثبت اعلان پس‌زمینه ناموفق بود. اول اپ را نصب کنید، بعد دوباره وارد شوید.";
+          setPushHint([why, installTip].filter(Boolean).join(" "));
+        } else if (push.ok && installTip) {
           setPushHint(installTip);
-        } else if (ok) {
+        } else if (push.ok) {
           setPushHint("");
         }
       } else if (perm === "denied") {
@@ -365,6 +365,7 @@ function AdminPanel({ onLogout, identity }) {
           }}
         />
       )}
+      <AdminInstallBar />
       {pushHint && <p className="admin-push-hint">{pushHint}</p>}
       {newOrderFlash && (
         <div className="new-order-flash">سفارش جدید دریافت شد</div>
@@ -567,23 +568,25 @@ function AdminPanel({ onLogout, identity }) {
 export default function AdminPage() {
   const [loggedIn, setLoggedIn] = useState(!!getAdminToken());
   const [identity, setIdentity] = useState(() => getAdminIdentity());
-  const [sessionReady, setSessionReady] = useState(!getAdminToken());
+  const [sessionReady, setSessionReady] = useState(false);
 
   useEffect(() => {
-    if (!loggedIn) {
-      setSessionReady(true);
-      return undefined;
-    }
     let cancelled = false;
-    setSessionReady(false);
+
+    function applySession(data) {
+      setIdentity({
+        is_super: data.is_super,
+        permissions: data.permissions || [],
+        display_name: data.display_name || "",
+      });
+      setLoggedIn(true);
+    }
+
+    // Cookie session covers iOS Safari vs home-screen PWA isolated localStorage.
     refreshAdminSession()
       .then((data) => {
         if (cancelled) return;
-        setIdentity({
-          is_super: data.is_super,
-          permissions: data.permissions || [],
-          display_name: data.display_name || "",
-        });
+        applySession(data);
         setSessionReady(true);
       })
       .catch((e) => {
@@ -600,11 +603,7 @@ export default function AdminPage() {
       refreshAdminSession()
         .then((data) => {
           if (cancelled) return;
-          setIdentity({
-            is_super: data.is_super,
-            permissions: data.permissions || [],
-            display_name: data.display_name || "",
-          });
+          applySession(data);
         })
         .catch((e) => {
           if (cancelled) return;
@@ -620,7 +619,7 @@ export default function AdminPage() {
       cancelled = true;
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [loggedIn]);
+  }, []);
 
   function handleLogout() {
     clearAdminToken();
@@ -632,12 +631,12 @@ export default function AdminPage() {
     setLoggedIn(true);
   }
 
-  if (!loggedIn) {
-    return <AdminLoginPage onLoggedIn={handleLoggedIn} />;
-  }
-
   if (!sessionReady) {
     return <p className="myorders__empty">در حال آماده‌سازی پنل…</p>;
+  }
+
+  if (!loggedIn) {
+    return <AdminLoginPage onLoggedIn={handleLoggedIn} />;
   }
 
   return <AdminPanel onLogout={handleLogout} identity={identity} />;

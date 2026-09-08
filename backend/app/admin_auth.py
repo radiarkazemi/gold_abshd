@@ -22,17 +22,56 @@ from datetime import datetime, timedelta
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException, Header
+from fastapi import Depends, HTTPException, Header, Request, Response
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
 from app.permissions import PERMISSION_SCOPES
 from app.services.admin_accounts import get_sub_admin
-from app.services.admin_devices import find_admin_device, touch_admin_device, count_admin_devices, register_or_touch_admin_device
+from app.services.admin_devices import find_admin_device, touch_admin_device, register_or_touch_admin_device
 
-# 12 hours - shorter-lived than user tokens
-ADMIN_TOKEN_EXPIRE_MINUTES = 12 * 60
+# 7 days — iPhone PWA / home-screen admins were getting kicked out
+# every launch because the old 12-hour JWT + isolated Safari storage
+# expired (or failed a device-id check) before they reopened the panel.
+ADMIN_TOKEN_EXPIRE_MINUTES = 7 * 24 * 60
+ADMIN_TOKEN_COOKIE = "goldapp_admin_token"
+ADMIN_DEVICE_COOKIE = "goldapp_admin_device"
+ADMIN_COOKIE_MAX_AGE = ADMIN_TOKEN_EXPIRE_MINUTES * 60
+
+
+def _cookie_secure() -> bool:
+    return not bool(getattr(settings, "DEBUG", False))
+
+
+def attach_admin_session(response: Response, token: str, device_id: str = "") -> None:
+    """Persist JWT + device id as cookies so iOS standalone PWA and Safari
+    share the same session when the cookie jar is shared."""
+    secure = _cookie_secure()
+    response.set_cookie(
+        ADMIN_TOKEN_COOKIE,
+        token,
+        max_age=ADMIN_COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        path="/",
+        secure=secure,
+    )
+    if device_id:
+        response.set_cookie(
+            ADMIN_DEVICE_COOKIE,
+            device_id,
+            max_age=ADMIN_COOKIE_MAX_AGE,
+            httponly=False,
+            samesite="lax",
+            path="/",
+            secure=secure,
+        )
+
+
+def clear_admin_session(response: Response) -> None:
+    response.delete_cookie(ADMIN_TOKEN_COOKIE, path="/")
+    response.delete_cookie(ADMIN_DEVICE_COOKIE, path="/")
 
 
 def verify_super_admin_credentials(username: str, password: str) -> bool:
@@ -98,17 +137,14 @@ def _ensure_admin_device_allowed(db: Session, payload: dict, device_id: str) -> 
     if find_admin_device(db, admin, device_id):
         touch_admin_device(db, admin, device_id)
         return
-    # Existing sessions before device limits: bind this browser on first use.
-    if count_admin_devices(db, admin) == 0:
-        register_or_touch_admin_device(db, admin, device_id)
-        return
-    raise HTTPException(
-        status_code=401,
-        detail="این نشست منقضی شده است. لطفا دوباره وارد شوید.",
-    )
+    # Safari vs iOS home-screen PWA often mint two device ids for the
+    # same person. Bind this one (evict oldest if over the limit)
+    # instead of forcing a full re-login.
+    register_or_touch_admin_device(db, admin, device_id)
 
 
 def get_current_admin(
+    request: Request,
     authorization: str | None = Header(default=None),
     x_admin_device_id: str | None = Header(default=None, alias="X-Admin-Device-Id"),
     db: Session = Depends(get_db),
@@ -117,12 +153,20 @@ def get_current_admin(
     the decoded token payload - {"username", "is_super", "admin_user_id",
     "permissions", ...} - so callers can check scope themselves, or use
     require_permission() below to enforce it declaratively."""
-    if not authorization or not authorization.startswith("Bearer "):
+    token = ""
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        token = (request.cookies.get(ADMIN_TOKEN_COOKIE) or "").strip()
+    if not token:
         raise HTTPException(
             status_code=401, detail="ابتدا به عنوان ادمین وارد شوید")
-    token = authorization.removeprefix("Bearer ").strip()
     payload = _decode_admin_token(token)
-    device_id = (x_admin_device_id or payload.get("device_id") or "").strip()
+    device_id = (
+        (x_admin_device_id or "").strip()
+        or (request.cookies.get(ADMIN_DEVICE_COOKIE) or "").strip()
+        or (payload.get("device_id") or "")
+    ).strip()
     _ensure_admin_device_allowed(db, payload, device_id)
     return payload
 

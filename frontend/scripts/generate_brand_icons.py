@@ -56,6 +56,27 @@ def content_layer(im: Image.Image) -> Image.Image:
     return im.crop((x0, y0, x1, y1))
 
 
+# Same splash color as the admin manifest. Opaque so Android/iOS do not
+# letterbox a tiny transparent mark or invent a gold "menu bar".
+ADMIN_BG = (18, 16, 11, 255)
+ADMIN_ICON_SCALE = 0.72
+
+
+def fit_on_admin_canvas(content: Image.Image, size: int, scale: float) -> Image.Image:
+    """Clean launcher icon: dark plate + the real logo, nothing else."""
+    canvas = Image.new("RGBA", (size, size), ADMIN_BG)
+    max_edge = max(1, int(size * scale))
+    cw, ch = content.size
+    ratio = min(max_edge / cw, max_edge / ch)
+    nw = max(1, int(round(cw * ratio)))
+    nh = max(1, int(round(ch * ratio)))
+    resized = content.resize((nw, nh), Image.Resampling.LANCZOS)
+    x = (size - nw) // 2
+    y = (size - nh) // 2
+    canvas.paste(resized, (x, y), resized)
+    return canvas
+
+
 def fit_on_canvas(content: Image.Image, size: int, scale: float) -> Image.Image:
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     max_edge = max(1, int(size * scale))
@@ -88,6 +109,14 @@ def main() -> None:
     ]
     for name, size, scale in specs:
         save(fit_on_canvas(content, size, scale), PUBLIC / name)
+
+    admin_specs = [
+        ("gt-admin-icon-192.png", 192, ADMIN_ICON_SCALE),
+        ("gt-admin-icon-512.png", 512, ADMIN_ICON_SCALE),
+        ("gt-admin-apple-touch-icon.png", 180, ADMIN_ICON_SCALE),
+    ]
+    for name, size, scale in admin_specs:
+        save(fit_on_admin_canvas(content, size, scale), PUBLIC / name)
 
     # Keep logo.png as the in-app artwork, but normalize transparent pixels.
     logo = clean_alpha(Image.open(SOURCE))

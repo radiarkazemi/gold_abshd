@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,7 @@ async def get_my_kyc_status(current_user: User = Depends(get_current_user)):
 
 @router.post("/api/kyc/submit", response_model=KycStatusOut)
 async def submit_my_kyc(
+    background_tasks: BackgroundTasks,
     id_front: UploadFile = File(..., description="عکس روی کارت ملی"),
     id_back: UploadFile = File(..., description="عکس پشت کارت ملی"),
     birth_cert: UploadFile = File(..., description="عکس صفحه اول شناسنامه"),
@@ -47,11 +48,8 @@ async def submit_my_kyc(
         "kyc_submitted_at": user.kyc_submitted_at.isoformat() if user.kyc_submitted_at else None,
     }
     await manager.broadcast_to_admins({"type": "new_kyc", "user": kyc_user_payload})
-    try:
-        from app.services import admin_push
-        admin_push.notify_new_kyc(db, kyc_user_payload)
-    except Exception:
-        pass
+    from app.services import admin_push
+    background_tasks.add_task(admin_push.notify_new_kyc_isolated, kyc_user_payload)
     return KycStatusOut(**status_payload(user))
 
 

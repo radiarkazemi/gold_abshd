@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, unlinkSync, mkdirSync, copyFileSync } from "node:fs";
 import { resolve, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -9,6 +9,9 @@ const BRAND_FILES = [
   "gt-icon-512.png",
   "gt-apple-touch-icon.png",
   "gt-favicon-64.png",
+  "gt-admin-apple-touch-icon.png",
+  "gt-admin-icon-192.png",
+  "gt-admin-icon-512.png",
 ];
 
 const LEGACY_DIST_ICONS = [
@@ -70,7 +73,7 @@ function hashAppBuild(rootDir, publicDir) {
   return hash.digest("hex").slice(0, 12);
 }
 
-const ADMIN_START_URL = "/admin-hs-panel?source=pwa";
+const ADMIN_START_URL = "/admin-hs-panel/?source=pwa";
 
 function brandIcons(brandVersion) {
   return [
@@ -101,47 +104,73 @@ function brandIcons(brandVersion) {
   ];
 }
 
+function adminBrandIcons(brandVersion) {
+  return [
+    {
+      src: `/gt-admin-icon-192.png?v=${brandVersion}`,
+      sizes: "192x192",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: `/gt-admin-icon-512.png?v=${brandVersion}`,
+      sizes: "512x512",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: `/gt-admin-apple-touch-icon.png?v=${brandVersion}`,
+      sizes: "180x180",
+      type: "image/png",
+      purpose: "any",
+    },
+  ];
+}
+
+function adminPwaManifest(brandVersion) {
+  // Chrome Android's ⋮ menu often reads origin /manifest.json, not the
+  // page <link rel="manifest">. Keep that file as the admin standalone app
+  // so the menu shows Install app (not Add shortcut).
+  return {
+    name: "پنل مدیریت قصر طلا",
+    short_name: "پنل قصر طلا",
+    description: "پنل مدیریت آبشده قصر طلا",
+    start_url: ADMIN_START_URL,
+    scope: "/",
+    display: "standalone",
+    orientation: "portrait",
+    background_color: "#12100b",
+    theme_color: "#12100b",
+    dir: "rtl",
+    lang: "fa",
+    id: "/admin-hs-panel/",
+    icons: adminBrandIcons(brandVersion),
+  };
+}
+
 function writeManifest(publicDir, brandVersion) {
-  const manifestPath = resolve(publicDir, "manifest.json");
-  const manifest = {
+  const adminManifest = adminPwaManifest(brandVersion);
+  writeFileSync(resolve(publicDir, "manifest.json"), `${JSON.stringify(adminManifest, null, 2)}\n`);
+  writeFileSync(resolve(publicDir, "admin-manifest.json"), `${JSON.stringify(adminManifest, null, 2)}\n`);
+
+  // Customer homepage only — not installable on Android (display:browser).
+  // iPhone still uses apple-touch-icon / apple-mobile-web-app-* on index.html.
+  const clientManifest = {
     name: "آبشده قصر طلا",
     short_name: "آبشده قصر طلا",
     description: "خرید و فروش آنلاین طلا",
     start_url: "/?source=pwa",
     scope: "/",
-    display: "standalone",
+    display: "browser",
     orientation: "portrait",
-    // Splash only. Do NOT ship maskable icons — Chrome fills those with this
-    // color and produces the black circular plate on Android shortcuts.
     background_color: "#12100b",
     theme_color: "#12100b",
     dir: "rtl",
     lang: "fa",
-    // Changing id when icons change nudges Chromium to refresh the installed icon.
     id: `/?brand=${brandVersion}`,
     icons: brandIcons(brandVersion),
   };
-  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  // Static HTTPS URL — Safari ignores blob: manifests for Add to Home Screen.
-  const adminManifestPath = resolve(publicDir, "admin-manifest.json");
-  const adminManifest = {
-    name: "پنل مدیریت قصر طلا",
-    short_name: "پنل قصر طلا",
-    description: "پنل مدیریت آبشده قصر طلا",
-    start_url: ADMIN_START_URL,
-    // Must prefix-match start_url (/admin-hs-panel?...) — trailing slash breaks install.
-    scope: "/admin-hs-panel",
-    display: "standalone",
-    orientation: "portrait",
-    background_color: "#12100b",
-    theme_color: "#12100b",
-    dir: "rtl",
-    lang: "fa",
-    id: `/admin-hs-panel?brand=${brandVersion}`,
-    icons: brandIcons(brandVersion),
-  };
-  writeFileSync(adminManifestPath, `${JSON.stringify(adminManifest, null, 2)}\n`);
+  writeFileSync(resolve(publicDir, "client-manifest.json"), `${JSON.stringify(clientManifest, null, 2)}\n`);
 }
 
 function writeBrandModule(srcDir, brandVersion, buildVersion) {
@@ -153,6 +182,9 @@ export const icon192Url = \`/gt-icon-192.png?v=\${BRAND_V}\`;
 export const icon512Url = \`/gt-icon-512.png?v=\${BRAND_V}\`;
 export const faviconUrl = \`/gt-favicon-64.png?v=\${BRAND_V}\`;
 export const appleTouchIconUrl = \`/gt-apple-touch-icon.png?v=\${BRAND_V}\`;
+export const adminAppleTouchIconUrl = \`/gt-admin-apple-touch-icon.png?v=\${BRAND_V}\`;
+export const adminIcon192Url = \`/gt-admin-icon-192.png?v=\${BRAND_V}\`;
+export const adminIcon512Url = \`/gt-admin-icon-512.png?v=\${BRAND_V}\`;
 export const manifestUrl = \`/manifest.json?v=\${BRAND_V}\`;
 export const adminManifestUrl = \`/admin-manifest.json?v=\${BRAND_V}\`;
 `;
@@ -175,6 +207,34 @@ function purgeLegacyIcons(dir) {
       console.log(`[brand-stamp] removed legacy ${name}`);
     }
   }
+}
+
+function publishAdminServiceWorker(publicDir, outDir) {
+  const src = resolve(publicDir, "sw-notify.js");
+  if (!existsSync(src)) return;
+  const destDir = resolve(outDir, "admin-hs-panel");
+  mkdirSync(destDir, { recursive: true });
+  copyFileSync(src, resolve(destDir, "sw.js"));
+}
+
+function writeAdminHtml(outDir, brandVersion) {
+  const indexPath = resolve(outDir, "index.html");
+  if (!existsSync(indexPath)) return;
+  let html = readFileSync(indexPath, "utf8");
+  html = html
+    .replace(/<title>[^<]*<\/title>/, "<title>پنل مدیریت قصر طلا</title>")
+    .replace(/href="\/(?:manifest|client-manifest|admin-manifest)\.json[^"]*"/, 'href="/admin-manifest.json"')
+    .replace(
+      /name="apple-mobile-web-app-title" content="[^"]*"/,
+      'name="apple-mobile-web-app-title" content="پنل قصر طلا"'
+    )
+    .replace(
+      /rel="apple-touch-icon" href="\/gt-apple-touch-icon\.png[^"]*"/,
+      'rel="apple-touch-icon" href="/gt-admin-apple-touch-icon.png"'
+    )
+    .replace(/<script>\(function\(\)\{var p=location\.pathname[\s\S]*?<\/script>\s*/g, "");
+  writeFileSync(resolve(outDir, "admin.html"), html);
+  console.log(`[brand-stamp] wrote admin.html (manifest v=${brandVersion})`);
 }
 
 /**
@@ -200,9 +260,10 @@ export function brandStampPlugin() {
       writeVersionFile(publicDir, brandVersion, buildVersion);
     },
     transformIndexHtml(html) {
-      const adminBootstrap = `<script>(function(){var p=location.pathname.replace(/\\/+$/, "")||"/";if(p!=="/admin-hs-panel")return;var link=document.querySelector('link[rel="manifest"]');if(link)link.href="/admin-manifest.json";document.title="پنل مدیریت قصر طلا";var appleTitle=document.querySelector('meta[name="apple-mobile-web-app-title"]');if(appleTitle)appleTitle.content="پنل قصر طلا";var appleIcon=document.querySelector('link[rel="apple-touch-icon"]');if(appleIcon)appleIcon.href="/gt-apple-touch-icon.png";})();</script>`;
+      const adminBootstrap = `<script>(function(){var p=location.pathname.replace(/\\/+$/, "")||"/";if(p!=="/admin-hs-panel")return;var link=document.querySelector('link[rel="manifest"]');if(link)link.href="/admin-manifest.json";document.title="پنل مدیریت قصر طلا";var appleTitle=document.querySelector('meta[name="apple-mobile-web-app-title"]');if(appleTitle)appleTitle.content="پنل قصر طلا";var appleIcon=document.querySelector('link[rel="apple-touch-icon"]');if(appleIcon){appleIcon.href="/gt-admin-apple-touch-icon.png";appleIcon.setAttribute("sizes","180x180");}})();</script>`;
       return html
-        .replaceAll('href="/manifest.json"', `href="/manifest.json?v=${brandVersion}"`)
+        .replaceAll('href="/client-manifest.json"', `href="/client-manifest.json?v=${brandVersion}"`)
+        .replaceAll('href="/manifest.json"', `href="/client-manifest.json?v=${brandVersion}"`)
         .replaceAll('href="/gt-favicon-64.png"', `href="/gt-favicon-64.png?v=${brandVersion}"`)
         .replaceAll('href="/gt-icon-192.png"', `href="/gt-icon-192.png?v=${brandVersion}"`)
         .replaceAll('href="/gt-icon-512.png"', `href="/gt-icon-512.png?v=${brandVersion}"`)
@@ -212,8 +273,8 @@ export function brandStampPlugin() {
           'href="/gt-apple-touch-icon.png"'
         )
         .replace(
-          `<link rel="manifest" href="/manifest.json?v=${brandVersion}" />`,
-          `<link rel="manifest" href="/manifest.json?v=${brandVersion}" />\n    ${adminBootstrap}`
+          `<link rel="manifest" href="/client-manifest.json?v=${brandVersion}" />`,
+          `<link rel="manifest" href="/client-manifest.json?v=${brandVersion}" />\n    ${adminBootstrap}`
         )
         .replace(
           "</head>",
@@ -226,6 +287,8 @@ export function brandStampPlugin() {
       if (existsSync(outDir)) {
         writeVersionFile(outDir, brandVersion, buildVersion);
         purgeLegacyIcons(outDir);
+        writeAdminHtml(outDir, brandVersion);
+        publishAdminServiceWorker(publicDir, outDir);
       }
     },
   };

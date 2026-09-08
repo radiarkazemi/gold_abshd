@@ -173,11 +173,7 @@ async def _price_cards_broadcaster_loop():
     last_payload = None
     while True:
         try:
-            db = SessionLocal()
-            try:
-                payload = price_cards.build_broadcast_payload(db)
-            finally:
-                db.close()
+            payload = price_cards.build_broadcast_payload()
 
             if payload != last_payload:
                 await manager.broadcast_price(payload)

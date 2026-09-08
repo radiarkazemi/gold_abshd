@@ -5,7 +5,14 @@
  * Safari (iOS) ignores blob: manifest URLs, so we point at a real static
  * `/admin-manifest.json` served over HTTPS.
  */
-import { adminManifestUrl, BRAND_V, APP_BUILD_V, appleTouchIconUrl } from "../brandAssets";
+const ADMIN_APPLE_ICON = "/gt-admin-apple-touch-icon.png";
+
+export const ADMIN_PANEL_PATH = "/admin-hs-panel";
+export const ADMIN_PANEL_SCOPE = "/admin-hs-panel/";
+
+export function isAdminPanelPath(pathname = typeof window !== "undefined" ? window.location.pathname : "") {
+  return String(pathname || "").replace(/\/+$/, "") === ADMIN_PANEL_PATH;
+}
 
 const MANIFEST_LINK_ID = "goldapp-manifest-link";
 
@@ -55,10 +62,10 @@ export function adminInstallHint() {
   if (typeof window === "undefined") return "";
   if (isAdminStandalone()) return "";
   if (isIosDevice()) {
-    return "نصب پنل روی صفحه اصلی آیفون: در Safari دکمه Share (□↑) → «Add to Home Screen» / «افزودن به صفحهٔ اصلی». حتماً از داخل خود پنل مدیریت این کار را بکنید تا میانبر مستقیم به پنل باز شود.";
+    return "آیفون: فقط از Safari روی همین صفحه، Share (□↑) → «Add to Home Screen». میانبر باید نام «پنل قصر طلا» باشد.";
   }
   if (/Android/i.test(navigator.userAgent || "")) {
-    return "برای اعلان وقتی گوشی قفل است، پنل را از منوی Chrome روی صفحهٔ اصلی نصب کنید (Add to Home screen / Install app).";
+    return "اندروید: منوی Chrome (⋮) → Install app. اگر فقط Add shortcut است، اپ مشتری روی این گوشی لازم نیست؛ Chrome → Settings → Site settings → ghasrtala.ir → Clear & reset، میانبرهای قدیمی را پاک کنید، Chrome را ببندید و همین صفحه را دوباره باز کنید.";
   }
   return "";
 }
@@ -87,7 +94,8 @@ export function applyAdminPwaManifest() {
     appleIcon.rel = "apple-touch-icon";
     document.head.appendChild(appleIcon);
   }
-  appleIcon.setAttribute("href", "/gt-apple-touch-icon.png");
+  appleIcon.setAttribute("href", ADMIN_APPLE_ICON);
+  appleIcon.setAttribute("sizes", "180x180");
 
   return () => {
     if (previousHref) link.setAttribute("href", previousHref);
