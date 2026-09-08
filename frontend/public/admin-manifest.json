@@ -3,7 +3,7 @@
   "short_name": "پنل قصر طلا",
   "description": "پنل مدیریت آبشده قصر طلا",
   "start_url": "/admin-hs-panel/?source=pwa",
-  "scope": "/admin-hs-panel/",
+  "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
   "prefer_related_applications": false,

@@ -4,6 +4,7 @@ import "./index.css";
 import App from "./App.jsx";
 import { APP_BUILD_V, BRAND_V } from "./brandAssets.js";
 import { applyAdminPwaManifest, isAdminPanelPath, ADMIN_PANEL_SCOPE } from "./utils/adminManifest.js";
+
 import { signalAppUpdateAvailable, APPLIED_UPDATE_KEY } from "./components/UpdatePrompt.jsx";
 
 // Admin PWA: swap manifest/title before React mounts (Safari reads head early).
@@ -37,25 +38,30 @@ if (typeof window !== "undefined") {
 }
 
 // Register SW with the deploy build id so every code release can be detected.
-// Do NOT auto-reload — show an in-app update prompt instead (keeps login).
+// Admin uses the same root SW as the rest of the site. A nested admin-only
+// worker left the page uncontrolled, so Android offered only a shortcut.
+// Do NOT auto-reload on updates — show an in-app prompt (keeps login).
 if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
-  const adminPanel = typeof window !== "undefined" && isAdminPanelPath();
-  const swUrl = adminPanel
-    ? `/admin-hs-panel/sw.js?v=${APP_BUILD_V || BRAND_V}`
-    : `/sw-notify.js?v=${APP_BUILD_V || BRAND_V}`;
-  const swScope = adminPanel ? ADMIN_PANEL_SCOPE : "/";
-  if (adminPanel) {
-    navigator.serviceWorker.getRegistrations().then((regs) => {
-      for (const reg of regs) {
-        try {
-          if (new URL(reg.scope).pathname === "/") reg.unregister();
-        } catch {
-          /* ignore */
-        }
+  const swUrl = `/sw-notify.js?v=${APP_BUILD_V || BRAND_V}`;
+  const ready = navigator.serviceWorker.register(swUrl, { scope: "/", updateViaCache: "none" }).catch(() => null);
+  if (typeof window !== "undefined" && isAdminPanelPath()) {
+    ready?.then(async (reg) => {
+      if (!reg) return;
+      try {
+        await navigator.serviceWorker.ready;
+      } catch {
+        return;
       }
-    }).catch(() => {});
+      if (navigator.serviceWorker.controller) return;
+      try {
+        if (sessionStorage.getItem("goldapp_admin_sw_kick") === (APP_BUILD_V || BRAND_V)) return;
+        sessionStorage.setItem("goldapp_admin_sw_kick", APP_BUILD_V || BRAND_V);
+      } catch {
+        return;
+      }
+      window.location.reload();
+    });
   }
-  const ready = navigator.serviceWorker.register(swUrl, { scope: swScope, updateViaCache: "none" }).catch(() => null);
   ready?.then((reg) => {
     if (!reg) return;
     const ping = () => reg.update().catch(() => {});

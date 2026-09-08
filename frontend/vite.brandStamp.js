@@ -135,7 +135,9 @@ function writeManifest(publicDir, brandVersion) {
     description: "خرید و فروش آنلاین طلا",
     start_url: "/?source=pwa",
     scope: "/",
-    display: "standalone",
+    // Browser-only: a standalone customer PWA with scope "/" made Android
+    // refuse a second real install and only offer "Add shortcut" for admin.
+    display: "browser",
     orientation: "portrait",
     // Splash only. Do NOT ship maskable icons — Chrome fills those with this
     // color and produces the black circular plate on Android shortcuts.
@@ -156,9 +158,10 @@ function writeManifest(publicDir, brandVersion) {
     short_name: "پنل قصر طلا",
     description: "پنل مدیریت آبشده قصر طلا",
     start_url: ADMIN_START_URL,
-    // Directory scope so a dedicated SW at /admin-hs-panel/sw.js can control it.
-    // The customer app uses scope "/" — that overlap made Chrome add a shortcut.
-    scope: "/admin-hs-panel/",
+    // Same-origin as the site, scope "/" — this is the install path Chrome
+    // already accepted for the customer app. A nested /admin-hs-panel/ scope
+    // plus a second SW made Android drop Install and leave only a shortcut.
+    scope: "/",
     display: "standalone",
     orientation: "portrait",
     background_color: "#12100b",
