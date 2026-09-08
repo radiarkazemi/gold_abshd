@@ -27,10 +27,10 @@ async def get_my_kyc_status(current_user: User = Depends(get_current_user)):
 
 @router.post("/api/kyc/submit", response_model=KycStatusOut)
 async def submit_my_kyc(
+    background_tasks: BackgroundTasks,
     id_front: UploadFile = File(..., description="عکس روی کارت ملی"),
     id_back: UploadFile = File(..., description="عکس پشت کارت ملی"),
     birth_cert: UploadFile = File(..., description="عکس صفحه اول شناسنامه"),
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
