@@ -7,6 +7,13 @@
  */
 const ADMIN_APPLE_ICON = "/gt-admin-apple-touch-icon.png";
 
+export const ADMIN_PANEL_PATH = "/admin-hs-panel";
+export const ADMIN_PANEL_SCOPE = "/admin-hs-panel/";
+
+export function isAdminPanelPath(pathname = typeof window !== "undefined" ? window.location.pathname : "") {
+  return String(pathname || "").replace(/\/+$/, "") === ADMIN_PANEL_PATH;
+}
+
 const MANIFEST_LINK_ID = "goldapp-manifest-link";
 
 function ensureManifestLink() {
@@ -58,7 +65,7 @@ export function adminInstallHint() {
     return "آیفون: فقط از Safari روی همین صفحه، Share (□↑) → «Add to Home Screen». میانبر باید نام «پنل قصر طلا» باشد.";
   }
   if (/Android/i.test(navigator.userAgent || "")) {
-    return "اندروید: دکمه «نصب اپ پنل» را بزنید. اگر Chrome دو گزینه داد، فقط Install را بزنید — Create shortcut را نزنید.";
+    return "اندروید: میانبر قدیمی را پاک کنید، این صفحه را ببندید و دوباره از آدرس پنل باز کنید. بعد دکمه «نصب اپ پنل» را بزنید. اگر Chrome هنوز فقط shortcut ساخت، اپ مشتری «آبشده قصر طلا» را هم uninstall کنید — scope آن کل سایت است و نصب پنل را قفل می‌کند.";
   }
   return "";
 }

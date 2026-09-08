@@ -13,9 +13,10 @@
 
 import { icon192Url, APP_BUILD_V, BRAND_V } from "../brandAssets";
 import { API_BASE, adminAuthHeaders } from "../api";
+import { ADMIN_PANEL_SCOPE, isAdminPanelPath } from "./adminManifest";
 
 const PERMISSION_ASKED_KEY = "goldapp_admin_notify_asked";
-const ADMIN_PATH = "/admin-hs-panel";
+const ADMIN_PATH = ADMIN_PANEL_SCOPE;
 
 export function notificationsSupported() {
   return typeof window !== "undefined" && "Notification" in window;
@@ -242,8 +243,12 @@ export async function registerNotifyServiceWorker() {
     return null;
   }
   try {
-    const reg = await navigator.serviceWorker.register(`/sw-notify.js?v=${APP_BUILD_V || BRAND_V}`, {
-      scope: "/",
+    const adminPanel = isAdminPanelPath();
+    const swUrl = adminPanel
+      ? `/admin-hs-panel/sw.js?v=${APP_BUILD_V || BRAND_V}`
+      : `/sw-notify.js?v=${APP_BUILD_V || BRAND_V}`;
+    const reg = await navigator.serviceWorker.register(swUrl, {
+      scope: adminPanel ? ADMIN_PANEL_SCOPE : "/",
       updateViaCache: "none",
     });
     try {

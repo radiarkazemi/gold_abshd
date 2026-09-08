@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, unlinkSync, mkdirSync, copyFileSync } from "node:fs";
 import { resolve, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -73,7 +73,7 @@ function hashAppBuild(rootDir, publicDir) {
   return hash.digest("hex").slice(0, 12);
 }
 
-const ADMIN_START_URL = "/admin-hs-panel?source=pwa";
+const ADMIN_START_URL = "/admin-hs-panel/?source=pwa";
 
 function brandIcons(brandVersion) {
   return [
@@ -156,15 +156,16 @@ function writeManifest(publicDir, brandVersion) {
     short_name: "پنل قصر طلا",
     description: "پنل مدیریت آبشده قصر طلا",
     start_url: ADMIN_START_URL,
-    // Must prefix-match start_url (/admin-hs-panel?...) — trailing slash breaks install.
-    scope: "/admin-hs-panel",
+    // Directory scope so a dedicated SW at /admin-hs-panel/sw.js can control it.
+    // The customer app uses scope "/" — that overlap made Chrome add a shortcut.
+    scope: "/admin-hs-panel/",
     display: "standalone",
     orientation: "portrait",
     background_color: "#12100b",
     theme_color: "#12100b",
     dir: "rtl",
     lang: "fa",
-    id: `/admin-hs-panel?brand=${brandVersion}`,
+    id: "ghasrtala-admin-panel",
     display_override: ["standalone", "minimal-ui"],
     prefer_related_applications: false,
     icons: adminBrandIcons(brandVersion),
@@ -206,6 +207,34 @@ function purgeLegacyIcons(dir) {
       console.log(`[brand-stamp] removed legacy ${name}`);
     }
   }
+}
+
+function publishAdminServiceWorker(publicDir, outDir) {
+  const src = resolve(publicDir, "sw-notify.js");
+  if (!existsSync(src)) return;
+  const destDir = resolve(outDir, "admin-hs-panel");
+  mkdirSync(destDir, { recursive: true });
+  copyFileSync(src, resolve(destDir, "sw.js"));
+}
+
+function writeAdminHtml(outDir, brandVersion) {
+  const indexPath = resolve(outDir, "index.html");
+  if (!existsSync(indexPath)) return;
+  let html = readFileSync(indexPath, "utf8");
+  html = html
+    .replace(/<title>[^<]*<\/title>/, "<title>پنل مدیریت قصر طلا</title>")
+    .replace(/href="\/manifest\.json[^"]*"/, 'href="/admin-manifest.json"')
+    .replace(
+      /name="apple-mobile-web-app-title" content="[^"]*"/,
+      'name="apple-mobile-web-app-title" content="پنل قصر طلا"'
+    )
+    .replace(
+      /rel="apple-touch-icon" href="\/gt-apple-touch-icon\.png[^"]*"/,
+      'rel="apple-touch-icon" href="/gt-admin-apple-touch-icon.png"'
+    )
+    .replace(/<script>\(function\(\)\{var p=location\.pathname[\s\S]*?<\/script>\s*/g, "");
+  writeFileSync(resolve(outDir, "admin.html"), html);
+  console.log(`[brand-stamp] wrote admin.html (manifest v=${brandVersion})`);
 }
 
 /**
@@ -257,6 +286,8 @@ export function brandStampPlugin() {
       if (existsSync(outDir)) {
         writeVersionFile(outDir, brandVersion, buildVersion);
         purgeLegacyIcons(outDir);
+        writeAdminHtml(outDir, brandVersion);
+        publishAdminServiceWorker(publicDir, outDir);
       }
     },
   };

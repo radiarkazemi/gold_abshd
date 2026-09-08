@@ -25,7 +25,7 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(fetch(event.request));
 });
 
-const ADMIN_PATH = "/admin-hs-panel";
+const ADMIN_PATH = "/admin-hs-panel/";
 
 function absoluteUrl(path) {
   try {

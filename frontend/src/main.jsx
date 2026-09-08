@@ -3,14 +3,23 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.jsx";
 import { APP_BUILD_V, BRAND_V } from "./brandAssets.js";
-import { applyAdminPwaManifest } from "./utils/adminManifest.js";
+import { applyAdminPwaManifest, isAdminPanelPath, ADMIN_PANEL_SCOPE } from "./utils/adminManifest.js";
 import { signalAppUpdateAvailable, APPLIED_UPDATE_KEY } from "./components/UpdatePrompt.jsx";
 
 // Admin PWA: swap manifest/title before React mounts (Safari reads head early).
+// Keep a trailing slash so the URL stays inside scope /admin-hs-panel/.
 if (typeof window !== "undefined") {
-  const path = window.location.pathname.replace(/\/+$/, "") || "/";
-  if (path === "/admin-hs-panel") {
+  if (isAdminPanelPath()) {
     applyAdminPwaManifest();
+    try {
+      const url = new URL(window.location.href);
+      if (url.pathname !== ADMIN_PANEL_SCOPE) {
+        url.pathname = ADMIN_PANEL_SCOPE;
+        window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+      }
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -30,8 +39,23 @@ if (typeof window !== "undefined") {
 // Register SW with the deploy build id so every code release can be detected.
 // Do NOT auto-reload — show an in-app update prompt instead (keeps login).
 if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
-  const swUrl = `/sw-notify.js?v=${APP_BUILD_V || BRAND_V}`;
-  const ready = navigator.serviceWorker.register(swUrl, { scope: "/" }).catch(() => null);
+  const adminPanel = typeof window !== "undefined" && isAdminPanelPath();
+  const swUrl = adminPanel
+    ? `/admin-hs-panel/sw.js?v=${APP_BUILD_V || BRAND_V}`
+    : `/sw-notify.js?v=${APP_BUILD_V || BRAND_V}`;
+  const swScope = adminPanel ? ADMIN_PANEL_SCOPE : "/";
+  if (adminPanel) {
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      for (const reg of regs) {
+        try {
+          if (new URL(reg.scope).pathname === "/") reg.unregister();
+        } catch {
+          /* ignore */
+        }
+      }
+    }).catch(() => {});
+  }
+  const ready = navigator.serviceWorker.register(swUrl, { scope: swScope, updateViaCache: "none" }).catch(() => null);
   ready?.then((reg) => {
     if (!reg) return;
     const ping = () => reg.update().catch(() => {});
