@@ -127,7 +127,7 @@ export default function AdminLoginPage({ onLoggedIn }) {
         <p className="login__subtitle">آبشده قصر طلا — پنل مدیریت</p>
 
         <AdminInstallBar />
-        {adminInstallHint() && !isAdminStandalone() && (
+        {adminInstallHint() && !isAdminStandalone() && !/Android/i.test(navigator.userAgent || "") && (
           <p className="login__install-hint">{adminInstallHint()}</p>
         )}
 
