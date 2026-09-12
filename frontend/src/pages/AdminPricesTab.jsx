@@ -604,9 +604,8 @@ export default function AdminPricesTab() {
     return <p className="myorders__empty">در حال بارگذاری…</p>;
   }
 
+  // Show every goldbridge/special card again; only sort so 1013 stays first.
   const sortedCards = sortPriceCards(cards);
-  const mainCards = sortedCards.filter((c) => priceCardRank(c) <= 3);
-  const extraCards = sortedCards.filter((c) => priceCardRank(c) > 3);
   const anyOrderable = sortedCards.some((c) => c.orderable_buy || c.orderable_sell);
 
   function renderCard(c) {
@@ -814,17 +813,8 @@ export default function AdminPricesTab() {
       </p>
 
       <div className="admin-prices__grid">
-        {mainCards.map(renderCard)}
+        {sortedCards.map(renderCard)}
       </div>
-
-      {extraCards.length > 0 && (
-        <details className="admin-prices__extras">
-          <summary>سایر کارت‌های منبع ({extraCards.length})</summary>
-          <div className="admin-prices__grid admin-prices__grid--extras">
-            {extraCards.map(renderCard)}
-          </div>
-        </details>
-      )}
     </div>
   );
 }
