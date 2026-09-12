@@ -7,7 +7,6 @@ import {
   SOURCE_MIRROR_ITEM_ID,
   isFarshadTradeTile,
   isFarshadHiddenMaster,
-  priceCardRank,
   sortPriceCards,
 } from "../utils/priceCardIds";
 import {
@@ -62,17 +61,29 @@ function syncMirroredCardQuotes(cards) {
   if (!source) return cards;
   const mirroredMode =
     source.use_manual_price || source.price_source === "manual" ? "manual" : "live";
-  // Mirrored formulas use raw id:1 buy (or typed manual), not the shop-padded customer quote.
-  const buy = Number(
-    mirroredMode === "manual"
-      ? source.buy
-      : source.live_buy ?? source.farshad_buy ?? source.buy
-  );
+  // Previous formula base = raw id:1 buy (live Farshad quote or typed manual).
+  // Never use the shop-padded customer quote, and never follow id:1013.
+  let buy;
+  if (mirroredMode === "manual") {
+    buy = Number(source.buy);
+  } else {
+    buy = Number(source.live_buy ?? source.farshad_buy);
+    if (!(buy > 0) && source.buy != null) {
+      const padded = Number(source.buy);
+      const margin = Number(source.shop_margin_toman) || 0;
+      buy = margin > 0 ? padded - margin : padded;
+    }
+  }
   if (!(buy > 0)) return cards;
   return cards.map((c) => {
     const id = Number(c.goldbridge_item_id);
     if (id !== SPECIAL_MOTAFEREGHE_ID && id !== SPECIAL_NAGHD_KARTKHAN_ID) return c;
-    if (Number(c.buy) === buy && Number(c.sell) === buy && c.mirrored_source_mode === mirroredMode) {
+    if (
+      Number(c.buy) === buy
+      && Number(c.sell) === buy
+      && c.mirrored_source_mode === mirroredMode
+      && Number(c.price_source_item_id) === SOURCE_MIRROR_ITEM_ID
+    ) {
       return c;
     }
     return {
@@ -80,7 +91,9 @@ function syncMirroredCardQuotes(cards) {
       buy,
       sell: buy,
       price_source: "mirrored",
+      price_source_item_id: SOURCE_MIRROR_ITEM_ID,
       mirrored_source_mode: mirroredMode,
+      shop_margin_toman: 0,
     };
   });
 }

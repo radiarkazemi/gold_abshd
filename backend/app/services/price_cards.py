@@ -771,8 +771,14 @@ def _apply_mirrored_structure(card, source_resolved: dict) -> dict:
     if card.display_name:
         out["name"] = card.display_name
     out["price_source"] = "mirrored"
-    out["mirrored_from"] = int(card.price_source_item_id)
+    # Actual formula source (id:1 for specials), not a stale/wrong ORM pointer.
+    out["mirrored_from"] = int(
+        source_resolved.get("goldbridge_item_id")
+        or getattr(card, "price_source_item_id", None)
+        or DEFAULT_PRICE_SOURCE_ITEM_ID
+    )
     out["mirrored_source_mode"] = source_resolved.get("price_source") or "live"
+    out["shop_margin_toman"] = 0
     out["allow_buy"] = True
     out["allow_sell"] = True
     out["active"] = True
@@ -813,25 +819,40 @@ def resolve_effective_item(
     Unticking it returns every card — including متفرقه / نقد کارتخوان —
     to the goldbridge quote immediately.
 
-    Mirrored cards (price_source_item_id, e.g. متفرقه / نقد کارتخوان)
-    follow the *effective* source card: id:1 live when that flag is
-    off, id:1 typed buy when it is on.
+    متفرقه / نقد کارتخوان ALWAYS mirror id:1 (raw live buy or typed
+    manual buy) — never id:1013 and never the shop-padded customer
+    quote. Formulas stay:
+      متفرقه:       (id:1 buy + commission) / 4.39
+      نقد کارتخوان: (id:1 buy + commission) + 100_000
     """
-    source_id = getattr(card, "price_source_item_id", None) if card else None
+    is_special_mirror = bool(
+        card
+        and (is_motaferaghe_card(card.goldbridge_item_id) or is_naghd_kartkhan_card(card.goldbridge_item_id))
+    )
+    # Hard-lock specials to id:1 even if a row was pointed at 1013.
+    source_id = DEFAULT_PRICE_SOURCE_ITEM_ID if is_special_mirror else (
+        getattr(card, "price_source_item_id", None) if card else None
+    )
     if source_id:
         source_live = _latest_items.get(int(source_id))
-        if source_card is not None:
+        if is_special_mirror:
+            # Prefer the real id:1 ORM row over a stale/wrong source_card.
+            if source_card is not None and int(getattr(source_card, "goldbridge_item_id", 0) or 0) == int(source_id):
+                src_card = _snapshot_price_card(source_card)
+            elif _manual_quote_for(int(source_id)) is not None:
+                src_card = None
+            elif db is not None:
+                src_card = _get_price_card_row(int(source_id), db)
+            else:
+                src_card = None
+        elif source_card is not None:
             src_card = _snapshot_price_card(source_card)
         elif _manual_quote_for(int(source_id)) is not None:
-            # Fresh typed manuals are already in memory — skip a Postgres round-trip.
             src_card = None
         else:
             src_card = _get_price_card_row(int(source_id), db)
-        buy_only = bool(
-            card
-            and (is_motaferaghe_card(card.goldbridge_item_id) or is_naghd_kartkhan_card(card.goldbridge_item_id))
-        )
-        if buy_only:
+
+        if is_special_mirror:
             base_buy, mode = _mirror_base_buy(src_card, source_live, source_id=int(source_id))
             if base_buy is None:
                 return None
@@ -847,6 +868,7 @@ def resolve_effective_item(
                 "allow_sell": True,
                 "active": True,
                 "price_source": mode,
+                "shop_margin_toman": 0,
             }
             return _apply_mirrored_structure(card, source_resolved)
 
