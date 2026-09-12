@@ -19,6 +19,7 @@ const TYPE_LABEL = { 1: "طلا (گرم/عیار)", 2: "سکه" };
 const SPECIAL_MOTAFEREGHE_ID = 900001;
 const SPECIAL_NAGHD_KARTKHAN_ID = 900002;
 const SOURCE_MIRROR_ITEM_ID = 1;
+const FARSHAD_TRADE_CASH_ITEM_ID = 1013;
 
 /** Visible quote origin for every admin card. */
 function quoteStatus(card) {
@@ -42,10 +43,15 @@ function syncMirroredCardQuotes(cards) {
   if (!Array.isArray(cards)) return cards;
   const source = cards.find((c) => Number(c.goldbridge_item_id) === SOURCE_MIRROR_ITEM_ID);
   if (!source) return cards;
-  const buy = Number(source.buy);
-  if (!(buy > 0)) return cards;
   const mirroredMode =
     source.use_manual_price || source.price_source === "manual" ? "manual" : "live";
+  // Mirrored formulas use raw id:1 buy (or typed manual), not the shop-padded customer quote.
+  const buy = Number(
+    mirroredMode === "manual"
+      ? source.buy
+      : source.live_buy ?? source.farshad_buy ?? source.buy
+  );
+  if (!(buy > 0)) return cards;
   return cards.map((c) => {
     const id = Number(c.goldbridge_item_id);
     if (id !== SPECIAL_MOTAFEREGHE_ID && id !== SPECIAL_NAGHD_KARTKHAN_ID) return c;
@@ -582,6 +588,8 @@ export default function AdminPricesTab() {
   }
 
   const anyOrderable = cards.some((c) => c.orderable_buy || c.orderable_sell);
+  const tradeTile = cards.find((c) => Number(c.goldbridge_item_id) === FARSHAD_TRADE_CASH_ITEM_ID) || cards.find((c) => c.is_farshad_trade_tile);
+  const hedgeMargin = Number(tradeTile?.shop_margin_toman || cards.find((c) => c.shop_margin_toman > 0)?.shop_margin_toman || 0);
 
   return (
     <div className="admin-prices">
@@ -596,6 +604,19 @@ export default function AdminPricesTab() {
         </div>
       </div>
 
+      {tradeTile && (
+        <div className={`admin-prices__hedge ${tradeTile.stale ? "is-stale" : ""}`}>
+          <strong>{tradeTile.display_name || tradeTile.name || "نقدی یکشنبه"}</strong>
+          <span>id:{tradeTile.goldbridge_item_id}</span>
+          <span>میان فرشاد: {fa(tradeTile.base_price)}</span>
+          <span>کمیسیون فرشاد: {fa(tradeTile.farshad_commission)}</span>
+          <span>حاشیه ما: {fa(hedgeMargin)}</span>
+          <span>بخرید مشتری (خام): {fa(tradeTile.buy)}</span>
+          <span>بفروشید مشتری (خام): {fa(tradeTile.sell)}</span>
+          {tradeTile.stale && <span className="admin-prices__stale-badge">نقل‌قول کهنه</span>}
+        </div>
+      )}
+
       {!anyOrderable && (
         <p className="price-cards-admin__warning">
           در حال حاضر هیچ کارتی برای خرید یا فروش فعال نیست - مشتریان نمی‌توانند سفارش ثبت کنند.
@@ -603,10 +624,10 @@ export default function AdminPricesTab() {
       )}
 
       <p className="price-cards-admin__hint">
-        «نمایش به مشتری» یعنی قیمت این کارت روی صفحه اصلی نشان داده می‌شود.
-        دکمه‌های «خرید» و «فروش» مستقل از هم هستند. کمیسیون هر دسته‌بندی روی همین کارت قابل تنظیم روزانه است.
-        کارت‌های «متفرقه» و «نقد کارتخوان» قیمت را از آیتم id:1 می‌گیرند — اگر id:1 دستی شود، همین فرمول‌ها روی خرید/فروش دستی id:1 اعمال می‌شود (نقد کارتخوان = قیمت نهایی id:1 پس از کارمزد + ۱۰۰٬۰۰۰ تومان).
-        کارمزد/اختلاف هر دسته‌بندی را روی همان کارت تنظیم کنید — مقدار ذخیره‌شده همان تومان/درصدی است که وارد می‌کنید (مثلاً ۱۰۰٬۰۰۰)، و به پیش‌فرض نقش برنمی‌گردد.
+        کاشی معامله فرشاد «نقدی یکشنبه» = id:1013 (نه id:1 «نقد یکشنبه» که مستر غیرفعال است).
+        goldbridge دیگر ۱۰٬۰۰۰ تومان حاشیه فروشگاه را اضافه نمی‌کند؛ آن حاشیه روی قیمت زنده همین‌جا اعمال می‌شود، بعد کارمزد دسته‌بندی.
+        «متفرقه» و «نقد کارتخوان» همچنان از بخریدِ خام id:1 (زنده یا دستی) می‌آیند — فرمول‌ها عوض نشده.
+        کارمزد/اختلاف هر دسته‌بندی را روی همان کارت تنظیم کنید.
       </p>
 
       <div className="admin-prices__grid">
@@ -632,7 +653,14 @@ export default function AdminPricesTab() {
           return (
           <div key={c.goldbridge_item_id} className={`admin-price-card ${!c.active && !isMirrored ? "admin-price-card--inactive" : ""}`}>
             <div className="admin-price-card__top">
-              <span className="admin-price-card__name">{c.display_name}</span>
+              <span className="admin-price-card__name">
+                {c.display_name}
+                {c.is_farshad_trade_tile || Number(c.goldbridge_item_id) === FARSHAD_TRADE_CASH_ITEM_ID
+                  ? " · کاشی معامله فرشاد"
+                  : Number(c.goldbridge_item_id) === SOURCE_MIRROR_ITEM_ID
+                    ? " · مستر مخفی"
+                    : ""}
+              </span>
               <span className={`admin-price-card__quote-status is-${status.kind}`}>
                 {status.label}
               </span>
@@ -763,8 +791,22 @@ export default function AdminPricesTab() {
               />
             </div>
 
+            {!isMirrored && (c.base_price != null || c.farshad_commission != null || c.stale) && (
+              <div className="admin-price-card__farshad">
+                {c.stale && <span className="admin-prices__stale-badge">کهنه</span>}
+                {c.base_price != null && <span>میان: {fa(c.base_price)}</span>}
+                {c.farshad_commission != null && <span>سود فرشاد: {fa(c.farshad_commission)}</span>}
+                {c.shop_margin_toman > 0 && c.price_source === "live" && (
+                  <span>حاشیه ما: {fa(c.shop_margin_toman)}</span>
+                )}
+                {c.farshad_buy != null && c.price_source === "live" && (
+                  <span>فرشاد بخرید/بفروشید: {fa(c.farshad_buy)} / {fa(c.farshad_sell)}</span>
+                )}
+              </div>
+            )}
+
             <div className="admin-price-card__footer">
-              <span>id: {c.goldbridge_item_id}</span>
+              <span>id: {c.goldbridge_item_id}{c.related_id != null ? ` → related ${c.related_id}` : ""}</span>
             </div>
           </div>
           );

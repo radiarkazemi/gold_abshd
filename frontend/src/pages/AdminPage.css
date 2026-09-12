@@ -1292,6 +1292,32 @@
   font-weight: 700;
 }
 
+.admin-prices__hedge {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+  background: rgba(201, 162, 39, 0.08);
+  border: 1px solid rgba(201, 162, 39, 0.28);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+
+.admin-prices__hedge.is-stale {
+  border-color: rgba(200, 80, 50, 0.45);
+}
+
+.admin-price-card__farshad {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 11px;
+  color: var(--text-faint);
+  padding: 0 2px 6px;
+}
+
 .admin-prices__grid {
   display: grid;
   grid-template-columns: 1fr;
