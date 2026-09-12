@@ -41,6 +41,7 @@ class AdminPriceCardOut(BaseModel):
     related_id: int | None = None
     related_diff: float | None = None
     is_farshad_trade_tile: bool = False
+    is_farshad_hidden_master: bool = False
     # Role commission overrides for this card: [{role_id, role_name, commission_type, commission_value}]
     role_commissions: list[dict] = []
 

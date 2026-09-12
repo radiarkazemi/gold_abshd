@@ -4,6 +4,8 @@ import { fetchOrders, decideOrder, fetchAdminUsers, fetchTradingStatus, updateTr
 import { orderGoldWeight, orderTotalMoney } from "../utils/orderCalc";
 import PendingCountdown from "../components/PendingCountdown";
 import { orderPriceChangeLabel } from "../utils/orderPriceChange";
+import QuotePair from "../components/QuotePair";
+import { FARSHAD_TRADE_CASH_ITEM_ID } from "../utils/priceCardIds";
 
 const SIDE_LABEL = { buy: "خرید مشتری از ما", sell: "فروش مشتری به ما" };
 
@@ -129,6 +131,11 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
   }
 
   const blockedCount = users.filter((u) => u.is_blocked).length;
+  const liveCard =
+    liveCards.find((c) => Number(c.goldbridge_item_id) === FARSHAD_TRADE_CASH_ITEM_ID)
+    || liveCards.find((c) => c.is_primary)
+    || liveCards[0]
+    || null;
 
   const kpis = [
     { label: "سفارش‌های در انتظار", value: pending.length, color: "var(--gold-bright)" },
@@ -252,6 +259,16 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
           </label>
         </div>
       </div>
+
+      {liveCard && (
+        <div className="dashboard__live-quote">
+          <div className="dashboard__live-quote-head">
+            <strong>{liveCard.name || "نقدی یکشنبه"}</strong>
+            <span>کارت اصلی · مثقال ۱۷</span>
+          </div>
+          <QuotePair buy={liveCard.buy_price} sell={liveCard.sell_price} size="lg" />
+        </div>
+      )}
 
       <div className="dashboard__kpi-grid">
         {kpis.map((k) => (

@@ -140,6 +140,14 @@ def test_mirrored_cards_use_raw_id1_buy_not_shop_padded():
     assert mota_out["mirrored_source_mode"] == "live"
 
 
+def test_card_list_rank_puts_trade_tile_first():
+    ranked = sorted(
+        [1, 50, 1013, 900002, 900001],
+        key=lambda i: price_cards.card_list_rank(i, 0, in_use=i in {50}),
+    )
+    assert ranked == [1013, 900001, 900002, 1, 50]
+
+
 def test_coins_do_not_get_shop_margin():
     src = type("C", (), {
         "goldbridge_item_id": 50,

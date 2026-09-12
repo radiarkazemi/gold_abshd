@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { TEHRAN_TZ } from "../utils/tehranTime";
+import { formatTomanFa } from "../utils/formatFa";
+import {
+  SPECIAL_MOTAFEREGHE_ID,
+  SPECIAL_NAGHD_KARTKHAN_ID,
+  SOURCE_MIRROR_ITEM_ID,
+  isFarshadTradeTile,
+  isFarshadHiddenMaster,
+  priceCardRank,
+  sortPriceCards,
+} from "../utils/priceCardIds";
 import {
   fetchAdminPriceCards,
   setPriceCardEnabled,
@@ -9,17 +19,24 @@ import {
   setPriceCardRoleCommission,
 } from "../api";
 import FormattedNumberInput from "../components/FormattedNumberInput";
+import QuotePair from "../components/QuotePair";
+import FarshadQuoteBreakdown, { hasFarshadQuote } from "../components/FarshadQuoteBreakdown";
 
-function fa(n, opts) {
-  if (n == null) return "—";
-  return Number(n).toLocaleString("fa-IR", opts);
-}
+const fa = formatTomanFa;
 
 const TYPE_LABEL = { 1: "طلا (گرم/عیار)", 2: "سکه" };
-const SPECIAL_MOTAFEREGHE_ID = 900001;
-const SPECIAL_NAGHD_KARTKHAN_ID = 900002;
-const SOURCE_MIRROR_ITEM_ID = 1;
-const FARSHAD_TRADE_CASH_ITEM_ID = 1013;
+
+function cardRole(card) {
+  if (isFarshadTradeTile(card)) return { kind: "main", label: "کارت اصلی معامله" };
+  if (isFarshadHiddenMaster(card)) return { kind: "source", label: "منبع آینه متفرقه/کارتخوان" };
+  if (Number(card.goldbridge_item_id) === SPECIAL_MOTAFEREGHE_ID) {
+    return { kind: "mirror", label: "کارت ویژه · متفرقه" };
+  }
+  if (Number(card.goldbridge_item_id) === SPECIAL_NAGHD_KARTKHAN_ID) {
+    return { kind: "mirror", label: "کارت ویژه · نقد کارتخوان" };
+  }
+  return null;
+}
 
 /** Visible quote origin for every admin card. */
 function quoteStatus(card) {
@@ -587,9 +604,188 @@ export default function AdminPricesTab() {
     return <p className="myorders__empty">در حال بارگذاری…</p>;
   }
 
-  const anyOrderable = cards.some((c) => c.orderable_buy || c.orderable_sell);
-  const tradeTile = cards.find((c) => Number(c.goldbridge_item_id) === FARSHAD_TRADE_CASH_ITEM_ID) || cards.find((c) => c.is_farshad_trade_tile);
-  const hedgeMargin = Number(tradeTile?.shop_margin_toman || cards.find((c) => c.shop_margin_toman > 0)?.shop_margin_toman || 0);
+  const sortedCards = sortPriceCards(cards);
+  const mainCards = sortedCards.filter((c) => priceCardRank(c) <= 3);
+  const extraCards = sortedCards.filter((c) => priceCardRank(c) > 3);
+  const anyOrderable = sortedCards.some((c) => c.orderable_buy || c.orderable_sell);
+
+  function renderCard(c) {
+    const isMirrored = !!c.price_source_item_id || c.price_source === "mirrored";
+    const isMain = isFarshadTradeTile(c);
+    const isHiddenMaster = isFarshadHiddenMaster(c);
+    const role = cardRole(c);
+    const status = quoteStatus(c);
+    const sourceLabel =
+      c.price_source === "manual"
+        ? "دستی"
+        : c.price_source === "mirrored" || isMirrored
+          ? `آینه id:${c.price_source_item_id || 1}${c.mirrored_source_mode === "manual" ? " (دستی)" : ""}`
+          : c.price_source === "live"
+            ? "زنده"
+            : "ناموجود";
+    const labelModeFa =
+      c.price_label_mode === "gram18_only"
+        ? "نمایش: گرم ۱۸"
+        : c.price_label_mode === "mesghal17_only"
+          ? "نمایش: مثقال ۱۷"
+          : c.price_label_mode === "mesghal_and_gram18"
+            ? "نمایش: مثقال + گرم"
+            : null;
+    return (
+      <div
+        key={c.goldbridge_item_id}
+        className={[
+          "admin-price-card",
+          isMain ? "admin-price-card--primary" : "",
+          isHiddenMaster ? "admin-price-card--source" : "",
+          !c.active && !isMirrored ? "admin-price-card--inactive" : "",
+        ].filter(Boolean).join(" ")}
+      >
+        <div className="admin-price-card__top">
+          <div className="admin-price-card__title">
+            <span className="admin-price-card__name">{c.display_name}</span>
+            {role && (
+              <span className={`admin-price-card__role is-${role.kind}`}>{role.label}</span>
+            )}
+          </div>
+          <span className={`admin-price-card__quote-status is-${status.kind}`}>
+            {status.label}
+          </span>
+        </div>
+
+        <div className="admin-price-card__quote-block">
+          <QuotePair buy={c.buy} sell={c.sell} size={isMain ? "lg" : "md"} />
+          {!isMirrored && hasFarshadQuote(c) && <FarshadQuoteBreakdown card={c} />}
+        </div>
+
+        {isHiddenMaster && (
+          <p className="admin-price-card__explain">
+            این همان «نقد یکشنبه · مستر مخفی» است: کارت خاموش فرشاد (id:1) که در کاشی معامله دیده نمی‌شود.
+            مشتری آن را نمی‌بیند؛ فقط پایهٔ فرمول متفرقه و نقد کارتخوان است. کارت اصلی معامله id:1013 است.
+          </p>
+        )}
+
+        <div className="admin-price-card__type-row">
+          <span className="admin-price-card__type">{TYPE_LABEL[c.type] || (isMirrored ? "طلا (گرم/عیار)" : "—")}</span>
+        </div>
+
+        <div className="admin-price-card__flags">
+          {isMirrored ? (
+            <span className="admin-price-card__flag is-on">کارت ویژه (آینه قیمت)</span>
+          ) : (
+            <span className={`admin-price-card__flag ${c.active ? "is-on" : "is-off"}`}>
+              {c.active ? "فعال در goldbridge" : "غیرفعال در goldbridge"}
+            </span>
+          )}
+          <span className={`admin-price-card__flag ${c.price_source !== "unavailable" ? "is-on" : "is-off"}`}>
+            منبع: {sourceLabel}
+          </span>
+          {labelModeFa && (
+            <span className="admin-price-card__flag is-on">{labelModeFa}</span>
+          )}
+          {!isMirrored && (
+            <>
+              <span className={`admin-price-card__flag ${c.allow_buy ? "is-on" : "is-off"}`}>
+                خرید {c.allow_buy ? "مجاز در منبع" : "غیرمجاز در منبع"}
+              </span>
+              <span className={`admin-price-card__flag ${c.allow_sell ? "is-on" : "is-off"}`}>
+                فروش {c.allow_sell ? "مجاز در منبع" : "غیرمجاز در منبع"}
+              </span>
+            </>
+          )}
+        </div>
+
+        <div className="price-cards-admin__actions">
+          <label className="price-cards-admin__toggle">
+            <input
+              type="checkbox"
+              checked={c.is_enabled}
+              disabled={busyId === c.goldbridge_item_id}
+              onChange={() => toggleEnabled(c)}
+            />
+            نمایش به مشتری
+          </label>
+
+          <div className="price-cards-admin__side-toggles">
+            <button
+              className={c.orderable_buy ? "price-cards-admin__orderable-btn is-active" : "price-cards-admin__orderable-btn"}
+              disabled={busyId === c.goldbridge_item_id}
+              onClick={() => toggleOrderable(c, "buy")}
+            >
+              {c.orderable_buy ? "✓ خرید فعال" : "فعال کردن خرید"}
+            </button>
+            <button
+              className={c.orderable_sell ? "price-cards-admin__orderable-btn is-active" : "price-cards-admin__orderable-btn"}
+              disabled={busyId === c.goldbridge_item_id}
+              onClick={() => toggleOrderable(c, "sell")}
+            >
+              {c.orderable_sell ? "✓ فروش فعال" : "فعال کردن فروش"}
+            </button>
+          </div>
+
+          {c.orderable_buy && !c.allow_buy && !c.override_source_restriction && c.price_source !== "manual" && !isMirrored && (
+            <p className="price-cards-admin__blocked-note">
+              ⚠ خرید توسط شما فعال شده اما چون منبع (goldbridge) خرید این آیتم را غیرمجاز اعلام کرده،
+              برای مشتری غیرفعال نمایش داده می‌شود.
+            </p>
+          )}
+          {c.orderable_sell && !c.allow_sell && !c.override_source_restriction && c.price_source !== "manual" && !isMirrored && (
+            <p className="price-cards-admin__blocked-note">
+              ⚠ فروش توسط شما فعال شده اما چون منبع (goldbridge) فروش این آیتم را غیرمجاز اعلام کرده،
+              برای مشتری غیرفعال نمایش داده می‌شود.
+            </p>
+          )}
+
+          {!isMirrored && (
+            <>
+              <label className="price-cards-admin__toggle price-cards-admin__toggle--override">
+                <input
+                  type="checkbox"
+                  checked={c.override_source_restriction}
+                  disabled={busyId === c.goldbridge_item_id}
+                  onChange={() => toggleOverride(c)}
+                />
+                نادیده گرفتن محدودیت منبع (goldbridge) - تصمیم من نهایی باشد
+              </label>
+              {c.override_source_restriction && (
+                <p className="price-cards-admin__override-note">
+                  فعال است: حتی اگر منبع این آیتم را غیرمجاز اعلام کند، تنظیمات بالای شما ملاک است.
+                </p>
+              )}
+
+              <ManualPriceEditor
+                card={c}
+                busy={busyId === c.goldbridge_item_id}
+                onSave={(payload) => saveManual(c, payload)}
+              />
+            </>
+          )}
+
+          {isMirrored && (
+            <p className="price-cards-admin__manual-note">
+              {c.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
+                ? "متفرقه: قیمت پایه = بخریدِ id:1 (زنده یا دستی) — گرم ۱۸ = (قیمت + کارمزد) ÷ ۴٫۳۹ برای بفروشید."
+                : c.goldbridge_item_id === SPECIAL_NAGHD_KARTKHAN_ID
+                  ? "نقد کارتخوان: قیمت نهایی = (بخریدِ id:1 زنده یا دستی + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."
+                  : `قیمت این کارت همیشه از آیتم id:${c.price_source_item_id || 1} (زنده یا دستی) گرفته می‌شود.`}
+              {" "}
+              کارمزد/اختلاف هر دسته‌بندی را پایین تنظیم کنید.
+            </p>
+          )}
+
+          <RoleCommissionEditor
+            card={c}
+            busy={busyId === c.goldbridge_item_id}
+            onSave={(payload) => saveCommission(c, payload)}
+          />
+        </div>
+
+        <div className="admin-price-card__footer">
+          <span>id: {c.goldbridge_item_id}{c.related_id != null ? ` → related ${c.related_id}` : ""}</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="admin-prices">
@@ -604,19 +800,6 @@ export default function AdminPricesTab() {
         </div>
       </div>
 
-      {tradeTile && (
-        <div className={`admin-prices__hedge ${tradeTile.stale ? "is-stale" : ""}`}>
-          <strong>{tradeTile.display_name || tradeTile.name || "نقدی یکشنبه"}</strong>
-          <span>id:{tradeTile.goldbridge_item_id}</span>
-          <span>میان فرشاد: {fa(tradeTile.base_price)}</span>
-          <span>کمیسیون فرشاد: {fa(tradeTile.farshad_commission)}</span>
-          <span>حاشیه ما: {fa(hedgeMargin)}</span>
-          <span>بخرید مشتری (خام): {fa(tradeTile.buy)}</span>
-          <span>بفروشید مشتری (خام): {fa(tradeTile.sell)}</span>
-          {tradeTile.stale && <span className="admin-prices__stale-badge">نقل‌قول کهنه</span>}
-        </div>
-      )}
-
       {!anyOrderable && (
         <p className="price-cards-admin__warning">
           در حال حاضر هیچ کارتی برای خرید یا فروش فعال نیست - مشتریان نمی‌توانند سفارش ثبت کنند.
@@ -624,194 +807,24 @@ export default function AdminPricesTab() {
       )}
 
       <p className="price-cards-admin__hint">
-        کاشی معامله فرشاد «نقدی یکشنبه» = id:1013 (نه id:1 «نقد یکشنبه» که مستر غیرفعال است).
-        goldbridge دیگر ۱۰٬۰۰۰ تومان حاشیه فروشگاه را اضافه نمی‌کند؛ آن حاشیه روی قیمت زنده همین‌جا اعمال می‌شود، بعد کارمزد دسته‌بندی.
-        «متفرقه» و «نقد کارتخوان» همچنان از بخریدِ خام id:1 (زنده یا دستی) می‌آیند — فرمول‌ها عوض نشده.
+        کارت اصلی مشتری «نقدی یکشنبه» است (id:1013)، همان کاشی معامله فرشاد.
+        «نقد یکشنبه» (id:1) مستر مخفی فرشاد است — در صفحه معامله دیده نمی‌شود و فقط منبع فرمول متفرقه و نقد کارتخوان است.
+        حاشیه ۱۰٬۰۰۰ تومانی فروشگاه روی قیمت زنده همین‌جا اعمال می‌شود، بعد کارمزد دسته‌بندی.
         کارمزد/اختلاف هر دسته‌بندی را روی همان کارت تنظیم کنید.
       </p>
 
       <div className="admin-prices__grid">
-        {cards.map((c) => {
-          const isMirrored = !!c.price_source_item_id || c.price_source === "mirrored";
-          const status = quoteStatus(c);
-          const sourceLabel =
-            c.price_source === "manual"
-              ? "دستی"
-              : c.price_source === "mirrored" || isMirrored
-                ? `آینه id:${c.price_source_item_id || 1}${c.mirrored_source_mode === "manual" ? " (دستی)" : ""}`
-                : c.price_source === "live"
-                  ? "زنده"
-                  : "ناموجود";
-          const labelModeFa =
-            c.price_label_mode === "gram18_only"
-              ? "نمایش: گرم ۱۸"
-              : c.price_label_mode === "mesghal17_only"
-                ? "نمایش: مثقال ۱۷"
-                : c.price_label_mode === "mesghal_and_gram18"
-                  ? "نمایش: مثقال + گرم"
-                  : null;
-          return (
-          <div key={c.goldbridge_item_id} className={`admin-price-card ${!c.active && !isMirrored ? "admin-price-card--inactive" : ""}`}>
-            <div className="admin-price-card__top">
-              <span className="admin-price-card__name">
-                {c.display_name}
-                {c.is_farshad_trade_tile || Number(c.goldbridge_item_id) === FARSHAD_TRADE_CASH_ITEM_ID
-                  ? " · کاشی معامله فرشاد"
-                  : Number(c.goldbridge_item_id) === SOURCE_MIRROR_ITEM_ID
-                    ? " · مستر مخفی"
-                    : ""}
-              </span>
-              <span className={`admin-price-card__quote-status is-${status.kind}`}>
-                {status.label}
-              </span>
-            </div>
-
-            <div className="admin-price-card__values">
-              <div className="admin-price-card__value-item admin-price-card__value-item--sell">
-                <span className="admin-price-card__value-label">فروش</span>
-                <span className="admin-price-card__value-amount">{fa(c.sell)}</span>
-              </div>
-              <div className="admin-price-card__value-item admin-price-card__value-item--buy">
-                <span className="admin-price-card__value-label">خرید</span>
-                <span className="admin-price-card__value-amount">{fa(c.buy)}</span>
-              </div>
-            </div>
-            <div className="admin-price-card__type-row">
-              <span className="admin-price-card__type">{TYPE_LABEL[c.type] || (isMirrored ? "طلا (گرم/عیار)" : "—")}</span>
-            </div>
-
-            <div className="admin-price-card__flags">
-              {isMirrored ? (
-                <span className="admin-price-card__flag is-on">کارت ویژه (آینه قیمت)</span>
-              ) : (
-                <span className={`admin-price-card__flag ${c.active ? "is-on" : "is-off"}`}>
-                  {c.active ? "فعال در goldbridge" : "غیرفعال در goldbridge"}
-                </span>
-              )}
-              <span className={`admin-price-card__flag ${c.price_source !== "unavailable" ? "is-on" : "is-off"}`}>
-                منبع: {sourceLabel}
-              </span>
-              {labelModeFa && (
-                <span className="admin-price-card__flag is-on">{labelModeFa}</span>
-              )}
-              {!isMirrored && (
-                <>
-                  <span className={`admin-price-card__flag ${c.allow_buy ? "is-on" : "is-off"}`}>
-                    خرید {c.allow_buy ? "مجاز در منبع" : "غیرمجاز در منبع"}
-                  </span>
-                  <span className={`admin-price-card__flag ${c.allow_sell ? "is-on" : "is-off"}`}>
-                    فروش {c.allow_sell ? "مجاز در منبع" : "غیرمجاز در منبع"}
-                  </span>
-                </>
-              )}
-            </div>
-
-            <div className="price-cards-admin__actions">
-              <label className="price-cards-admin__toggle">
-                <input
-                  type="checkbox"
-                  checked={c.is_enabled}
-                  disabled={busyId === c.goldbridge_item_id}
-                  onChange={() => toggleEnabled(c)}
-                />
-                نمایش به مشتری
-              </label>
-
-              <div className="price-cards-admin__side-toggles">
-                <button
-                  className={c.orderable_buy ? "price-cards-admin__orderable-btn is-active" : "price-cards-admin__orderable-btn"}
-                  disabled={busyId === c.goldbridge_item_id}
-                  onClick={() => toggleOrderable(c, "buy")}
-                >
-                  {c.orderable_buy ? "✓ خرید فعال" : "فعال کردن خرید"}
-                </button>
-                <button
-                  className={c.orderable_sell ? "price-cards-admin__orderable-btn is-active" : "price-cards-admin__orderable-btn"}
-                  disabled={busyId === c.goldbridge_item_id}
-                  onClick={() => toggleOrderable(c, "sell")}
-                >
-                  {c.orderable_sell ? "✓ فروش فعال" : "فعال کردن فروش"}
-                </button>
-              </div>
-
-              {c.orderable_buy && !c.allow_buy && !c.override_source_restriction && c.price_source !== "manual" && !isMirrored && (
-                <p className="price-cards-admin__blocked-note">
-                  ⚠ خرید توسط شما فعال شده اما چون منبع (goldbridge) خرید این آیتم را غیرمجاز اعلام کرده،
-                  برای مشتری غیرفعال نمایش داده می‌شود.
-                </p>
-              )}
-              {c.orderable_sell && !c.allow_sell && !c.override_source_restriction && c.price_source !== "manual" && !isMirrored && (
-                <p className="price-cards-admin__blocked-note">
-                  ⚠ فروش توسط شما فعال شده اما چون منبع (goldbridge) فروش این آیتم را غیرمجاز اعلام کرده،
-                  برای مشتری غیرفعال نمایش داده می‌شود.
-                </p>
-              )}
-
-              {!isMirrored && (
-                <>
-                  <label className="price-cards-admin__toggle price-cards-admin__toggle--override">
-                    <input
-                      type="checkbox"
-                      checked={c.override_source_restriction}
-                      disabled={busyId === c.goldbridge_item_id}
-                      onChange={() => toggleOverride(c)}
-                    />
-                    نادیده گرفتن محدودیت منبع (goldbridge) - تصمیم من نهایی باشد
-                  </label>
-                  {c.override_source_restriction && (
-                    <p className="price-cards-admin__override-note">
-                      فعال است: حتی اگر منبع این آیتم را غیرمجاز اعلام کند، تنظیمات بالای شما ملاک است.
-                    </p>
-                  )}
-
-                  <ManualPriceEditor
-                    card={c}
-                    busy={busyId === c.goldbridge_item_id}
-                    onSave={(payload) => saveManual(c, payload)}
-                  />
-                </>
-              )}
-
-              {isMirrored && (
-                <p className="price-cards-admin__manual-note">
-                  {c.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
-                    ? "متفرقه: قیمت پایه = بخریدِ id:1 (زنده یا دستی) — گرم ۱۸ = (قیمت + کارمزد) ÷ ۴٫۳۹ برای بفروشید."
-                    : c.goldbridge_item_id === SPECIAL_NAGHD_KARTKHAN_ID
-                      ? "نقد کارتخوان: قیمت نهایی = (بخریدِ id:1 زنده یا دستی + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."
-                      : `قیمت این کارت همیشه از آیتم id:${c.price_source_item_id || 1} (زنده یا دستی) گرفته می‌شود.`}
-                  {" "}
-                  کارمزد/اختلاف هر دسته‌بندی را پایین تنظیم کنید.
-                </p>
-              )}
-
-              <RoleCommissionEditor
-                card={c}
-                busy={busyId === c.goldbridge_item_id}
-                onSave={(payload) => saveCommission(c, payload)}
-              />
-            </div>
-
-            {!isMirrored && (c.base_price != null || c.farshad_commission != null || c.stale) && (
-              <div className="admin-price-card__farshad">
-                {c.stale && <span className="admin-prices__stale-badge">کهنه</span>}
-                {c.base_price != null && <span>میان: {fa(c.base_price)}</span>}
-                {c.farshad_commission != null && <span>سود فرشاد: {fa(c.farshad_commission)}</span>}
-                {c.shop_margin_toman > 0 && c.price_source === "live" && (
-                  <span>حاشیه ما: {fa(c.shop_margin_toman)}</span>
-                )}
-                {c.farshad_buy != null && c.price_source === "live" && (
-                  <span>فرشاد بخرید/بفروشید: {fa(c.farshad_buy)} / {fa(c.farshad_sell)}</span>
-                )}
-              </div>
-            )}
-
-            <div className="admin-price-card__footer">
-              <span>id: {c.goldbridge_item_id}{c.related_id != null ? ` → related ${c.related_id}` : ""}</span>
-            </div>
-          </div>
-          );
-        })}
+        {mainCards.map(renderCard)}
       </div>
+
+      {extraCards.length > 0 && (
+        <details className="admin-prices__extras">
+          <summary>سایر کارت‌های منبع ({extraCards.length})</summary>
+          <div className="admin-prices__grid admin-prices__grid--extras">
+            {extraCards.map(renderCard)}
+          </div>
+        </details>
+      )}
     </div>
   );
 }

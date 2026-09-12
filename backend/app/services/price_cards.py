@@ -36,6 +36,22 @@ FARSHAD_TRADE_CASH_ITEM_ID = 1013
 # نقد کارتخوان is always id:1 (مثقال۱۷) + this fixed markup (تومان).
 NAGHD_KARTKHAN_MARKUP_TOMAN = 100_000
 
+
+def card_list_rank(item_id: int, sort_order: int | None = None, *, in_use: bool = False) -> tuple[int, int, int]:
+    """Stable list order: 1013 first, then specials, then hidden master id:1."""
+    iid = int(item_id or 0)
+    so = int(sort_order or 0)
+    if iid == FARSHAD_TRADE_CASH_ITEM_ID:
+        return (0, so, iid)
+    if iid == SPECIAL_CARD_MOTAFEREGHE_ID:
+        return (1, so, iid)
+    if iid == SPECIAL_CARD_NAGHD_KARTKHAN_ID:
+        return (2, so, iid)
+    if iid == DEFAULT_PRICE_SOURCE_ITEM_ID:
+        return (3, so, iid)
+    return (4 if in_use else 5, so, iid)
+
+
 SPECIAL_MIRRORED_CARDS = (
     {
         "goldbridge_item_id": SPECIAL_CARD_MOTAFEREGHE_ID,
@@ -950,6 +966,7 @@ def list_admin_cards(db: Session) -> list[dict]:
             "mirrored_source_mode": (effective or {}).get("mirrored_source_mode"),
             "shop_margin_toman": (effective or {}).get("shop_margin_toman") or 0,
             "is_farshad_trade_tile": int(item_id) == FARSHAD_TRADE_CASH_ITEM_ID,
+            "is_farshad_hidden_master": int(item_id) == DEFAULT_PRICE_SOURCE_ITEM_ID,
             "sort_order": card.sort_order if card else 0,
             "role_commissions": _role_commissions_for_card(db, item_id, roles, commissions_by_item.get(item_id, {})),
         })
@@ -992,6 +1009,7 @@ def list_admin_cards(db: Session) -> list[dict]:
                 "mirrored_source_mode": None,
                 "shop_margin_toman": 0,
                 "is_farshad_trade_tile": int(item_id) == FARSHAD_TRADE_CASH_ITEM_ID,
+                "is_farshad_hidden_master": int(item_id) == DEFAULT_PRICE_SOURCE_ITEM_ID,
                 "sort_order": card.sort_order,
                 "role_commissions": _role_commissions_for_card(db, item_id, roles, commissions_by_item.get(item_id, {})),
             })
@@ -1023,11 +1041,16 @@ def list_admin_cards(db: Session) -> list[dict]:
             "mirrored_source_mode": effective.get("mirrored_source_mode"),
             "shop_margin_toman": 0,
             "is_farshad_trade_tile": int(item_id) == FARSHAD_TRADE_CASH_ITEM_ID,
+            "is_farshad_hidden_master": int(item_id) == DEFAULT_PRICE_SOURCE_ITEM_ID,
             "sort_order": card.sort_order,
             "role_commissions": _role_commissions_for_card(db, item_id, roles, commissions_by_item.get(item_id, {})),
         })
 
-    result.sort(key=lambda c: (c.get("sort_order") or 0, c.get("goldbridge_item_id") or 0))
+    result.sort(key=lambda c: card_list_rank(
+        c.get("goldbridge_item_id") or 0,
+        c.get("sort_order"),
+        in_use=bool(c.get("is_enabled") or c.get("orderable_buy") or c.get("orderable_sell")),
+    ))
     return result
 
 
@@ -1286,6 +1309,11 @@ def get_enabled_cards_for_broadcast(db: Session | None = None) -> list[dict]:
 
     by_id = {c.goldbridge_item_id: c for c in snapshots}
     cards = [c for c in snapshots if c.is_enabled]
+    cards.sort(key=lambda c: card_list_rank(
+        c.goldbridge_item_id,
+        getattr(c, "sort_order", 0),
+        in_use=True,
+    ))
     result = []
     for i, card in enumerate(cards):
         src = by_id.get(int(card.price_source_item_id)) if getattr(card, "price_source_item_id", None) else None

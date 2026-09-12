@@ -1,0 +1,67 @@
+.farshad-quote {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  background: rgba(201, 162, 39, 0.08);
+  border: 1px solid rgba(201, 162, 39, 0.28);
+}
+
+.farshad-quote.is-stale {
+  border-color: rgba(200, 80, 50, 0.45);
+  background: rgba(200, 80, 50, 0.08);
+}
+
+.farshad-quote__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 2px;
+}
+
+.farshad-quote__cell--wide {
+  grid-column: 1 / -1;
+}
+
+.farshad-quote__label {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-faint);
+}
+
+.farshad-quote__value {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.farshad-quote__split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.farshad-quote__split-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.farshad-quote__split-item--buy .farshad-quote__value {
+  color: var(--buy-bright);
+}
+
+.farshad-quote__split-item--sell .farshad-quote__value {
+  color: var(--sell-bright);
+}
+
+.farshad-quote__stale {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--sell-bright);
+}

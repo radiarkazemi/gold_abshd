@@ -13,12 +13,19 @@ import { orderGoldWeight, orderTotalMoney } from "../utils/orderCalc";
 import PendingCountdown from "../components/PendingCountdown";
 import ExpertTehranLedger from "../components/ExpertTehranLedger";
 import JalaliDateInput from "../components/JalaliDateInput";
+import QuotePair from "../components/QuotePair";
 import { formatTehranTime, tehranTodayKey, tehranYesterdayKey } from "../utils/tehranTime";
+import { FARSHAD_TRADE_CASH_ITEM_ID } from "../utils/priceCardIds";
 import "./AdminExpertTab.css";
 
 function pickPrimaryGoldCard(cards) {
   const list = cards || [];
-  return list.find((c) => c.type === 1 && c.is_primary) || list.find((c) => c.type === 1) || null;
+  return (
+    list.find((c) => Number(c.goldbridge_item_id) === FARSHAD_TRADE_CASH_ITEM_ID)
+    || list.find((c) => c.type === 1 && c.is_primary)
+    || list.find((c) => c.type === 1)
+    || null
+  );
 }
 
 const SIDE_LABEL = { buy: "خرید مشتری از ما", sell: "فروش مشتری به ما" };
@@ -494,18 +501,7 @@ export default function AdminExpertTab({ refreshSignal }) {
           <span>{liveCard?.name || "آبشده"} · مثقال ۱۷</span>
         </div>
         <div className="expert-spot__prices">
-          <div className="expert-spot__cell expert-spot__cell--buy">
-            <span>خرید</span>
-            <strong>
-              {liveCard?.buy_price != null ? fa(Math.round(liveCard.buy_price)) : "—"}
-            </strong>
-          </div>
-          <div className="expert-spot__cell expert-spot__cell--sell">
-            <span>فروش</span>
-            <strong>
-              {liveCard?.sell_price != null ? fa(Math.round(liveCard.sell_price)) : "—"}
-            </strong>
-          </div>
+          <QuotePair buy={liveCard?.buy_price} sell={liveCard?.sell_price} size="sm" />
         </div>
       </section>
 

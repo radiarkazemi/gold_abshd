@@ -154,9 +154,9 @@
 }
 
 .expert-spot__prices {
-  display: flex;
-  gap: 18px;
-  align-items: stretch;
+  flex: 1;
+  min-width: 220px;
+  max-width: 380px;
 }
 
 .expert-spot__cell {
