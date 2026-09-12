@@ -21,37 +21,32 @@ export default function FarshadQuoteBreakdown({ card }) {
   const showFarshadSides = card.farshad_buy != null && card.price_source === "live";
 
   return (
-    <div className={`farshad-quote ${card.stale ? "is-stale" : ""}`}>
-      {card.stale && <span className="farshad-quote__stale">نقل‌قول کهنه</span>}
-      <div className="farshad-quote__cell">
-        <span className="farshad-quote__label">میان</span>
-        <span className="farshad-quote__value">{formatTomanFa(card.base_price)}</span>
+    <dl className={`farshad-quote ${card.stale ? "is-stale" : ""}`}>
+      {card.stale && <div className="farshad-quote__stale">نقل‌قول کهنه</div>}
+      <div className="farshad-quote__row">
+        <dt>میان</dt>
+        <dd>{formatTomanFa(card.base_price)}</dd>
       </div>
-      <div className="farshad-quote__cell">
-        <span className="farshad-quote__label">سود فرشاد</span>
-        <span className="farshad-quote__value">{formatTomanFa(card.farshad_commission)}</span>
+      <div className="farshad-quote__row">
+        <dt>سود فرشاد</dt>
+        <dd>{formatTomanFa(card.farshad_commission)}</dd>
       </div>
-      <div className="farshad-quote__cell">
-        <span className="farshad-quote__label">حاشیه ما</span>
-        <span className="farshad-quote__value">{showMargin ? formatTomanFa(card.shop_margin_toman) : "—"}</span>
+      <div className="farshad-quote__row">
+        <dt>حاشیه ما</dt>
+        <dd>{showMargin ? formatTomanFa(card.shop_margin_toman) : "—"}</dd>
       </div>
-      <div className="farshad-quote__cell farshad-quote__cell--wide">
-        <span className="farshad-quote__label">فرشاد بخرید / بفروشید</span>
-        {showFarshadSides ? (
-          <div className="farshad-quote__split">
-            <div className="farshad-quote__split-item farshad-quote__split-item--buy">
-              <span className="farshad-quote__label">بخرید</span>
-              <span className="farshad-quote__value">{formatTomanFa(card.farshad_buy)}</span>
-            </div>
-            <div className="farshad-quote__split-item farshad-quote__split-item--sell">
-              <span className="farshad-quote__label">بفروشید</span>
-              <span className="farshad-quote__value">{formatTomanFa(card.farshad_sell)}</span>
-            </div>
-          </div>
-        ) : (
-          <span className="farshad-quote__value">—</span>
-        )}
+      <div className="farshad-quote__row farshad-quote__row--split">
+        <dt>فرشاد بخرید / بفروشید</dt>
+        <dd>
+          {showFarshadSides ? (
+            <span className="farshad-quote__sides">
+              <span className="is-buy">{formatTomanFa(card.farshad_buy)}</span>
+              <span className="farshad-quote__slash">/</span>
+              <span className="is-sell">{formatTomanFa(card.farshad_sell)}</span>
+            </span>
+          ) : "—"}
+        </dd>
       </div>
-    </div>
+    </dl>
   );
 }

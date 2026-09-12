@@ -1,11 +1,12 @@
 .farshad-quote {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 8px 12px;
   border-radius: var(--radius-md);
-  background: rgba(201, 162, 39, 0.08);
-  border: 1px solid rgba(201, 162, 39, 0.28);
+  background: rgba(201, 162, 39, 0.1);
+  border: 1px solid rgba(201, 162, 39, 0.38);
 }
 
 .farshad-quote.is-stale {
@@ -13,55 +14,61 @@
   background: rgba(200, 80, 50, 0.08);
 }
 
-.farshad-quote__cell {
+.farshad-quote__row {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  padding: 4px 2px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(201, 162, 39, 0.16);
 }
 
-.farshad-quote__cell--wide {
-  grid-column: 1 / -1;
+.farshad-quote__row:last-child {
+  border-bottom: none;
 }
 
-.farshad-quote__label {
-  font-size: 10.5px;
-  font-weight: 700;
-  color: var(--text-faint);
+.farshad-quote__row dt {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
-.farshad-quote__value {
+.farshad-quote__row dd {
+  margin: 0;
   font-family: var(--font-display);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   color: var(--text);
+  text-align: start;
 }
 
-.farshad-quote__split {
-  display: flex;
+.farshad-quote__sides {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
   flex-wrap: wrap;
-  gap: 8px 14px;
+  justify-content: flex-start;
 }
 
-.farshad-quote__split-item {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.farshad-quote__split-item--buy .farshad-quote__value {
+.farshad-quote__sides .is-buy {
   color: var(--buy-bright);
 }
 
-.farshad-quote__split-item--sell .farshad-quote__value {
+.farshad-quote__sides .is-sell {
   color: var(--sell-bright);
 }
 
+.farshad-quote__slash {
+  color: var(--text-faint);
+  font-weight: 700;
+}
+
 .farshad-quote__stale {
-  grid-column: 1 / -1;
   font-size: 11px;
   font-weight: 800;
   color: var(--sell-bright);
+  padding: 2px 0 6px;
 }
