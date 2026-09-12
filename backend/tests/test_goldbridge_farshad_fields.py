@@ -120,23 +120,25 @@ def test_manual_quote_is_not_padded():
     assert out["sell"] == 4_900_000
 
 
-def test_mirrored_cards_use_raw_id1_buy_not_shop_padded():
-    farshad_buy = 12_000_000
+def test_mirrored_cards_follow_live_farshad_trade_buy():
+    """Live specials track id:1013 Farshad buy (id:1 is often frozen)."""
+    id1_buy = 12_000_000
+    trade_buy = 12_040_000
     price_cards._latest_items[1] = {
         "goldbridge_item_id": 1,
         "name": "نقد یکشنبه",
         "type": 1,
-        "buy": farshad_buy,
+        "buy": id1_buy,
         "sell": 11_900_000,
         "allow_buy": True,
         "allow_sell": True,
-        "active": True,
+        "active": False,
     }
     price_cards._latest_items[1013] = {
         "goldbridge_item_id": 1013,
         "name": "نقدی یکشنبه",
         "type": 1,
-        "buy": farshad_buy + 40_000,
+        "buy": trade_buy,
         "sell": 11_860_000,
         "allow_buy": True,
         "allow_sell": True,
@@ -145,14 +147,6 @@ def test_mirrored_cards_use_raw_id1_buy_not_shop_padded():
     src = type("C", (), {
         "goldbridge_item_id": 1,
         "display_name": "نقد یکشنبه",
-        "use_manual_price": False,
-        "manual_buy": None,
-        "manual_sell": None,
-        "price_source_item_id": None,
-    })()
-    wrong_src = type("C", (), {
-        "goldbridge_item_id": 1013,
-        "display_name": "نقدی یکشنبه",
         "use_manual_price": False,
         "manual_buy": None,
         "manual_sell": None,
@@ -172,19 +166,63 @@ def test_mirrored_cards_use_raw_id1_buy_not_shop_padded():
         "use_manual_price": False,
         "manual_buy": None,
         "manual_sell": None,
-        # Even if a row was wrongly pointed at 1013, formula source stays id:1.
-        "price_source_item_id": 1013,
+        "price_source_item_id": 1,
     })()
-    own = price_cards.resolve_effective_item(src, price_cards._latest_items[1])
-    assert own["buy"] == farshad_buy  # no shop margin by default
     mota_out = price_cards.resolve_effective_item(mota, None, source_card=src)
-    naghd_out = price_cards.resolve_effective_item(naghd, None, source_card=wrong_src)
-    assert mota_out["buy"] == farshad_buy
-    assert naghd_out["buy"] == farshad_buy
-    assert naghd_out["buy"] != price_cards._latest_items[1013]["buy"]
+    naghd_out = price_cards.resolve_effective_item(naghd, None, source_card=src)
+    assert mota_out["buy"] == trade_buy
+    assert naghd_out["buy"] == trade_buy
+    assert mota_out["buy"] != id1_buy
     assert mota_out["mirrored_source_mode"] == "live"
-    assert naghd_out.get("mirrored_from") == 1
+    assert naghd_out.get("mirrored_from") == 1013
     assert naghd_out.get("shop_margin_toman") in (0, None)
+
+
+def test_mirrored_cards_id1_manual_overrides_trade_tile():
+    trade_buy = 12_040_000
+    manual_buy = 11_500_000
+    price_cards._latest_items[1] = {
+        "goldbridge_item_id": 1,
+        "name": "نقد یکشنبه",
+        "type": 1,
+        "buy": 12_000_000,
+        "sell": 11_900_000,
+        "allow_buy": True,
+        "allow_sell": True,
+        "active": False,
+    }
+    price_cards._latest_items[1013] = {
+        "goldbridge_item_id": 1013,
+        "name": "نقدی یکشنبه",
+        "type": 1,
+        "buy": trade_buy,
+        "sell": 11_860_000,
+        "allow_buy": True,
+        "allow_sell": True,
+        "active": True,
+    }
+    price_cards._manual_quotes[1] = {"use_manual": True, "buy": manual_buy, "sell": manual_buy}
+    src = type("C", (), {
+        "goldbridge_item_id": 1,
+        "display_name": "نقد یکشنبه",
+        "use_manual_price": True,
+        "manual_buy": manual_buy,
+        "manual_sell": manual_buy,
+        "price_source_item_id": None,
+    })()
+    mota = type("C", (), {
+        "goldbridge_item_id": price_cards.SPECIAL_CARD_MOTAFEREGHE_ID,
+        "display_name": "متفرقه",
+        "use_manual_price": False,
+        "manual_buy": None,
+        "manual_sell": None,
+        "price_source_item_id": 1,
+    })()
+    out = price_cards.resolve_effective_item(mota, None, source_card=src)
+    assert out["buy"] == manual_buy
+    assert out["mirrored_source_mode"] == "manual"
+    assert out.get("mirrored_from") == 1
+
 
 
 def test_card_list_rank_puts_trade_tile_first():

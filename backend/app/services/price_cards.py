@@ -290,6 +290,12 @@ def _merge_polled_items(cleaned: dict[int, dict]) -> bool:
         )
         if price_changed:
             any_change = True
+            # When Farshad live buy moves, mirrored specials must refresh too
+            # (admin poll / WS clients key off per-item change stamps).
+            if int(item_id) in (FARSHAD_TRADE_CASH_ITEM_ID, DEFAULT_PRICE_SOURCE_ITEM_ID):
+                stamp = _normalize_source_ts(item.get("last_update_time")) or now
+                for special_id in (SPECIAL_CARD_MOTAFEREGHE_ID, SPECIAL_CARD_NAGHD_KARTKHAN_ID):
+                    _item_price_changed_at[special_id] = stamp
 
         # Always keep the live row (admin UI still shows goldbridge).
         _latest_items[item_id] = item
@@ -680,30 +686,37 @@ def _mirror_base_buy(
     src_card,
     source_live: dict | None,
     source_id: int | None = None,
-) -> tuple[float | None, str]:
+) -> tuple[float | None, str, int | None]:
     """
     Base مثقال buy for متفرقه / نقد کارتخوان.
 
-    When id:1 is on manual, this is EXACTLY the buy the admin typed
-    (not live goldbridge, not sell, not after commission).
+    Returns (buy, mode, mirrored_from_id).
 
-    In-memory `_manual_quotes` wins over a stale ORM snapshot so the two
-    mirrored cards move as soon as the admin saves id:1.
+    Manual on id:1 wins (exact admin-typed buy).
+
+    Live mode follows Farshad's *active* cash tile (id:1013) — that is the
+    quote that ticks on goldbridge. Hidden master id:1 is often inactive and
+    frozen, which previously left متفرقه / کارتخوان stuck while 1013 moved.
+    Falls back to id:1 live buy only if 1013 has no buy.
     """
     sid = source_id
     if sid is None and src_card is not None:
         sid = getattr(src_card, "goldbridge_item_id", None)
     if sid is None:
         sid = DEFAULT_PRICE_SOURCE_ITEM_ID
+    sid = int(sid)
     cached = _manual_quote_for(sid)
     if cached is not None:
         if cached.get("use_manual") and cached.get("buy") is not None:
-            return float(cached["buy"]), "manual"
+            return float(cached["buy"]), "manual", sid
     elif src_card is not None and src_card.use_manual_price and src_card.manual_buy is not None:
-        return float(src_card.manual_buy), "manual"
+        return float(src_card.manual_buy), "manual", sid
+    trade_live = _latest_items.get(FARSHAD_TRADE_CASH_ITEM_ID)
+    if trade_live is not None and trade_live.get("buy") is not None:
+        return float(trade_live["buy"]), "live", FARSHAD_TRADE_CASH_ITEM_ID
     if source_live is not None and source_live.get("buy") is not None:
-        return float(source_live["buy"]), "live"
-    return None, "unavailable"
+        return float(source_live["buy"]), "live", sid
+    return None, "unavailable", None
 
 
 def _live_or_manual_item(card, live_item: dict | None, *, buy_only_ok: bool = False) -> dict | None:
@@ -819,11 +832,13 @@ def resolve_effective_item(
     Unticking it returns every card — including متفرقه / نقد کارتخوان —
     to the goldbridge quote immediately.
 
-    متفرقه / نقد کارتخوان ALWAYS mirror id:1 (raw live buy or typed
-    manual buy) — never id:1013 and never the shop-padded customer
-    quote. Formulas stay:
-      متفرقه:       (id:1 buy + commission) / 4.39
-      نقد کارتخوان: (id:1 buy + commission) + 100_000
+    متفرقه / نقد کارتخوان base = Farshad final buy:
+      • id:1 manual (if set), else
+      • live buy from trade tile id:1013 (ticks every poll), else
+      • live buy from hidden master id:1
+    Shop padding is never applied to this base. Formulas stay:
+      متفرقه:       (base + commission) / 4.39
+      نقد کارتخوان: (base + commission) + 100_000
     """
     is_special_mirror = bool(
         card
@@ -853,15 +868,19 @@ def resolve_effective_item(
             src_card = _get_price_card_row(int(source_id), db)
 
         if is_special_mirror:
-            base_buy, mode = _mirror_base_buy(src_card, source_live, source_id=int(source_id))
+            base_buy, mode, mirrored_from = _mirror_base_buy(
+                src_card, source_live, source_id=int(source_id)
+            )
             if base_buy is None:
                 return None
+            from_id = int(mirrored_from or source_id)
+            from_live = _latest_items.get(from_id) or source_live or {}
             source_resolved = {
-                "goldbridge_item_id": int(source_id),
+                "goldbridge_item_id": from_id,
                 "name": (src_card.display_name if src_card and src_card.display_name else None),
                 "type": GOLD_ITEM_TYPE,
-                "ayar": (source_live or {}).get("ayar"),
-                "item_weight": (source_live or {}).get("item_weight"),
+                "ayar": from_live.get("ayar"),
+                "item_weight": from_live.get("item_weight"),
                 "buy": base_buy,
                 "sell": base_buy,
                 "allow_buy": True,
@@ -1057,7 +1076,7 @@ def list_admin_cards(db: Session) -> list[dict]:
             "use_manual_price": bool(card.use_manual_price),
             "manual_buy": card.manual_buy,
             "manual_sell": card.manual_sell,
-            "price_source_item_id": card.price_source_item_id,
+            "price_source_item_id": effective.get("mirrored_from") or card.price_source_item_id,
             "price_label_mode": card.price_label_mode,
             "price_source": effective.get("price_source", "mirrored"),
             "mirrored_source_mode": effective.get("mirrored_source_mode"),

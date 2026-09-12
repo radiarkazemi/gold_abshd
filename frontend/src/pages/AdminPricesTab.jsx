@@ -5,6 +5,7 @@ import {
   SPECIAL_MOTAFEREGHE_ID,
   SPECIAL_NAGHD_KARTKHAN_ID,
   SOURCE_MIRROR_ITEM_ID,
+  FARSHAD_TRADE_CASH_ITEM_ID,
   isFarshadTradeTile,
   isFarshadHiddenMaster,
   isPrimaryAdminCard,
@@ -58,21 +59,38 @@ function quoteStatus(card) {
 }
 function syncMirroredCardQuotes(cards) {
   if (!Array.isArray(cards)) return cards;
-  const source = cards.find((c) => Number(c.goldbridge_item_id) === SOURCE_MIRROR_ITEM_ID);
-  if (!source) return cards;
+  const master = cards.find((c) => Number(c.goldbridge_item_id) === SOURCE_MIRROR_ITEM_ID);
+  const trade = cards.find((c) => Number(c.goldbridge_item_id) === FARSHAD_TRADE_CASH_ITEM_ID);
+  if (!master && !trade) return cards;
   const mirroredMode =
-    source.use_manual_price || source.price_source === "manual" ? "manual" : "live";
-  // Previous formula base = raw id:1 buy (live Farshad quote or typed manual).
-  // Never use the shop-padded customer quote, and never follow id:1013.
+    (master && (master.use_manual_price || master.price_source === "manual"))
+      ? "manual"
+      : "live";
+  // Live base = Farshad final buy on the active trade tile (id:1013), which
+  // ticks every poll. id:1 is often inactive/frozen on goldbridge. Manual on
+  // id:1 still overrides. Never apply shop padding to this base.
   let buy;
+  let sourceItemId = SOURCE_MIRROR_ITEM_ID;
   if (mirroredMode === "manual") {
-    buy = Number(source.buy);
+    buy = Number(master.buy);
+    sourceItemId = SOURCE_MIRROR_ITEM_ID;
   } else {
-    buy = Number(source.live_buy ?? source.farshad_buy);
-    if (!(buy > 0) && source.buy != null) {
-      const padded = Number(source.buy);
-      const margin = Number(source.shop_margin_toman) || 0;
-      buy = margin > 0 ? padded - margin : padded;
+    const stripMargin = (card) => {
+      if (!card) return NaN;
+      let v = Number(card.live_buy ?? card.farshad_buy);
+      if (!(v > 0) && card.buy != null) {
+        const padded = Number(card.buy);
+        const margin = Number(card.shop_margin_toman) || 0;
+        v = margin > 0 ? padded - margin : padded;
+      }
+      return v;
+    };
+    buy = stripMargin(trade);
+    if (buy > 0) {
+      sourceItemId = FARSHAD_TRADE_CASH_ITEM_ID;
+    } else {
+      buy = stripMargin(master);
+      sourceItemId = SOURCE_MIRROR_ITEM_ID;
     }
   }
   if (!(buy > 0)) return cards;
@@ -83,7 +101,7 @@ function syncMirroredCardQuotes(cards) {
       Number(c.buy) === buy
       && Number(c.sell) === buy
       && c.mirrored_source_mode === mirroredMode
-      && Number(c.price_source_item_id) === SOURCE_MIRROR_ITEM_ID
+      && Number(c.price_source_item_id) === sourceItemId
     ) {
       return c;
     }
@@ -92,7 +110,7 @@ function syncMirroredCardQuotes(cards) {
       buy,
       sell: buy,
       price_source: "mirrored",
-      price_source_item_id: SOURCE_MIRROR_ITEM_ID,
+      price_source_item_id: sourceItemId,
       mirrored_source_mode: mirroredMode,
       shop_margin_toman: 0,
     };
@@ -728,7 +746,7 @@ export default function AdminPricesTab() {
         {isHiddenMaster && (
           <p className="admin-price-card__explain">
             این همان «نقد یکشنبه · مستر مخفی» است: کارت خاموش فرشاد (id:1).
-            پایهٔ متفرقه و نقد کارتخوان = بخرید نهایی فرشاد همین کارت.
+            اگر قیمت دستی این کارت فعال باشد، پایهٔ متفرقه و نقد کارتخوان همان بخرید دستی است؛ وگرنه پایه از بخرید زندهٔ کاشی معامله (id:1013) می‌آید.
             کارمزد یا کاهش شما فقط از کمیسیون دسته‌بندی همان کارت‌های ویژه اعمال می‌شود.
           </p>
         )}
@@ -736,8 +754,8 @@ export default function AdminPricesTab() {
         {(c.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID || c.goldbridge_item_id === SPECIAL_NAGHD_KARTKHAN_ID) && (
           <p className="admin-price-card__explain">
             {c.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
-              ? "پایه = بخرید نهایی فرشاد (id:1). بفروشید مشتری = (پایه + کارمزد دسته‌بندی) ÷ ۴٫۳۹. کارمزد منفی = کاهش قیمت."
-              : "پایه = بخرید نهایی فرشاد (id:1) برای خرید و فروش کارت. قیمت نهایی = (پایه + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."}
+              ? "پایه = بخرید نهایی فرشاد (زنده id:1013، یا دستی id:1). بفروشید مشتری = (پایه + کارمزد دسته‌بندی) ÷ ۴٫۳۹. کارمزد منفی = کاهش قیمت."
+              : "پایه = بخرید نهایی فرشاد (زنده id:1013، یا دستی id:1) برای خرید و فروش کارت. قیمت نهایی = (پایه + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."}
           </p>
         )}
         <div className="admin-price-card__type-row">
@@ -883,7 +901,7 @@ export default function AdminPricesTab() {
 
       <p className="price-cards-admin__hint">
         کارت اصلی مشتری «نقدی یکشنبه» است (id:1013)، همان کاشی معامله فرشاد.
-        «نقد یکشنبه» (id:1) مستر مخفی فرشاد است — منبع بخرید نهایی برای متفرقه و نقد کارتخوان.
+        متفرقه و نقد کارتخوان هر ۳ ثانیه از بخرید نهایی زندهٔ همان کاشی (id:1013) به‌روز می‌شوند؛ اگر id:1 دستی باشد همان پایه است.
         حاشیه ثابت فروشگاه حذف شده؛ سود/کاهش شما فقط از کارمزد دسته‌بندی روی هر خرید و فروش اعمال می‌شود.
         کارت‌های دیگر تا تیک «جزئیات» فقط عنوان را نشان می‌دهند.
       </p>
