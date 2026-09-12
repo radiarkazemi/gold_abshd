@@ -5,6 +5,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.config import settings
 from app.services import price_cards
 
 
@@ -63,6 +64,8 @@ def setup_function():
     price_cards._latest_updated_at = None
     price_cards._card_config_cache = None
     price_cards._specials_ready = False
+    settings.EXTRA_SHOP_MARGIN_TOMAN = 0
+    settings.PRICE_API_RIAL_TO_TOMAN = True
 
 
 def test_motaferaghe_follows_live_buy():

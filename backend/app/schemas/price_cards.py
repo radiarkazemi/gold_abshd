@@ -28,6 +28,20 @@ class AdminPriceCardOut(BaseModel):
     price_label_mode: str | None = None
     # For mirrored cards: "live" or "manual" depending on the source (id:1).
     mirrored_source_mode: str | None = None
+    # Farshad / goldbridge extras (Toman after Rial conversion).
+    base_price: float | None = None
+    profit: float | None = None
+    master_profit: float | None = None
+    farshad_commission: float | None = None
+    farshad_spread: float | None = None
+    farshad_buy: float | None = None
+    farshad_sell: float | None = None
+    shop_margin_toman: float = 0
+    stale: bool = False
+    related_id: int | None = None
+    related_diff: float | None = None
+    is_farshad_trade_tile: bool = False
+    is_farshad_hidden_master: bool = False
     # Role commission overrides for this card: [{role_id, role_name, commission_type, commission_value}]
     role_commissions: list[dict] = []
 

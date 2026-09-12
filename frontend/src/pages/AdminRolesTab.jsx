@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchRoles, createRole, updateRoleCommission, fetchPrice, openPriceSocket } from "../api";
 import { personalizePrice } from "../utils/priceCommission";
+import { FARSHAD_TRADE_CASH_ITEM_ID } from "../utils/priceCardIds";
 
 function emptyLimits(role) {
   return {
@@ -12,7 +13,12 @@ function emptyLimits(role) {
 
 function pickPrimaryGoldCard(payload) {
   const cards = payload?.cards || [];
-  return cards.find((c) => c.type === 1 && c.is_primary) || cards.find((c) => c.type === 1) || null;
+  return (
+    cards.find((c) => Number(c.goldbridge_item_id) === FARSHAD_TRADE_CASH_ITEM_ID)
+    || cards.find((c) => c.type === 1 && c.is_primary)
+    || cards.find((c) => c.type === 1)
+    || null
+  );
 }
 
 /** Amount helpers use raw card price (fees are set per-card on قیمت‌ها). */
