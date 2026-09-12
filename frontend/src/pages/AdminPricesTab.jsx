@@ -7,6 +7,7 @@ import {
   SOURCE_MIRROR_ITEM_ID,
   isFarshadTradeTile,
   isFarshadHiddenMaster,
+  isPrimaryAdminCard,
   sortPriceCards,
 } from "../utils/priceCardIds";
 import {
@@ -472,6 +473,8 @@ export default function AdminPricesTab() {
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [lastFetched, setLastFetched] = useState(null);
+  // Secondary goldbridge cards: title-only until admin ticks «جزئیات».
+  const [expandedExtraIds, setExpandedExtraIds] = useState(() => new Set());
   const busyIdRef = useRef(null);
   const fetchGenRef = useRef(0);
 
@@ -621,10 +624,21 @@ export default function AdminPricesTab() {
   const sortedCards = sortPriceCards(cards);
   const anyOrderable = sortedCards.some((c) => c.orderable_buy || c.orderable_sell);
 
+  function toggleExtraExpanded(itemId) {
+    setExpandedExtraIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  }
+
   function renderCard(c) {
     const isMirrored = !!c.price_source_item_id || c.price_source === "mirrored";
     const isMain = isFarshadTradeTile(c);
     const isHiddenMaster = isFarshadHiddenMaster(c);
+    const alwaysOpen = isPrimaryAdminCard(c);
+    const expanded = alwaysOpen || expandedExtraIds.has(c.goldbridge_item_id);
     const role = cardRole(c);
     const status = quoteStatus(c);
     const sourceLabel =
@@ -643,6 +657,35 @@ export default function AdminPricesTab() {
           : c.price_label_mode === "mesghal_and_gram18"
             ? "نمایش: مثقال + گرم"
             : null;
+
+    if (!expanded) {
+      return (
+        <div
+          key={c.goldbridge_item_id}
+          className={[
+            "admin-price-card",
+            "admin-price-card--collapsed",
+            !c.active && !isMirrored ? "admin-price-card--inactive" : "",
+          ].filter(Boolean).join(" ")}
+        >
+          <div className="admin-price-card__top">
+            <div className="admin-price-card__title">
+              <span className="admin-price-card__name">{c.display_name}</span>
+              <span className="admin-price-card__id-chip">id:{c.goldbridge_item_id}</span>
+            </div>
+            <label className="admin-price-card__expand-toggle">
+              <input
+                type="checkbox"
+                checked={false}
+                onChange={() => toggleExtraExpanded(c.goldbridge_item_id)}
+              />
+              جزئیات
+            </label>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div
         key={c.goldbridge_item_id}
@@ -660,9 +703,21 @@ export default function AdminPricesTab() {
               <span className={`admin-price-card__role is-${role.kind}`}>{role.label}</span>
             )}
           </div>
-          <span className={`admin-price-card__quote-status is-${status.kind}`}>
-            {status.label}
-          </span>
+          <div className="admin-price-card__top-end">
+            {!alwaysOpen && (
+              <label className="admin-price-card__expand-toggle">
+                <input
+                  type="checkbox"
+                  checked
+                  onChange={() => toggleExtraExpanded(c.goldbridge_item_id)}
+                />
+                جزئیات
+              </label>
+            )}
+            <span className={`admin-price-card__quote-status is-${status.kind}`}>
+              {status.label}
+            </span>
+          </div>
         </div>
 
         <div className="admin-price-card__quote-block">
@@ -672,11 +727,19 @@ export default function AdminPricesTab() {
 
         {isHiddenMaster && (
           <p className="admin-price-card__explain">
-            این همان «نقد یکشنبه · مستر مخفی» است: کارت خاموش فرشاد (id:1) که در کاشی معامله دیده نمی‌شود.
-            مشتری آن را نمی‌بیند؛ فقط پایهٔ فرمول متفرقه و نقد کارتخوان است. کارت اصلی معامله id:1013 است.
+            این همان «نقد یکشنبه · مستر مخفی» است: کارت خاموش فرشاد (id:1).
+            پایهٔ متفرقه و نقد کارتخوان = بخرید نهایی فرشاد همین کارت.
+            کارمزد یا کاهش شما فقط از کمیسیون دسته‌بندی همان کارت‌های ویژه اعمال می‌شود.
           </p>
         )}
 
+        {(c.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID || c.goldbridge_item_id === SPECIAL_NAGHD_KARTKHAN_ID) && (
+          <p className="admin-price-card__explain">
+            {c.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
+              ? "پایه = بخرید نهایی فرشاد (id:1). بفروشید مشتری = (پایه + کارمزد دسته‌بندی) ÷ ۴٫۳۹. کارمزد منفی = کاهش قیمت."
+              : "پایه = بخرید نهایی فرشاد (id:1) برای خرید و فروش کارت. قیمت نهایی = (پایه + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."}
+          </p>
+        )}
         <div className="admin-price-card__type-row">
           <span className="admin-price-card__type">{TYPE_LABEL[c.type] || (isMirrored ? "طلا (گرم/عیار)" : "—")}</span>
         </div>
@@ -820,9 +883,9 @@ export default function AdminPricesTab() {
 
       <p className="price-cards-admin__hint">
         کارت اصلی مشتری «نقدی یکشنبه» است (id:1013)، همان کاشی معامله فرشاد.
-        «نقد یکشنبه» (id:1) مستر مخفی فرشاد است — در صفحه معامله دیده نمی‌شود و فقط منبع فرمول متفرقه و نقد کارتخوان است.
-        حاشیه ۱۰٬۰۰۰ تومانی فروشگاه روی قیمت زنده همین‌جا اعمال می‌شود، بعد کارمزد دسته‌بندی.
-        کارمزد/اختلاف هر دسته‌بندی را روی همان کارت تنظیم کنید.
+        «نقد یکشنبه» (id:1) مستر مخفی فرشاد است — منبع بخرید نهایی برای متفرقه و نقد کارتخوان.
+        حاشیه ثابت فروشگاه حذف شده؛ سود/کاهش شما فقط از کارمزد دسته‌بندی روی هر خرید و فروش اعمال می‌شود.
+        کارت‌های دیگر تا تیک «جزئیات» فقط عنوان را نشان می‌دهند.
       </p>
 
       <div className="admin-prices__grid">

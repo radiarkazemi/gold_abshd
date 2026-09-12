@@ -14,6 +14,17 @@ export function isFarshadHiddenMaster(card) {
   return !!(card?.is_farshad_hidden_master || Number(card?.goldbridge_item_id) === SOURCE_MIRROR_ITEM_ID);
 }
 
+/** Main admin cards stay fully open; everything else is title-only until ticked. */
+export function isPrimaryAdminCard(card) {
+  const id = Number(card?.goldbridge_item_id);
+  return (
+    id === FARSHAD_TRADE_CASH_ITEM_ID
+    || id === SPECIAL_MOTAFEREGHE_ID
+    || id === SPECIAL_NAGHD_KARTKHAN_ID
+    || id === SOURCE_MIRROR_ITEM_ID
+  );
+}
+
 /** Lower rank = earlier in admin / customer lists. 1013 is always first. */
 export function priceCardRank(card) {
   const id = Number(card?.goldbridge_item_id);

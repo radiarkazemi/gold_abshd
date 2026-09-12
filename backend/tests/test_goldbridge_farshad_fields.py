@@ -15,7 +15,7 @@ def setup_function():
     price_cards._latest_updated_at = None
     price_cards._card_config_cache = None
     price_cards._specials_ready = False
-    settings.EXTRA_SHOP_MARGIN_TOMAN = 10_000
+    settings.EXTRA_SHOP_MARGIN_TOMAN = 0
     settings.PRICE_API_RIAL_TO_TOMAN = True
 
 
@@ -51,7 +51,8 @@ def test_clean_goldbridge_item_converts_rial_and_keeps_farshad_fields():
     assert row["last_update_time"] == "2026-09-12 11:42:15"
 
 
-def test_live_shop_margin_pads_farshad_quotes():
+def test_live_shop_margin_pads_farshad_quotes_when_configured():
+    settings.EXTRA_SHOP_MARGIN_TOMAN = 10_000
     src = type("C", (), {
         "goldbridge_item_id": 1013,
         "display_name": "نقدی یکشنبه",
@@ -76,8 +77,32 @@ def test_live_shop_margin_pads_farshad_quotes():
     assert out["shop_margin_toman"] == 10_000
     assert out["buy"] == 103_830_000
     assert out["sell"] == 103_670_000
-    assert out["buy"] >= out["farshad_buy"] + 10_000
-    assert out["sell"] <= out["farshad_sell"] - 10_000
+
+
+def test_default_shop_margin_is_off_customer_sees_farshad_buy():
+    settings.EXTRA_SHOP_MARGIN_TOMAN = 0
+    src = type("C", (), {
+        "goldbridge_item_id": 1013,
+        "display_name": "نقدی یکشنبه",
+        "use_manual_price": False,
+        "manual_buy": None,
+        "manual_sell": None,
+    })()
+    live = price_cards.clean_goldbridge_item({
+        "id": 1013,
+        "name": "نقدی یکشنبه",
+        "type": 1,
+        "buy": 1_038_200_000.0,
+        "sell": 1_036_800_000.0,
+        "allow_buy": True,
+        "allow_sell": True,
+        "active": True,
+    })
+    out = price_cards._live_or_manual_item(src, live)
+    assert out["buy"] == 103_820_000
+    assert out["sell"] == 103_680_000
+    assert out["shop_margin_toman"] == 0
+    assert out["buy"] == out["farshad_buy"]
 
 
 def test_manual_quote_is_not_padded():
@@ -151,7 +176,7 @@ def test_mirrored_cards_use_raw_id1_buy_not_shop_padded():
         "price_source_item_id": 1013,
     })()
     own = price_cards.resolve_effective_item(src, price_cards._latest_items[1])
-    assert own["buy"] == farshad_buy + 10_000
+    assert own["buy"] == farshad_buy  # no shop margin by default
     mota_out = price_cards.resolve_effective_item(mota, None, source_card=src)
     naghd_out = price_cards.resolve_effective_item(naghd, None, source_card=wrong_src)
     assert mota_out["buy"] == farshad_buy

@@ -19,6 +19,10 @@
   gap: 4px;
 }
 
+.farshad-quote__stats--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .farshad-quote__chip {
   display: flex;
   flex-direction: column;

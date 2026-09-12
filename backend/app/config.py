@@ -150,11 +150,9 @@ class Settings:
     # inactive master نقد یکشنبه). Fresh installs should enable 1013.
     DEFAULT_ORDERABLE_ITEM_ID: str = os.getenv("GOLDAPP_DEFAULT_ORDERABLE_ITEM_ID", "1013")
 
-    # Hedge pad goldapp must apply itself. Goldbridge no longer adds
-    # BRIDGE_SHOP_MARGIN_TOMAN (±10,000 Toman). Live Farshad buy/sell are
-    # the on-screen quotes; we add this on top so hedges stay profitable.
-    # Role/card commission is still applied after this pad.
-    EXTRA_SHOP_MARGIN_TOMAN: float = float(os.getenv("GOLDAPP_EXTRA_SHOP_MARGIN_TOMAN", "10000"))
+    # Optional pad on live Farshad buy/sell. Default 0 — hedges use
+    # per-role / per-card commission instead of a fixed shop margin.
+    EXTRA_SHOP_MARGIN_TOMAN: float = float(os.getenv("GOLDAPP_EXTRA_SHOP_MARGIN_TOMAN", "0"))
 
     # goldbridge (and sekefarshad.ir underneath it) reports prices in
     # Rial; the app displays and stores everything in Toman (Rial / 10).

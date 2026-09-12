@@ -1456,6 +1456,45 @@
   gap: 8px;
 }
 
+.admin-price-card__top-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.admin-price-card--collapsed {
+  padding-block: 8px;
+  gap: 0;
+  background: rgba(120, 120, 120, 0.04);
+}
+
+.admin-price-card__id-chip {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+}
+
+.admin-price-card__expand-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.admin-price-card__expand-toggle input {
+  margin: 0;
+  accent-color: var(--buy-bright, #4c9a72);
+}
+
 .admin-price-card__name {
   font-size: 13.5px;
   font-weight: 800;
