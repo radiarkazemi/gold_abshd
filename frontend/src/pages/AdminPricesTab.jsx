@@ -654,7 +654,7 @@ export default function AdminPricesTab() {
         </div>
 
         <div className="admin-price-card__quote-block">
-          <QuotePair buy={c.buy} sell={c.sell} size={isMain ? "lg" : "md"} />
+          <QuotePair buy={c.buy} sell={c.sell} size="md" />
           {!isMirrored && hasFarshadQuote(c) && <FarshadQuoteBreakdown card={c} />}
         </div>
 

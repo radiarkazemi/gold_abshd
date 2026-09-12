@@ -1,14 +1,14 @@
 .quote-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 6px;
 }
 
 .quote-pair__item {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
+  gap: 1px;
+  padding: 6px 8px;
   border-radius: var(--radius-sm);
 }
 
@@ -21,16 +21,18 @@
 }
 
 .quote-pair__label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--text-muted);
+  line-height: 1.2;
 }
 
 .quote-pair__amount {
   font-family: var(--font-display);
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
+  line-height: 1.2;
 }
 
 .quote-pair__item--buy .quote-pair__amount {
@@ -42,21 +44,21 @@
 }
 
 .quote-pair--lg .quote-pair__item {
-  padding: 12px 14px;
+  padding: 7px 10px;
 }
 
 .quote-pair--lg .quote-pair__label {
-  font-size: 12px;
+  font-size: 10.5px;
 }
 
 .quote-pair--lg .quote-pair__amount {
-  font-size: 22px;
+  font-size: 16px;
 }
 
 .quote-pair--sm .quote-pair__item {
-  padding: 6px 8px;
+  padding: 4px 6px;
 }
 
 .quote-pair--sm .quote-pair__amount {
-  font-size: 14px;
+  font-size: 13px;
 }

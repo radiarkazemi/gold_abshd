@@ -1377,16 +1377,15 @@
 .admin-price-card {
   background: var(--surface);
   border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   transition: border-color 200ms ease;
 }
 
 .admin-price-card--primary {
-  grid-column: 1 / -1;
   border-color: rgba(201, 162, 39, 0.55);
   box-shadow: 0 0 0 1px rgba(201, 162, 39, 0.16);
   background: linear-gradient(180deg, rgba(201, 162, 39, 0.08), var(--surface) 42%);
@@ -1432,17 +1431,17 @@
 
 .admin-price-card__quote-block {
   display: grid;
-  gap: 10px;
+  gap: 6px;
 }
 
 .admin-price-card__explain {
   margin: 0;
-  font-size: 12px;
-  line-height: 1.8;
+  font-size: 11px;
+  line-height: 1.55;
   color: var(--text-muted);
   background: rgba(120, 120, 120, 0.08);
   border-radius: var(--radius-sm);
-  padding: 8px 10px;
+  padding: 6px 8px;
 }
 
 /* Note: cards no longer dim based on goldbridge's own "active" flag -
@@ -1458,13 +1457,13 @@
 }
 
 .admin-price-card__name {
-  font-size: 15px;
+  font-size: 13.5px;
   font-weight: 800;
   color: var(--text);
 }
 
 .admin-price-card--primary .admin-price-card__name {
-  font-size: 17px;
+  font-size: 14.5px;
 }
 
 .admin-price-card__quote-status {

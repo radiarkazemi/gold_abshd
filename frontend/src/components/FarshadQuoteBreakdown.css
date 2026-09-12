@@ -1,56 +1,71 @@
 .farshad-quote {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  margin: 0;
-  padding: 8px 12px;
-  border-radius: var(--radius-md);
-  background: rgba(201, 162, 39, 0.1);
-  border: 1px solid rgba(201, 162, 39, 0.38);
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(201, 162, 39, 0.08);
+  border: 1px solid rgba(201, 162, 39, 0.28);
 }
 
 .farshad-quote.is-stale {
-  border-color: rgba(200, 80, 50, 0.45);
-  background: rgba(200, 80, 50, 0.08);
+  border-color: rgba(200, 80, 50, 0.4);
+  background: rgba(200, 80, 50, 0.07);
 }
 
-.farshad-quote__row {
+.farshad-quote__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.farshad-quote__chip {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 7px 0;
-  border-bottom: 1px solid rgba(201, 162, 39, 0.16);
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.12);
 }
 
-.farshad-quote__row:last-child {
-  border-bottom: none;
-}
-
-.farshad-quote__row dt {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 800;
+.farshad-quote__k {
+  font-size: 10px;
+  font-weight: 700;
   color: var(--text-muted);
+  line-height: 1.2;
   white-space: nowrap;
 }
 
-.farshad-quote__row dd {
-  margin: 0;
+.farshad-quote__v {
   font-family: var(--font-display);
-  font-size: 15px;
+  font-size: 12.5px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   color: var(--text);
-  text-align: start;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.farshad-quote__sides-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 5px 1px;
+  min-width: 0;
 }
 
 .farshad-quote__sides {
   display: inline-flex;
   align-items: baseline;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-start;
+  gap: 4px;
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
 }
 
 .farshad-quote__sides .is-buy {
@@ -63,12 +78,26 @@
 
 .farshad-quote__slash {
   color: var(--text-faint);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .farshad-quote__stale {
-  font-size: 11px;
+  align-self: flex-start;
+  font-size: 10px;
   font-weight: 800;
   color: var(--sell-bright);
-  padding: 2px 0 6px;
+  line-height: 1;
+}
+
+@media (max-width: 420px) {
+  .farshad-quote__stats {
+    grid-template-columns: 1fr;
+  }
+
+  .farshad-quote__chip {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
 }
