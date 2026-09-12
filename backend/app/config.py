@@ -146,7 +146,15 @@ class Settings:
     # "it just works" behavior the single-price system always had,
     # without needing an admin to manually configure anything first.
     # Set to "" to disable auto-bootstrap entirely.
-    DEFAULT_ORDERABLE_ITEM_ID: str = os.getenv("GOLDAPP_DEFAULT_ORDERABLE_ITEM_ID", "1")
+    # Goldbridge's Farshad /trade tile is نقدی یکشنبه = 1013 (id 1 is the
+    # inactive master نقد یکشنبه). Fresh installs should enable 1013.
+    DEFAULT_ORDERABLE_ITEM_ID: str = os.getenv("GOLDAPP_DEFAULT_ORDERABLE_ITEM_ID", "1013")
+
+    # Hedge pad goldapp must apply itself. Goldbridge no longer adds
+    # BRIDGE_SHOP_MARGIN_TOMAN (±10,000 Toman). Live Farshad buy/sell are
+    # the on-screen quotes; we add this on top so hedges stay profitable.
+    # Role/card commission is still applied after this pad.
+    EXTRA_SHOP_MARGIN_TOMAN: float = float(os.getenv("GOLDAPP_EXTRA_SHOP_MARGIN_TOMAN", "10000"))
 
     # goldbridge (and sekefarshad.ir underneath it) reports prices in
     # Rial; the app displays and stores everything in Toman (Rial / 10).

@@ -31,6 +31,8 @@ COIN_ITEM_TYPE = 2
 SPECIAL_CARD_MOTAFEREGHE_ID = 900001       # متفرقه — sell only, گرم۱۸
 SPECIAL_CARD_NAGHD_KARTKHAN_ID = 900002    # نقد کارتخوان — buy only, مثقال۱۷
 DEFAULT_PRICE_SOURCE_ITEM_ID = 1
+# Farshad /trade cash tile (نقدی یکشنبه). Id 1 is the hidden master.
+FARSHAD_TRADE_CASH_ITEM_ID = 1013
 # نقد کارتخوان is always id:1 (مثقال۱۷) + this fixed markup (تومان).
 NAGHD_KARTKHAN_MARKUP_TOMAN = 100_000
 
@@ -68,6 +70,82 @@ _manual_quotes: dict[int, dict] = {}
 _card_config_cache: list | None = None
 # After متفرقه / نقد کارتخوان rows exist and match spec, skip ensure() entirely.
 _specials_ready = False
+
+
+def extra_shop_margin_toman() -> float:
+    """Hedge pad (Toman) applied to live goldbridge gold quotes only."""
+    try:
+        return max(0.0, float(getattr(settings, "EXTRA_SHOP_MARGIN_TOMAN", 0) or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _maybe_toman(value):
+    if value is None or value == "":
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if settings.PRICE_API_RIAL_TO_TOMAN:
+        number = number / 10.0
+    return number
+
+
+def clean_goldbridge_item(item: dict) -> dict | None:
+    """Normalize one goldbridge /prices row to Toman in-app units."""
+    if not item:
+        return None
+    item_id = item.get("id", item.get("goldbridge_item_id"))
+    if item_id is None:
+        return None
+    buy = _maybe_toman(item.get("buy"))
+    sell = _maybe_toman(item.get("sell"))
+    last_update = (
+        item.get("last_update_time")
+        or item.get("source_updated_at")
+        or item.get("updated_at")
+    )
+    return {
+        "goldbridge_item_id": int(item_id),
+        "name": item.get("name"),
+        "type": item.get("type"),
+        "ayar": item.get("ayar"),
+        "item_weight": item.get("item_weight"),
+        "buy": buy,
+        "sell": sell,
+        "base_price": _maybe_toman(item.get("base_price")),
+        "profit": _maybe_toman(item.get("profit")),
+        "master_profit": _maybe_toman(item.get("master_profit")),
+        "farshad_commission": _maybe_toman(item.get("farshad_commission")),
+        "farshad_spread": _maybe_toman(item.get("farshad_spread")),
+        "stale": bool(item.get("stale")),
+        "related_id": int(item["related_id"]) if item.get("related_id") not in (None, "") else None,
+        "related_diff": _maybe_toman(item.get("related_diff")),
+        "allow_buy": bool(item.get("allow_buy")),
+        "allow_sell": bool(item.get("allow_sell")),
+        "active": bool(item.get("active")),
+        "last_update_time": last_update,
+    }
+
+
+def _apply_live_shop_margin(item: dict) -> dict:
+    """Pad Farshad on-screen quotes. Coins and non-live rows are unchanged."""
+    out = dict(item)
+    out.setdefault("farshad_buy", out.get("buy"))
+    out.setdefault("farshad_sell", out.get("sell"))
+    if out.get("type") == COIN_ITEM_TYPE or out.get("price_source") != "live":
+        out["shop_margin_toman"] = 0.0
+        return out
+    margin = extra_shop_margin_toman()
+    out["shop_margin_toman"] = margin
+    if margin <= 0:
+        return out
+    if out.get("buy") is not None:
+        out["buy"] = float(out["buy"]) + margin
+    if out.get("sell") is not None:
+        out["sell"] = float(out["sell"]) - margin
+    return out
 
 
 def get_raw_items() -> dict[int, dict]:
@@ -480,27 +558,10 @@ async def poll_all_items():
 
                 cleaned = {}
                 for item in items:
-                    item_id = item.get("id")
-                    if item_id is None:
+                    row = clean_goldbridge_item(item)
+                    if not row:
                         continue
-                    buy = item.get("buy")
-                    sell = item.get("sell")
-                    if settings.PRICE_API_RIAL_TO_TOMAN and buy is not None and sell is not None:
-                        buy = buy / 10
-                        sell = sell / 10
-                    cleaned[item_id] = {
-                        "goldbridge_item_id": item_id,
-                        "name": item.get("name"),
-                        "type": item.get("type"),
-                        "ayar": item.get("ayar"),
-                        "item_weight": item.get("item_weight"),
-                        "buy": buy,
-                        "sell": sell,
-                        "allow_buy": bool(item.get("allow_buy")),
-                        "allow_sell": bool(item.get("allow_sell")),
-                        "active": bool(item.get("active")),
-                        "last_update_time": item.get("last_update_time"),
-                    }
+                    cleaned[row["goldbridge_item_id"]] = row
 
                 async with _lock:
                     _merge_polled_items(cleaned)
@@ -677,7 +738,9 @@ def _live_or_manual_item(card, live_item: dict | None, *, buy_only_ok: bool = Fa
             if card.display_name:
                 out["name"] = card.display_name
         out["price_source"] = "live"
-        return out
+        out["farshad_buy"] = out.get("buy")
+        out["farshad_sell"] = out.get("sell")
+        return _apply_live_shop_margin(out)
     return None
 
 
@@ -879,10 +942,14 @@ def list_admin_cards(db: Session) -> list[dict]:
             "price_label_mode": card.price_label_mode if card else None,
             "live_buy": item.get("buy"),
             "live_sell": item.get("sell"),
+            "farshad_buy": item.get("buy"),
+            "farshad_sell": item.get("sell"),
             "buy": effective["buy"] if effective else item.get("buy"),
             "sell": effective["sell"] if effective else item.get("sell"),
             "price_source": effective["price_source"] if effective else "unavailable",
             "mirrored_source_mode": (effective or {}).get("mirrored_source_mode"),
+            "shop_margin_toman": (effective or {}).get("shop_margin_toman") or 0,
+            "is_farshad_trade_tile": int(item_id) == FARSHAD_TRADE_CASH_ITEM_ID,
             "sort_order": card.sort_order if card else 0,
             "role_commissions": _role_commissions_for_card(db, item_id, roles, commissions_by_item.get(item_id, {})),
         })
@@ -923,6 +990,8 @@ def list_admin_cards(db: Session) -> list[dict]:
                 "price_label_mode": card.price_label_mode,
                 "price_source": "unavailable",
                 "mirrored_source_mode": None,
+                "shop_margin_toman": 0,
+                "is_farshad_trade_tile": int(item_id) == FARSHAD_TRADE_CASH_ITEM_ID,
                 "sort_order": card.sort_order,
                 "role_commissions": _role_commissions_for_card(db, item_id, roles, commissions_by_item.get(item_id, {})),
             })
@@ -952,6 +1021,8 @@ def list_admin_cards(db: Session) -> list[dict]:
             "price_label_mode": card.price_label_mode,
             "price_source": effective.get("price_source", "mirrored"),
             "mirrored_source_mode": effective.get("mirrored_source_mode"),
+            "shop_margin_toman": 0,
+            "is_farshad_trade_tile": int(item_id) == FARSHAD_TRADE_CASH_ITEM_ID,
             "sort_order": card.sort_order,
             "role_commissions": _role_commissions_for_card(db, item_id, roles, commissions_by_item.get(item_id, {})),
         })
