@@ -532,7 +532,7 @@ export default function AdminPricesTab() {
     setBusyId(card.goldbridge_item_id);
     try {
       const updated = await setPriceCardEnabled(card.goldbridge_item_id, !card.is_enabled);
-      setCards(updated);
+      setCards(syncMirroredCardQuotes(updated));
       fetchGenRef.current += 1; // invalidate in-flight polls
     } catch (e) {
       alert(e.message || "خطا در تغییر وضعیت نمایش");
@@ -549,7 +549,7 @@ export default function AdminPricesTab() {
       const nextBuy = side === "buy" ? !card.orderable_buy : card.orderable_buy;
       const nextSell = side === "sell" ? !card.orderable_sell : card.orderable_sell;
       const updated = await setPriceCardOrderable(card.goldbridge_item_id, nextBuy, nextSell);
-      setCards(updated);
+      setCards(syncMirroredCardQuotes(updated));
       fetchGenRef.current += 1;
     } catch (e) {
       alert(e.message || "خطا در تغییر وضعیت سفارش‌پذیری");
@@ -564,7 +564,7 @@ export default function AdminPricesTab() {
     setBusyId(card.goldbridge_item_id);
     try {
       const updated = await setPriceCardOverride(card.goldbridge_item_id, !card.override_source_restriction);
-      setCards(updated);
+      setCards(syncMirroredCardQuotes(updated));
       fetchGenRef.current += 1;
     } catch (e) {
       alert(e.message || "خطا در تغییر وضعیت override");
@@ -617,7 +617,7 @@ export default function AdminPricesTab() {
     setBusyId(card.goldbridge_item_id);
     try {
       const updated = await setPriceCardRoleCommission(card.goldbridge_item_id, payload);
-      setCards(updated);
+      setCards(syncMirroredCardQuotes(updated));
       fetchGenRef.current += 1;
       const savedCard = (updated || []).find((c) => c.goldbridge_item_id === card.goldbridge_item_id);
       return savedCard?.role_commissions || [];
@@ -857,10 +857,10 @@ export default function AdminPricesTab() {
           {isMirrored && (
             <p className="price-cards-admin__manual-note">
               {c.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
-                ? "متفرقه: قیمت پایه = بخریدِ id:1 (زنده یا دستی) — گرم ۱۸ = (قیمت + کارمزد) ÷ ۴٫۳۹ برای بفروشید."
+                ? "متفرقه: پایه = بخرید نهایی فرشاد (زنده id:1013 یا دستی id:1) — گرم ۱۸ = (قیمت + کارمزد) ÷ ۴٫۳۹ برای بفروشید."
                 : c.goldbridge_item_id === SPECIAL_NAGHD_KARTKHAN_ID
-                  ? "نقد کارتخوان: قیمت نهایی = (بخریدِ id:1 زنده یا دستی + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."
-                  : `قیمت این کارت همیشه از آیتم id:${c.price_source_item_id || 1} (زنده یا دستی) گرفته می‌شود.`}
+                  ? "نقد کارتخوان: قیمت نهایی = (بخرید نهایی فرشاد زنده id:1013 یا دستی id:1 + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."
+                  : `قیمت این کارت همیشه از آیتم id:${c.price_source_item_id || 1013} (زنده یا دستی) گرفته می‌شود.`}
               {" "}
               کارمزد/اختلاف هر دسته‌بندی را پایین تنظیم کنید.
             </p>
