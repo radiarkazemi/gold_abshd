@@ -60,15 +60,13 @@ function quoteStatus(card) {
 function syncMirroredCardQuotes(cards) {
   if (!Array.isArray(cards)) return cards;
   const master = cards.find((c) => Number(c.goldbridge_item_id) === SOURCE_MIRROR_ITEM_ID);
-  const trade = cards.find((c) => Number(c.goldbridge_item_id) === FARSHAD_TRADE_CASH_ITEM_ID);
-  if (!master && !trade) return cards;
+  if (!master && !cards.length) return cards;
   const mirroredMode =
     (master && (master.use_manual_price || master.price_source === "manual"))
       ? "manual"
       : "live";
-  // Live base = Farshad final buy on the active trade tile (id:1013), which
-  // ticks every poll. id:1 is often inactive/frozen on goldbridge. Manual on
-  // id:1 still overrides. Never apply shop padding to this base.
+  // Live base = best live Farshad نقدی day quote. Prefer 1013 while active/fresh;
+  // if Farshad froze Sunday, follow the currently active day (e.g. دوشنبه).
   let buy;
   let sourceItemId = SOURCE_MIRROR_ITEM_ID;
   if (mirroredMode === "manual") {
@@ -77,7 +75,12 @@ function syncMirroredCardQuotes(cards) {
   } else {
     const stripMargin = (card) => {
       if (!card) return NaN;
-      let v = Number(card.live_buy ?? card.farshad_buy);
+      // When 1013 is overlaying another Farshad day, prefer the effective buy.
+      let v = Number(
+        card.live_from_item_id
+          ? card.buy
+          : (card.live_buy ?? card.farshad_buy ?? card.buy)
+      );
       if (!(v > 0) && card.buy != null) {
         const padded = Number(card.buy);
         const margin = Number(card.shop_margin_toman) || 0;
@@ -85,9 +88,25 @@ function syncMirroredCardQuotes(cards) {
       }
       return v;
     };
+    const isFarshadDayCash = (card) => {
+      const name = String(card.display_name || card.name || "");
+      if (name.includes("کارتخوان")) return false;
+      return name.startsWith("نقدی") || name.startsWith("نقدي");
+    };
+    const tradePreferred = cards.find((c) => Number(c.goldbridge_item_id) === FARSHAD_TRADE_CASH_ITEM_ID);
+    const tradeFresh = tradePreferred && (tradePreferred.active || tradePreferred.live_from_item_id);
+    let trade = tradeFresh ? tradePreferred : null;
+    if (!trade || !(stripMargin(trade) > 0)) {
+      const candidates = cards
+        .filter((c) => isFarshadDayCash(c) && c.active !== false)
+        .map((c) => ({ c, buy: stripMargin(c) }))
+        .filter((x) => x.buy > 0);
+      candidates.sort((a, b) => Number(b.c.active) - Number(a.c.active));
+      trade = candidates[0]?.c || tradePreferred;
+    }
     buy = stripMargin(trade);
     if (buy > 0) {
-      sourceItemId = FARSHAD_TRADE_CASH_ITEM_ID;
+      sourceItemId = Number(trade.live_from_item_id || trade.goldbridge_item_id) || FARSHAD_TRADE_CASH_ITEM_ID;
     } else {
       buy = stripMargin(master);
       sourceItemId = SOURCE_MIRROR_ITEM_ID;

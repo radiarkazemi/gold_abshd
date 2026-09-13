@@ -203,12 +203,12 @@
 
 .order-btn--accept {
   background: var(--buy);
-  color: #eafff2;
+  color: var(--status-on-buy-fg);
 }
 
 .order-btn--reject {
   background: var(--sell);
-  color: #ffece5;
+  color: var(--status-on-sell-fg);
 }
 
 .order-btn--reject-price {
@@ -908,7 +908,7 @@
 .role-row__save-btn {
   border: none;
   background: var(--buy);
-  color: #eafff2;
+  color: var(--status-on-buy-fg);
   border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 700;

@@ -34,6 +34,11 @@
   --panel-sell-bg-2: #2c1c15;
   --admin-sidebar-bg: #161209;
   --panel-badge-neutral-bg: rgba(255, 255, 255, 0.07);
+
+  /* Text on colored buy/sell/gold buttons (dark theme defaults) */
+  --status-on-buy-fg: #eafff2;
+  --status-on-sell-fg: #ffece5;
+  --status-on-neutral-fg: #1a1508;
 }
 
 :root[data-theme="light"] {
@@ -64,6 +69,11 @@
   --panel-sell-bg-2: #faeae2;
   --admin-sidebar-bg: #f2ead8;
   --panel-badge-neutral-bg: rgba(0, 0, 0, 0.055);
+
+  /* Keep readable on colored buttons; gold CTAs stay dark-on-gold */
+  --status-on-buy-fg: #f3fff8;
+  --status-on-sell-fg: #fff5f0;
+  --status-on-neutral-fg: #1a1508;
 }
 
 * {

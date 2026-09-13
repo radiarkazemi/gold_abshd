@@ -290,10 +290,11 @@ def _merge_polled_items(cleaned: dict[int, dict]) -> bool:
         )
         if price_changed:
             any_change = True
-            # When Farshad live buy moves, mirrored specials must refresh too
-            # (admin poll / WS clients key off per-item change stamps).
-            if int(item_id) in (FARSHAD_TRADE_CASH_ITEM_ID, DEFAULT_PRICE_SOURCE_ITEM_ID):
-                stamp = _normalize_source_ts(item.get("last_update_time")) or now
+            # When any live Farshad cash day moves, refresh 1013 + specials
+            # (1013 may be overlaying that day's quote while its own tile is frozen).
+            stamp = _normalize_source_ts(item.get("last_update_time")) or now
+            if int(item_id) == DEFAULT_PRICE_SOURCE_ITEM_ID or _is_farshad_day_cash(item):
+                _item_price_changed_at[FARSHAD_TRADE_CASH_ITEM_ID] = stamp
                 for special_id in (SPECIAL_CARD_MOTAFEREGHE_ID, SPECIAL_CARD_NAGHD_KARTKHAN_ID):
                     _item_price_changed_at[special_id] = stamp
 
@@ -305,13 +306,35 @@ def _merge_polled_items(cleaned: dict[int, dict]) -> bool:
 
         src_ts = _normalize_source_ts(item.get("last_update_time"))
         if src_ts:
-            _item_price_changed_at[item_id] = src_ts
+            # Frozen 1013 must not clobber a fresher stamp set when an
+            # active day-cash tile moved (overlay path). Other items
+            # always follow goldbridge last_update_time (needed after
+            # unticking manual so the clock re-syncs even to an older ts).
+            if int(item_id) == FARSHAD_TRADE_CASH_ITEM_ID:
+                existing_ms = _parse_ts_ms(_item_price_changed_at.get(item_id))
+                new_ms = _parse_ts_ms(src_ts)
+                if existing_ms is None or new_ms is None or new_ms >= existing_ms:
+                    _item_price_changed_at[item_id] = src_ts
+            else:
+                _item_price_changed_at[item_id] = src_ts
             src_ms = _parse_ts_ms(src_ts)
             if src_ms is not None and (newest_src_ms is None or src_ms > newest_src_ms):
                 newest_src_ms = src_ms
                 newest_src_ts = src_ts
         elif item_id not in _item_price_changed_at:
             _item_price_changed_at[item_id] = now
+
+    # Items that vanished from this poll are no longer live — mark inactive
+    # so resolve_live_farshad_cash_item() can fail over (e.g. 1013 dropped).
+    for item_id, prev in list(_latest_items.items()):
+        if item_id in cleaned:
+            continue
+        if item_id in (SPECIAL_CARD_MOTAFEREGHE_ID, SPECIAL_CARD_NAGHD_KARTKHAN_ID):
+            continue
+        if prev.get("active"):
+            stale = dict(prev)
+            stale["active"] = False
+            _latest_items[item_id] = stale
 
     if newest_src_ts and (
         _latest_updated_at is None
@@ -682,6 +705,137 @@ def _manual_quote_for(item_id: int | None) -> dict | None:
     return _manual_quotes.get(int(item_id))
 
 
+# How long a Farshad cash quote can lag before we treat it as frozen.
+_FARSHAD_FRESH_MS = 5 * 60 * 1000
+
+# Match goldbridge BRIDGE_TARGET_MODE=tomorrow: Farshad names cash by
+# *delivery* weekday. On Sunday the live board tile is نقدی دوشنبه.
+_WEEKDAY_FA = {
+    0: "دوشنبه",
+    1: "سه‌شنبه",
+    2: "چهارشنبه",
+    3: "پنجشنبه",
+    4: "جمعه",
+    5: "شنبه",
+    6: "یکشنبه",
+}
+
+
+def _item_update_ms(item: dict | None) -> float:
+    if not item:
+        return 0.0
+    return float(_parse_ts_ms(item.get("last_update_time")) or 0.0)
+
+
+def _normalize_fa_name(name: str | None) -> str:
+    if not name:
+        return ""
+    return (
+        str(name)
+        .replace("\u200c", "")
+        .replace("\u200e", "")
+        .replace("\u200f", "")
+        .replace(" ", "")
+        .replace("ـ", "")
+    )
+
+
+def _name_has_weekday(name: str | None, weekday_fa: str) -> bool:
+    n = _normalize_fa_name(name)
+    w = _normalize_fa_name(weekday_fa)
+    if not n or not w:
+        return False
+    # 'شنبه' is a suffix of 'یکشنبه' — require an exact-day match.
+    if w == "شنبه":
+        return "شنبه" in n and "یکشنبه" not in n
+    return w in n
+
+
+def _tomorrow_weekday_fa(now=None) -> str:
+    """Persian weekday label for tomorrow in Asia/Tehran (goldbridge parity)."""
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
+
+    tehran = ZoneInfo("Asia/Tehran")
+    if now is None:
+        local = datetime.now(tehran)
+    else:
+        local = now.astimezone(tehran) if getattr(now, "tzinfo", None) else now.replace(tzinfo=tehran)
+    return _WEEKDAY_FA[(local + timedelta(days=1)).weekday()]
+
+
+def _is_farshad_day_cash(item: dict) -> bool:
+    """Farshad weekday نقدی tiles (not کارتخوان, not coins, not id:1 masters)."""
+    if not item or item.get("type") != GOLD_ITEM_TYPE:
+        return False
+    name = str(item.get("name") or "")
+    if "کارتخوان" in name:
+        return False
+    return name.startswith("نقدی") or name.startswith("نقدي")
+
+
+def resolve_live_farshad_cash_item(*, now=None) -> dict | None:
+    """
+    Best live Farshad mesghal-cash quote — same intent as goldbridge
+    ``BRIDGE_TARGET_MODE=tomorrow``.
+
+    Prefer id:1013 only while Farshad still marks it active. Otherwise
+    prefer tomorrow's نقدی delivery tile in Asia/Tehran (Sunday →
+    نقدی دوشنبه / 1009), then any other active نقدی day, so customer
+    prices and متفرقه / کارتخوان keep moving with the Farshad board.
+    """
+    preferred = _latest_items.get(FARSHAD_TRADE_CASH_ITEM_ID)
+    if (
+        preferred is not None
+        and preferred.get("buy") is not None
+        and preferred.get("active")
+    ):
+        return preferred
+
+    candidates: list[dict] = []
+    for it in _latest_items.values():
+        if not _is_farshad_day_cash(it):
+            continue
+        if it.get("buy") is None or not it.get("active"):
+            continue
+        candidates.append(it)
+
+    if candidates:
+        tomorrow = _tomorrow_weekday_fa(now)
+        day_match = [c for c in candidates if _name_has_weekday(c.get("name"), tomorrow)]
+        pool = day_match or candidates
+        pool.sort(key=_item_update_ms, reverse=True)
+        return pool[0]
+
+    if preferred is not None and preferred.get("buy") is not None:
+        return preferred
+    return None
+
+
+def _overlay_live_farshad_cash(out: dict) -> dict:
+    """If this is the shop's 1013 card and that tile is frozen, use live Farshad cash."""
+    if int(out.get("goldbridge_item_id") or 0) != FARSHAD_TRADE_CASH_ITEM_ID:
+        return out
+    if out.get("price_source") == "manual":
+        return out
+    live = resolve_live_farshad_cash_item()
+    if not live or live.get("buy") is None:
+        return out
+    live_id = int(live.get("goldbridge_item_id") or 0)
+    if live_id == FARSHAD_TRADE_CASH_ITEM_ID:
+        return out
+    patched = dict(out)
+    patched["buy"] = float(live["buy"])
+    if live.get("sell") is not None:
+        patched["sell"] = float(live["sell"])
+    patched["farshad_buy"] = float(live["buy"])
+    patched["farshad_sell"] = float(live["sell"]) if live.get("sell") is not None else patched.get("farshad_sell")
+    patched["live_from_item_id"] = live_id
+    patched["last_update_time"] = live.get("last_update_time") or patched.get("last_update_time")
+    patched["price_source"] = "live"
+    return _apply_live_shop_margin(patched)
+
+
 def _mirror_base_buy(
     src_card,
     source_live: dict | None,
@@ -694,10 +848,10 @@ def _mirror_base_buy(
 
     Manual on id:1 wins (exact admin-typed buy).
 
-    Live mode follows Farshad's *active* cash tile (id:1013) — that is the
-    quote that ticks on goldbridge. Hidden master id:1 is often inactive and
-    frozen, which previously left متفرقه / کارتخوان stuck while 1013 moved.
-    Falls back to id:1 live buy only if 1013 has no buy.
+    Live mode follows the best live Farshad نقدی day tile (prefers 1013
+    while it is active/fresh; otherwise the current active day such as
+    دوشنبه / سه‌شنبه). Falls back to id:1 live buy only if no Farshad
+    cash quote exists.
     """
     sid = source_id
     if sid is None and src_card is not None:
@@ -711,9 +865,9 @@ def _mirror_base_buy(
             return float(cached["buy"]), "manual", sid
     elif src_card is not None and src_card.use_manual_price and src_card.manual_buy is not None:
         return float(src_card.manual_buy), "manual", sid
-    trade_live = _latest_items.get(FARSHAD_TRADE_CASH_ITEM_ID)
+    trade_live = resolve_live_farshad_cash_item()
     if trade_live is not None and trade_live.get("buy") is not None:
-        return float(trade_live["buy"]), "live", FARSHAD_TRADE_CASH_ITEM_ID
+        return float(trade_live["buy"]), "live", int(trade_live["goldbridge_item_id"])
     if source_live is not None and source_live.get("buy") is not None:
         return float(source_live["buy"]), "live", sid
     return None, "unavailable", None
@@ -769,7 +923,21 @@ def _live_or_manual_item(card, live_item: dict | None, *, buy_only_ok: bool = Fa
         out["price_source"] = "live"
         out["farshad_buy"] = out.get("buy")
         out["farshad_sell"] = out.get("sell")
-        return _apply_live_shop_margin(out)
+        # When 1013 is frozen/inactive, overlay the live Farshad day cash quote.
+        return _overlay_live_farshad_cash(_apply_live_shop_margin(out))
+    # 1013 may have a row but be inactive with no usable sell — still try failover.
+    if card and int(getattr(card, "goldbridge_item_id", 0) or 0) == FARSHAD_TRADE_CASH_ITEM_ID:
+        live = resolve_live_farshad_cash_item()
+        if live and live.get("buy") is not None:
+            out = dict(live)
+            out["goldbridge_item_id"] = FARSHAD_TRADE_CASH_ITEM_ID
+            if card.display_name:
+                out["name"] = card.display_name
+            out["price_source"] = "live"
+            out["farshad_buy"] = out.get("buy")
+            out["farshad_sell"] = out.get("sell")
+            out["live_from_item_id"] = int(live.get("goldbridge_item_id") or 0)
+            return _apply_live_shop_margin(out)
     return None
 
 
@@ -997,14 +1165,15 @@ def list_admin_cards(db: Session) -> list[dict]:
             "manual_sell": card.manual_sell if card else None,
             "price_source_item_id": card.price_source_item_id if card else None,
             "price_label_mode": card.price_label_mode if card else None,
-            "live_buy": item.get("buy"),
-            "live_sell": item.get("sell"),
-            "farshad_buy": item.get("buy"),
-            "farshad_sell": item.get("sell"),
+            "live_buy": (effective or {}).get("farshad_buy") or item.get("buy"),
+            "live_sell": (effective or {}).get("farshad_sell") or item.get("sell"),
+            "farshad_buy": (effective or {}).get("farshad_buy") or item.get("buy"),
+            "farshad_sell": (effective or {}).get("farshad_sell") or item.get("sell"),
             "buy": effective["buy"] if effective else item.get("buy"),
             "sell": effective["sell"] if effective else item.get("sell"),
             "price_source": effective["price_source"] if effective else "unavailable",
             "mirrored_source_mode": (effective or {}).get("mirrored_source_mode"),
+            "live_from_item_id": (effective or {}).get("live_from_item_id"),
             "shop_margin_toman": (effective or {}).get("shop_margin_toman") or 0,
             "is_farshad_trade_tile": int(item_id) == FARSHAD_TRADE_CASH_ITEM_ID,
             "is_farshad_hidden_master": int(item_id) == DEFAULT_PRICE_SOURCE_ITEM_ID,

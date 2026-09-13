@@ -111,12 +111,12 @@
 
 .price-panel--buy .price-panel__cta {
   background: var(--buy);
-  color: #eafff2;
+  color: var(--status-on-buy-fg);
 }
 
 .price-panel--sell .price-panel__cta {
   background: var(--sell);
-  color: #ffece5;
+  color: var(--status-on-sell-fg);
 }
 
 /* Price text now sits under the button, a bit smaller than before */

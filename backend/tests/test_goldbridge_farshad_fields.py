@@ -245,3 +245,73 @@ def test_coins_do_not_get_shop_margin():
     out = price_cards._live_or_manual_item(src, live)
     assert out["buy"] == 80_000_000
     assert out["shop_margin_toman"] == 0
+
+
+def test_frozen_1013_follows_tomorrow_farshad_day():
+    """Inactive 1013 overlays goldbridge tomorrow tile (Sunday → دوشنبه/1009)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    price_cards._latest_items[1013] = {
+        "goldbridge_item_id": 1013,
+        "name": "نقدی یکشنبه",
+        "type": 1,
+        "buy": 102_030_000,
+        "sell": 101_890_000,
+        "active": False,
+        "allow_buy": True,
+        "allow_sell": True,
+    }
+    price_cards._latest_items[1009] = {
+        "goldbridge_item_id": 1009,
+        "name": "نقدی دوشنبه",
+        "type": 1,
+        "buy": 102_850_000,
+        "sell": 102_730_000,
+        "active": True,
+        "allow_buy": True,
+        "allow_sell": True,
+    }
+    price_cards._latest_items[1010] = {
+        "goldbridge_item_id": 1010,
+        "name": "نقدی سه‌شنبه",
+        "type": 1,
+        "buy": 103_140_000,
+        "sell": 103_000_000,
+        "active": True,
+        "allow_buy": True,
+        "allow_sell": True,
+    }
+    sunday = datetime(2026, 9, 13, 16, 0, tzinfo=ZoneInfo("Asia/Tehran"))
+    live = price_cards.resolve_live_farshad_cash_item(now=sunday)
+    assert live["goldbridge_item_id"] == 1009
+    card = type("C", (), {
+        "goldbridge_item_id": 1013,
+        "display_name": "نقدی یکشنبه",
+        "use_manual_price": False,
+        "manual_buy": None,
+        "manual_sell": None,
+    })()
+    out = price_cards._live_or_manual_item(card, price_cards._latest_items[1013])
+    assert out["buy"] == 102_850_000
+    assert out.get("live_from_item_id") == 1009
+
+    mota = type("C", (), {
+        "goldbridge_item_id": price_cards.SPECIAL_CARD_MOTAFEREGHE_ID,
+        "display_name": "متفرقه",
+        "use_manual_price": False,
+        "manual_buy": None,
+        "manual_sell": None,
+        "price_source_item_id": 1,
+    })()
+    src = type("C", (), {
+        "goldbridge_item_id": 1,
+        "display_name": "نقد یکشنبه",
+        "use_manual_price": False,
+        "manual_buy": None,
+        "manual_sell": None,
+        "price_source_item_id": None,
+    })()
+    mota_out = price_cards.resolve_effective_item(mota, None, source_card=src)
+    assert mota_out["buy"] == 102_850_000
+    assert mota_out.get("mirrored_from") == 1009
