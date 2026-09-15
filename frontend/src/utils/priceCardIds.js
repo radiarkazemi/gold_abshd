@@ -66,3 +66,16 @@ export function sortPriceCards(cards) {
     return Number(a.goldbridge_item_id) - Number(b.goldbridge_item_id);
   });
 }
+
+/**
+ * Trader UI action sides for a card.
+ * - متفرقه (900001): sell only (بفروشید)
+ * - نقد کارتخوان (900002): buy only (بخرید)
+ * - everything else: both
+ */
+export function cardActionSideMode(card) {
+  const id = Number(card?.goldbridge_item_id);
+  if (id === SPECIAL_MOTAFEREGHE_ID) return "sell";
+  if (id === SPECIAL_NAGHD_KARTKHAN_ID) return "buy";
+  return "both";
+}

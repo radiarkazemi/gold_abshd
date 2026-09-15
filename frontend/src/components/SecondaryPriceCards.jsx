@@ -1,3 +1,5 @@
+import { cardActionSideMode } from "../utils/priceCardIds";
+
 function fa(n, opts) {
   if (n == null) return "—";
   return Number(n).toLocaleString("fa-IR", opts);
@@ -18,25 +20,37 @@ export default function SecondaryPriceCards({ cards, primaryItemId }) {
 
   return (
     <div className={`secondary-cards secondary-cards--${density}`}>
-      {secondary.map((c) => (
-        <div key={c.goldbridge_item_id} className="secondary-card">
-          <div className="secondary-card__name">
-            {c.name}
-            <span className="secondary-card__type">{TYPE_LABEL[c.type] || ""}</span>
-          </div>
-          <div className="secondary-card__values">
-            <div className="secondary-card__value secondary-card__value--sell">
-              <span className="secondary-card__label">فروش</span>
-              <span className="secondary-card__amount">{fa(Math.round(c.sell_price))}</span>
+      {secondary.map((c) => {
+        const sideMode = cardActionSideMode(c);
+        const showBuy = sideMode === "both" || sideMode === "buy";
+        const showSell = sideMode === "both" || sideMode === "sell";
+        return (
+          <div
+            key={c.goldbridge_item_id}
+            className={`secondary-card${sideMode !== "both" ? " secondary-card--single-side" : ""}`}
+          >
+            <div className="secondary-card__name">
+              {c.name}
+              <span className="secondary-card__type">{TYPE_LABEL[c.type] || ""}</span>
             </div>
-            <div className="secondary-card__value secondary-card__value--buy">
-              <span className="secondary-card__label">خرید</span>
-              <span className="secondary-card__amount">{fa(Math.round(c.buy_price))}</span>
+            <div className="secondary-card__values">
+              {showSell && (
+                <div className="secondary-card__value secondary-card__value--sell">
+                  <span className="secondary-card__label">فروش</span>
+                  <span className="secondary-card__amount">{fa(Math.round(c.sell_price))}</span>
+                </div>
+              )}
+              {showBuy && (
+                <div className="secondary-card__value secondary-card__value--buy">
+                  <span className="secondary-card__label">خرید</span>
+                  <span className="secondary-card__amount">{fa(Math.round(c.buy_price))}</span>
+                </div>
+              )}
             </div>
+            {!c.is_orderable && <span className="secondary-card__readonly">فقط نمایشی</span>}
           </div>
-          {!c.is_orderable && <span className="secondary-card__readonly">فقط نمایشی</span>}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -62,3 +62,15 @@
 .quote-pair--sm .quote-pair__amount {
   font-size: 13px;
 }
+
+/* متفرقه / کارتخوان: one side only, centered and slightly narrower */
+.quote-pair--single {
+  grid-template-columns: 1fr;
+  max-width: 11.5rem;
+  margin-inline: auto;
+}
+
+.quote-pair--single .quote-pair__item {
+  text-align: center;
+  align-items: center;
+}

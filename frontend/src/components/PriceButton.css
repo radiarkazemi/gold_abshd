@@ -76,6 +76,44 @@
   filter: blur(0.5px);
 }
 
+/* Single-side cards (متفرقه = sell, کارتخوان = buy): one centered panel,
+   a little smaller than the full buy/sell stage. */
+.price-stage--single {
+  grid-template-columns: 1fr;
+  max-width: 420px;
+  margin-inline: auto;
+}
+
+.price-stage--single::after {
+  display: none;
+}
+
+.price-card-row--single-side {
+  gap: 5px;
+}
+
+.price-card-row--single-side .price-card-row__head {
+  max-width: 420px;
+}
+
+.price-card-row--single-side .price-card-row__name {
+  font-size: 12px;
+}
+
+.price-card-row--single-side .price-panel {
+  padding: 12px 16px 11px;
+}
+
+.price-card-row--single-side .price-panel__cta {
+  min-width: 7em;
+  font-size: 13px;
+  padding: 7px 14px;
+}
+
+.price-card-row--single-side .price-panel__value {
+  font-size: clamp(14px, 4vw, 17px);
+}
+
 .price-panel__eyebrow {
   font-size: 11px;
   letter-spacing: 0.02em;

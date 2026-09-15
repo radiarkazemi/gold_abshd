@@ -4,6 +4,7 @@ import { formatTomanFa } from "../utils/formatFa";
 import {
   SPECIAL_MOTAFEREGHE_ID,
   SPECIAL_NAGHD_KARTKHAN_ID,
+  cardActionSideMode,
   SOURCE_MIRROR_ITEM_ID,
   FARSHAD_TRADE_CASH_ITEM_ID,
   isFarshadTradeTile,
@@ -758,7 +759,7 @@ export default function AdminPricesTab() {
         </div>
 
         <div className="admin-price-card__quote-block">
-          <QuotePair buy={c.buy} sell={c.sell} size="md" />
+          <QuotePair buy={c.buy} sell={c.sell} size="md" sides={cardActionSideMode(c)} />
           {!isMirrored && hasFarshadQuote(c) && <FarshadQuoteBreakdown card={c} />}
         </div>
 
