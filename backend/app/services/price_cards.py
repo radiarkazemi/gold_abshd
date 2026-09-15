@@ -603,6 +603,14 @@ def ensure_main_cash_card(db: Session | None = None) -> None:
             if main.price_source_item_id is not None:
                 main.price_source_item_id = None
                 dirty = True
+            # Let goldbridge supply the live weekday name (نقدی چهارشنبه, …).
+            if main.display_name in (None, "", "نقدی") or any(
+                day in str(main.display_name or "")
+                for day in ("یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه", "شنبه")
+            ):
+                if main.display_name is not None:
+                    main.display_name = None
+                    dirty = True
             # Disable leftover weekday pins so they don't appear alongside 900000.
             for extra in legacy:
                 if extra.goldbridge_item_id == MAIN_CASH_ITEM_ID:
@@ -1718,9 +1726,15 @@ def get_enabled_cards_for_broadcast(db: Session | None = None) -> list[dict]:
             src_card = by_id.get(int(source_id))
             manual_ts = _dt_to_iso(getattr(src_card, "manual_updated_at", None)) if src_card else None
             card_updated_at = item_price_changed_at(source_id) or manual_ts
+        # Main cash: prefer live goldbridge Farshad name (نقدی چهارشنبه, …)
+        # over a static admin label like «نقدی».
+        if is_main_cash_item_id(card.goldbridge_item_id) and item.get("name"):
+            card_name = item.get("name")
+        else:
+            card_name = card.display_name or item.get("name") or f"#{card.goldbridge_item_id}"
         result.append({
             "goldbridge_item_id": card.goldbridge_item_id,
-            "name": card.display_name or item.get("name") or f"#{card.goldbridge_item_id}",
+            "name": card_name,
             "type": item.get("type", GOLD_ITEM_TYPE),
             "unit": "count" if item.get("type") == COIN_ITEM_TYPE else "gram18",
             "item_weight": item.get("item_weight"),
