@@ -43,38 +43,40 @@ NAGHD_KARTKHAN_MARKUP_TOMAN = 100_000
 
 
 def is_main_cash_item_id(item_id: int | None) -> bool:
+    """True only for the shop's stable نقد فردا card (goldbridge alias 900000)."""
     try:
-        iid = int(item_id or 0)
+        return int(item_id or 0) == MAIN_CASH_ITEM_ID
     except (TypeError, ValueError):
         return False
-    return iid == MAIN_CASH_ITEM_ID or iid in LEGACY_MAIN_CASH_ITEM_IDS
+
+
+def is_legacy_weekday_cash_id(item_id: int | None) -> bool:
+    """Farshad weekday نقدی ids (1013/1009/…) — not the shop main card."""
+    try:
+        return int(item_id or 0) in LEGACY_MAIN_CASH_ITEM_IDS
+    except (TypeError, ValueError):
+        return False
 
 
 def card_list_rank(item_id: int, sort_order: int | None = None, *, in_use: bool = False) -> tuple[int, int, int]:
-    """Stable list order: main cash first, then specials, then hidden master id:1."""
+    """Customer/admin order: نقد فردا → کارتخوان → متفرقه → everything else."""
     iid = int(item_id or 0)
     so = int(sort_order or 0)
-    if is_main_cash_item_id(iid):
+    if iid == MAIN_CASH_ITEM_ID:
         return (0, so, iid)
-    if iid == SPECIAL_CARD_MOTAFEREGHE_ID:
-        return (1, so, iid)
     if iid == SPECIAL_CARD_NAGHD_KARTKHAN_ID:
+        return (1, so, iid)
+    if iid == SPECIAL_CARD_MOTAFEREGHE_ID:
         return (2, so, iid)
     if iid == DEFAULT_PRICE_SOURCE_ITEM_ID:
         return (3, so, iid)
+    # Push leftover Farshad weekday tiles after the organized shop cards.
+    if is_legacy_weekday_cash_id(iid):
+        return (4 if in_use else 5, so, iid)
     return (4 if in_use else 5, so, iid)
 
 
 SPECIAL_MIRRORED_CARDS = (
-    {
-        "goldbridge_item_id": SPECIAL_CARD_MOTAFEREGHE_ID,
-        "display_name": "متفرقه",
-        "price_source_item_id": MAIN_CASH_ITEM_ID,
-        "price_label_mode": "gram18_only",
-        "orderable_buy": False,
-        "orderable_sell": True,
-        "sort_order": 100,
-    },
     {
         "goldbridge_item_id": SPECIAL_CARD_NAGHD_KARTKHAN_ID,
         "display_name": "نقد کارتخوان",
@@ -82,7 +84,16 @@ SPECIAL_MIRRORED_CARDS = (
         "price_label_mode": "mesghal17_only",
         "orderable_buy": True,
         "orderable_sell": False,
-        "sort_order": 101,
+        "sort_order": 10,
+    },
+    {
+        "goldbridge_item_id": SPECIAL_CARD_MOTAFEREGHE_ID,
+        "display_name": "متفرقه",
+        "price_source_item_id": MAIN_CASH_ITEM_ID,
+        "price_label_mode": "gram18_only",
+        "orderable_buy": False,
+        "orderable_sell": True,
+        "sort_order": 20,
     },
 )
 
@@ -528,7 +539,7 @@ def ensure_special_mirrored_cards(db: Session | None = None) -> None:
             if card.use_manual_price:
                 card.use_manual_price = False
                 dirty = True
-            if card.sort_order is None or card.sort_order == 0:
+            if card.sort_order != spec["sort_order"]:
                 card.sort_order = spec["sort_order"]
                 dirty = True
             found += 1
@@ -574,9 +585,10 @@ def ensure_main_cash_card(db: Session | None = None) -> None:
         if main is None and legacy:
             src = legacy[0]
             src.goldbridge_item_id = MAIN_CASH_ITEM_ID
-            if not src.display_name or "یکشنبه" in str(src.display_name) or "دوشنبه" in str(src.display_name):
-                src.display_name = "نقدی"
+            src.display_name = None  # live Farshad name from goldbridge
             src.price_source_item_id = None
+            src.sort_order = 0
+            src.is_enabled = True
             main = src
             dirty = True
             # Drop duplicate legacy rows (keep first remapped).
@@ -589,7 +601,7 @@ def ensure_main_cash_card(db: Session | None = None) -> None:
         elif main is None:
             main = PriceCard(
                 goldbridge_item_id=MAIN_CASH_ITEM_ID,
-                display_name="نقدی",
+                display_name=None,  # live Farshad name from goldbridge (نقد فردا)
                 is_enabled=True,
                 orderable_buy=True,
                 orderable_sell=True,
@@ -603,6 +615,9 @@ def ensure_main_cash_card(db: Session | None = None) -> None:
             if main.price_source_item_id is not None:
                 main.price_source_item_id = None
                 dirty = True
+            if getattr(main, "sort_order", None) != 0:
+                main.sort_order = 0
+                dirty = True
             # Let goldbridge supply the live weekday name (نقدی چهارشنبه, …).
             if main.display_name in (None, "", "نقدی") or any(
                 day in str(main.display_name or "")
@@ -611,12 +626,14 @@ def ensure_main_cash_card(db: Session | None = None) -> None:
                 if main.display_name is not None:
                     main.display_name = None
                     dirty = True
-            # Disable leftover weekday pins so they don't appear alongside 900000.
+            # Disable leftover weekday pins so they don't appear as extra «main» cards.
             for extra in legacy:
                 if extra.goldbridge_item_id == MAIN_CASH_ITEM_ID:
                     continue
-                if extra.is_enabled:
+                if extra.is_enabled or extra.orderable_buy or extra.orderable_sell:
                     extra.is_enabled = False
+                    extra.orderable_buy = False
+                    extra.orderable_sell = False
                     dirty = True
 
         # Move commissions from legacy weekday ids onto 900000.

@@ -225,12 +225,21 @@ def test_mirrored_cards_id1_manual_overrides_trade_tile():
 
 
 
-def test_card_list_rank_puts_trade_tile_first():
+def test_card_list_rank_puts_nagh_farda_then_kartkhan_then_mota():
+    """Shop order: نقد فردا (900000) → کارتخوان → متفرقه → id:1 → others."""
     ranked = sorted(
-        [1, 50, 1013, 900002, 900001],
+        [1, 50, 1013, 900000, 900002, 900001],
         key=lambda i: price_cards.card_list_rank(i, 0, in_use=i in {50}),
     )
-    assert ranked == [1013, 900001, 900002, 1, 50]
+    assert ranked == [900000, 900002, 900001, 1, 50, 1013]
+
+
+def test_only_900000_is_main_cash_not_weekday_ids():
+    assert price_cards.is_main_cash_item_id(900000) is True
+    assert price_cards.is_main_cash_item_id(1013) is False
+    assert price_cards.is_main_cash_item_id(1009) is False
+    assert price_cards.is_legacy_weekday_cash_id(1013) is True
+    assert price_cards.is_legacy_weekday_cash_id(900000) is False
 
 
 def test_coins_do_not_get_shop_margin():
@@ -248,7 +257,7 @@ def test_coins_do_not_get_shop_margin():
 
 
 def test_frozen_1013_follows_tomorrow_farshad_day():
-    """Inactive 1013 overlays goldbridge tomorrow tile (Sunday → دوشنبه/1009)."""
+    """Main cash 900000 overlays goldbridge tomorrow tile (Sunday → دوشنبه/1009)."""
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
@@ -282,21 +291,45 @@ def test_frozen_1013_follows_tomorrow_farshad_day():
         "allow_buy": True,
         "allow_sell": True,
     }
+    # Alias 900000 intentionally absent → resolve falls back to tomorrow weekday tile.
     sunday = datetime(2026, 9, 13, 16, 0, tzinfo=ZoneInfo("Asia/Tehran"))
     live = price_cards.resolve_live_farshad_cash_item(now=sunday)
     assert live["goldbridge_item_id"] == 1009
     card = type("C", (), {
+        "goldbridge_item_id": 900000,
+        "display_name": None,
+        "use_manual_price": False,
+        "manual_buy": None,
+        "manual_sell": None,
+    })()
+    # Shop card live row may be missing; overlay still fills from tomorrow Farshad.
+    stub = {
+        "goldbridge_item_id": 900000,
+        "name": "نقدی",
+        "type": 1,
+        "buy": 102_030_000,
+        "sell": 101_890_000,
+        "active": True,
+        "allow_buy": True,
+        "allow_sell": True,
+    }
+    out = price_cards._live_or_manual_item(card, stub)
+    assert out["buy"] == 102_850_000
+    assert out.get("live_from_item_id") == 1009
+    assert out["name"] == "نقدی دوشنبه"
+    assert out.get("live_from_name") == "نقدی دوشنبه"
+
+    # Leftover weekday pin (1013) is NOT the main card — no tomorrow overlay.
+    weekday = type("C", (), {
         "goldbridge_item_id": 1013,
         "display_name": "نقدی یکشنبه",
         "use_manual_price": False,
         "manual_buy": None,
         "manual_sell": None,
     })()
-    out = price_cards._live_or_manual_item(card, price_cards._latest_items[1013])
-    assert out["buy"] == 102_850_000
-    assert out.get("live_from_item_id") == 1009
-    assert out["name"] == "نقدی دوشنبه"
-    assert out.get("live_from_name") == "نقدی دوشنبه"
+    weekday_out = price_cards._live_or_manual_item(weekday, price_cards._latest_items[1013])
+    assert weekday_out["buy"] == 102_030_000
+    assert weekday_out.get("live_from_item_id") is None
 
     mota = type("C", (), {
         "goldbridge_item_id": price_cards.SPECIAL_CARD_MOTAFEREGHE_ID,
@@ -320,7 +353,7 @@ def test_frozen_1013_follows_tomorrow_farshad_day():
 
 
 def test_main_trade_card_name_follows_goldbridge_tomorrow_even_if_inactive():
-    """Tuesday → نقدی چهارشنبه (1011), even when Farshad marks tiles inactive."""
+    """Tuesday → نقدی چهارشنبه (1011) on main card 900000 when alias is missing."""
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
@@ -359,13 +392,23 @@ def test_main_trade_card_name_follows_goldbridge_tomorrow_even_if_inactive():
     assert live["goldbridge_item_id"] == 1011
     assert live["name"] == "نقدی چهارشنبه"
     card = type("C", (), {
-        "goldbridge_item_id": 1013,
-        "display_name": "نقدی یکشنبه",  # stale shop label must not win
+        "goldbridge_item_id": 900000,
+        "display_name": "نقدی",  # generic shop label must not win
         "use_manual_price": False,
         "manual_buy": None,
         "manual_sell": None,
     })()
-    out = price_cards._live_or_manual_item(card, price_cards._latest_items[1013])
+    stub = {
+        "goldbridge_item_id": 900000,
+        "name": "نقدی",
+        "type": 1,
+        "buy": 102_030_000,
+        "sell": 101_890_000,
+        "active": True,
+        "allow_buy": True,
+        "allow_sell": True,
+    }
+    out = price_cards._live_or_manual_item(card, stub)
     assert out["buy"] == 100_940_000
     assert out["name"] == "نقدی چهارشنبه"
     assert out.get("live_from_item_id") == 1011

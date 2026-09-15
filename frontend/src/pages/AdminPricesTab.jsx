@@ -28,7 +28,7 @@ const fa = formatTomanFa;
 const TYPE_LABEL = { 1: "طلا (گرم/عیار)", 2: "سکه" };
 
 function cardRole(card) {
-  if (isFarshadTradeTile(card)) return { kind: "main", label: "کارت اصلی معامله" };
+  if (isFarshadTradeTile(card)) return { kind: "main", label: "کارت اصلی · نقد فردا" };
   if (isFarshadHiddenMaster(card)) return { kind: "source", label: "منبع آینه متفرقه/کارتخوان" };
   if (Number(card.goldbridge_item_id) === SPECIAL_MOTAFEREGHE_ID) {
     return { kind: "mirror", label: "کارت ویژه · متفرقه" };
@@ -919,7 +919,7 @@ export default function AdminPricesTab() {
       )}
 
       <p className="price-cards-admin__hint">
-        کارت اصلی معامله (id:1013) همیشه قیمت و نام «نقدی فردا»ی فرشاد را از goldbridge نشان می‌دهد
+        کارت اصلی معامله (id:900000 / نقد فردا) همیشه قیمت و نام نقدی فردای فرشاد را از goldbridge نشان می‌دهد
         (مثلاً نقدی دوشنبه / سه‌شنبه / چهارشنبه — نه فقط یکشنبه).
         متفرقه و نقد کارتخوان از همان پایهٔ زنده پیروی می‌کنند؛ اگر id:1 دستی باشد همان پایه است.
         حاشیه ثابت فروشگاه حذف شده؛ سود/کاهش شما فقط از کارمزد دسته‌بندی روی هر خرید و فروش اعمال می‌شود.
