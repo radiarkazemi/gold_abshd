@@ -1,13 +1,21 @@
 /** Shared goldbridge / shop card ids. Keep in sync with backend price_cards.py */
 export const SPECIAL_MOTAFEREGHE_ID = 900001;
 export const SPECIAL_NAGHD_KARTKHAN_ID = 900002;
-/** Farshad hidden master — formula source for متفرقه / نقد کارتخوان. */
+/** Farshad hidden master — legacy formula source (id:1). */
 export const SOURCE_MIRROR_ITEM_ID = 1;
-/** Shop main-trade card slot (stable id 1013). Live name follows goldbridge tomorrow Farshad نقدی tile. */
-export const FARSHAD_TRADE_CASH_ITEM_ID = 1013;
+/** Goldbridge stable alias for tomorrow Farshad نقدی (GET /price). */
+export const MAIN_CASH_ITEM_ID = 900000;
+/** @deprecated use MAIN_CASH_ITEM_ID */
+export const FARSHAD_TRADE_CASH_ITEM_ID = MAIN_CASH_ITEM_ID;
+export const LEGACY_MAIN_CASH_ITEM_IDS = new Set([1009, 1010, 1011, 1012, 1013]);
+
+export function isMainCashItemId(id) {
+  const n = Number(id);
+  return n === MAIN_CASH_ITEM_ID || LEGACY_MAIN_CASH_ITEM_IDS.has(n);
+}
 
 export function isFarshadTradeTile(card) {
-  return !!(card?.is_farshad_trade_tile || Number(card?.goldbridge_item_id) === FARSHAD_TRADE_CASH_ITEM_ID);
+  return !!(card?.is_farshad_trade_tile || isMainCashItemId(card?.goldbridge_item_id));
 }
 
 export function isFarshadHiddenMaster(card) {
@@ -18,17 +26,17 @@ export function isFarshadHiddenMaster(card) {
 export function isPrimaryAdminCard(card) {
   const id = Number(card?.goldbridge_item_id);
   return (
-    id === FARSHAD_TRADE_CASH_ITEM_ID
+    isMainCashItemId(id)
     || id === SPECIAL_MOTAFEREGHE_ID
     || id === SPECIAL_NAGHD_KARTKHAN_ID
     || id === SOURCE_MIRROR_ITEM_ID
   );
 }
 
-/** Lower rank = earlier in admin / customer lists. 1013 is always first. */
+/** Lower rank = earlier in admin / customer lists. Main cash is always first. */
 export function priceCardRank(card) {
   const id = Number(card?.goldbridge_item_id);
-  if (id === FARSHAD_TRADE_CASH_ITEM_ID) return 0;
+  if (isMainCashItemId(id)) return 0;
   if (id === SPECIAL_MOTAFEREGHE_ID) return 1;
   if (id === SPECIAL_NAGHD_KARTKHAN_ID) return 2;
   if (id === SOURCE_MIRROR_ITEM_ID) return 3;

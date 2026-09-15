@@ -93,7 +93,7 @@ function syncMirroredCardQuotes(cards) {
       if (name.includes("کارتخوان")) return false;
       return name.startsWith("نقدی") || name.startsWith("نقدي");
     };
-    const tradePreferred = cards.find((c) => Number(c.goldbridge_item_id) === FARSHAD_TRADE_CASH_ITEM_ID);
+    const tradePreferred = cards.find((c) => isFarshadTradeTile(c));
     const tradeFresh = tradePreferred && (tradePreferred.active || tradePreferred.live_from_item_id);
     let trade = tradeFresh ? tradePreferred : null;
     if (!trade || !(stripMargin(trade) > 0)) {
@@ -341,8 +341,8 @@ function RoleCommissionEditor({ card, busy, onSave }) {
       {isSpecialMirror ? (
         <p className="price-cards-admin__manual-note">
           {card.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
-            ? "متفرقه: کارمزد ثابت/درصدی به قیمت پایه id:1 اضافه می‌شود، سپس گرم ۱۸ با ÷ ۴٫۳۹ محاسبه می‌گردد."
-            : "نقد کارتخوان: کارمزد دسته‌بندی به بخریدِ id:1 اضافه می‌شود، سپس ثابت ۱۰۰٬۰۰۰ تومان روی قیمت نهایی اعمال می‌شود."}
+            ? "متفرقه: کارمزد ثابت/درصدی به قیمت پایه کارت اصلی (۹۰۰۰۰۰ / نقدی فردا) اضافه می‌شود، سپس گرم ۱۸ با ÷ ۴٫۳۹ محاسبه می‌گردد."
+            : "نقد کارتخوان: کارمزد دسته‌بندی به بخریدِ کارت اصلی (۹۰۰۰۰۰) اضافه می‌شود، سپس ثابت ۱۰۰٬۰۰۰ تومان روی قیمت نهایی اعمال می‌شود."}
         </p>
       ) : splitCommission ? (
         <p className="price-cards-admin__hint">
@@ -354,11 +354,11 @@ function RoleCommissionEditor({ card, busy, onSave }) {
           افزودن خودکار ۱۰۰٬۰۰۰ تومان فقط مخصوص «نقد کارتخوان» است؛ فرمول ÷۴٫۳۹ فقط مخصوص «متفرقه».
         </p>
       )}
-      {manualMode && (
-        <p className="price-cards-admin__manual-note">
-          حالت قیمت دستی فعال است — با سوییچ «مجاز به سفارش» مشخص کنید کدام دسته‌بندی می‌تواند با این قیمت سفارش بدهد.
-        </p>
-      )}
+      <p className="price-cards-admin__manual-note">
+        سوییچ «نمایش و سفارش برای این دسته» را خاموش کنید تا این کارت برای آن دسته‌بندی (مثلاً خانگی)
+        اصلاً نشان داده نشود — برای متفرقه و کارتخوان هم اعمال می‌شود
+        {manualMode ? " (هم‌اکنون قیمت دستی فعال است)." : "."}
+      </p>
       {rows.map((r) => {
         const draft = drafts[r.role_id] || draftFromRow(r);
         const rowBusy = busy || savingRoleId === r.role_id;
@@ -385,7 +385,7 @@ function RoleCommissionEditor({ card, busy, onSave }) {
                   }));
                 }}
               />
-              مجاز به سفارش{manualMode ? " با قیمت دستی" : ""}
+              نمایش و سفارش برای این دسته
             </label>
             <div className={`price-cards-admin__commission-fields ${splitCommission ? "is-split" : ""}`}>
               <select

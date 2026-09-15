@@ -148,8 +148,8 @@ class Settings:
     # Set to "" to disable auto-bootstrap entirely.
     # Shop main-trade card slot id (stable). Live name/quote follow goldbridge
     # tomorrow Farshad نقدی tile via /price — not always «یکشنبه». Id 1 is the
-    # inactive master. Fresh installs should enable 1013.
-    DEFAULT_ORDERABLE_ITEM_ID: str = os.getenv("GOLDAPP_DEFAULT_ORDERABLE_ITEM_ID", "1013")
+    # inactive master. Fresh installs should enable 900000.
+    DEFAULT_ORDERABLE_ITEM_ID: str = os.getenv("GOLDAPP_DEFAULT_ORDERABLE_ITEM_ID", "900000")
 
     # Optional pad on live Farshad buy/sell. Default 0 — hedges use
     # per-role / per-card commission instead of a fixed shop margin.
