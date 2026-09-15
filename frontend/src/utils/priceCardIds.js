@@ -3,7 +3,7 @@ export const SPECIAL_MOTAFEREGHE_ID = 900001;
 export const SPECIAL_NAGHD_KARTKHAN_ID = 900002;
 /** Farshad hidden master — formula source for متفرقه / نقد کارتخوان. */
 export const SOURCE_MIRROR_ITEM_ID = 1;
-/** Farshad /trade cash tile (نقدی یکشنبه). This is the shop's main card. */
+/** Shop main-trade card slot (stable id 1013). Live name follows goldbridge tomorrow Farshad نقدی tile. */
 export const FARSHAD_TRADE_CASH_ITEM_ID = 1013;
 
 export function isFarshadTradeTile(card) {

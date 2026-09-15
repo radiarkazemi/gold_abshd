@@ -295,6 +295,8 @@ def test_frozen_1013_follows_tomorrow_farshad_day():
     out = price_cards._live_or_manual_item(card, price_cards._latest_items[1013])
     assert out["buy"] == 102_850_000
     assert out.get("live_from_item_id") == 1009
+    assert out["name"] == "نقدی دوشنبه"
+    assert out.get("live_from_name") == "نقدی دوشنبه"
 
     mota = type("C", (), {
         "goldbridge_item_id": price_cards.SPECIAL_CARD_MOTAFEREGHE_ID,
@@ -315,3 +317,55 @@ def test_frozen_1013_follows_tomorrow_farshad_day():
     mota_out = price_cards.resolve_effective_item(mota, None, source_card=src)
     assert mota_out["buy"] == 102_850_000
     assert mota_out.get("mirrored_from") == 1009
+
+
+def test_main_trade_card_name_follows_goldbridge_tomorrow_even_if_inactive():
+    """Tuesday → نقدی چهارشنبه (1011), even when Farshad marks tiles inactive."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    price_cards._latest_items[1013] = {
+        "goldbridge_item_id": 1013,
+        "name": "نقدی یکشنبه",
+        "type": 1,
+        "buy": 102_030_000,
+        "sell": 101_890_000,
+        "active": False,
+        "allow_buy": True,
+        "allow_sell": True,
+    }
+    price_cards._latest_items[1011] = {
+        "goldbridge_item_id": 1011,
+        "name": "نقدی چهارشنبه",
+        "type": 1,
+        "buy": 100_940_000,
+        "sell": 100_780_000,
+        "active": False,
+        "allow_buy": True,
+        "allow_sell": True,
+    }
+    price_cards._latest_items[1010] = {
+        "goldbridge_item_id": 1010,
+        "name": "نقدی سه‌شنبه",
+        "type": 1,
+        "buy": 100_400_000,
+        "sell": 100_260_000,
+        "active": False,
+        "allow_buy": True,
+        "allow_sell": True,
+    }
+    tuesday = datetime(2026, 9, 15, 10, 30, tzinfo=ZoneInfo("Asia/Tehran"))
+    live = price_cards.resolve_live_farshad_cash_item(now=tuesday)
+    assert live["goldbridge_item_id"] == 1011
+    assert live["name"] == "نقدی چهارشنبه"
+    card = type("C", (), {
+        "goldbridge_item_id": 1013,
+        "display_name": "نقدی یکشنبه",  # stale shop label must not win
+        "use_manual_price": False,
+        "manual_buy": None,
+        "manual_sell": None,
+    })()
+    out = price_cards._live_or_manual_item(card, price_cards._latest_items[1013])
+    assert out["buy"] == 100_940_000
+    assert out["name"] == "نقدی چهارشنبه"
+    assert out.get("live_from_item_id") == 1011

@@ -263,7 +263,7 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
       {liveCard && (
         <div className="dashboard__live-quote">
           <div className="dashboard__live-quote-head">
-            <strong>{liveCard.name || "نقدی یکشنبه"}</strong>
+            <strong>{liveCard.name || "کارت اصلی معامله"}</strong>
             <span>کارت اصلی · مثقال ۱۷</span>
           </div>
           <QuotePair buy={liveCard.buy_price} sell={liveCard.sell_price} size="lg" />

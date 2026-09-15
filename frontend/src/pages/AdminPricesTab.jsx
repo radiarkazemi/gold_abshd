@@ -707,7 +707,7 @@ export default function AdminPricesTab() {
         >
           <div className="admin-price-card__top">
             <div className="admin-price-card__title">
-              <span className="admin-price-card__name">{c.display_name}</span>
+              <span className="admin-price-card__name">{c.display_name || c.name || c.live_from_name}</span>
               <span className="admin-price-card__id-chip">id:{c.goldbridge_item_id}</span>
             </div>
             <label className="admin-price-card__expand-toggle">
@@ -735,7 +735,7 @@ export default function AdminPricesTab() {
       >
         <div className="admin-price-card__top">
           <div className="admin-price-card__title">
-            <span className="admin-price-card__name">{c.display_name}</span>
+            <span className="admin-price-card__name">{c.display_name || c.name || c.live_from_name}</span>
             {role && (
               <span className={`admin-price-card__role is-${role.kind}`}>{role.label}</span>
             )}
@@ -764,8 +764,8 @@ export default function AdminPricesTab() {
 
         {isHiddenMaster && (
           <p className="admin-price-card__explain">
-            این همان «نقد یکشنبه · مستر مخفی» است: کارت خاموش فرشاد (id:1).
-            اگر قیمت دستی این کارت فعال باشد، پایهٔ متفرقه و نقد کارتخوان همان بخرید دستی است؛ وگرنه پایه از بخرید زندهٔ کاشی معامله (id:1013) می‌آید.
+            این «مستر مخفی» فرشاد است (id:1).
+            اگر قیمت دستی این کارت فعال باشد، پایهٔ متفرقه و نقد کارتخوان همان بخرید دستی است؛ وگرنه پایه از بخرید زندهٔ کارت اصلی معامله (نقدی فردا از goldbridge) می‌آید.
             کارمزد یا کاهش شما فقط از کمیسیون دسته‌بندی همان کارت‌های ویژه اعمال می‌شود.
           </p>
         )}
@@ -773,8 +773,8 @@ export default function AdminPricesTab() {
         {(c.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID || c.goldbridge_item_id === SPECIAL_NAGHD_KARTKHAN_ID) && (
           <p className="admin-price-card__explain">
             {c.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
-              ? "پایه = بخرید نهایی فرشاد (زنده id:1013، یا دستی id:1). بفروشید مشتری = (پایه + کارمزد دسته‌بندی) ÷ ۴٫۳۹. کارمزد منفی = کاهش قیمت."
-              : "پایه = بخرید نهایی فرشاد (زنده id:1013، یا دستی id:1) برای خرید و فروش کارت. قیمت نهایی = (پایه + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."}
+              ? "پایه = بخرید نهایی فرشاد (زنده کارت اصلی / نقدی فردا، یا دستی id:1). بفروشید مشتری = (پایه + کارمزد دسته‌بندی) ÷ ۴٫۳۹. کارمزد منفی = کاهش قیمت."
+              : "پایه = بخرید نهایی فرشاد (زنده کارت اصلی / نقدی فردا، یا دستی id:1) برای خرید و فروش کارت. قیمت نهایی = (پایه + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."}
           </p>
         )}
         <div className="admin-price-card__type-row">
@@ -876,9 +876,9 @@ export default function AdminPricesTab() {
           {isMirrored && (
             <p className="price-cards-admin__manual-note">
               {c.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
-                ? "متفرقه: پایه = بخرید نهایی فرشاد (زنده id:1013 یا دستی id:1) — گرم ۱۸ = (قیمت + کارمزد) ÷ ۴٫۳۹ برای بفروشید."
+                ? "متفرقه: پایه = بخرید نهایی فرشاد (زنده کارت اصلی / نقدی فردا یا دستی id:1) — گرم ۱۸ = (قیمت + کارمزد) ÷ ۴٫۳۹ برای بفروشید."
                 : c.goldbridge_item_id === SPECIAL_NAGHD_KARTKHAN_ID
-                  ? "نقد کارتخوان: قیمت نهایی = (بخرید نهایی فرشاد زنده id:1013 یا دستی id:1 + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."
+                  ? "نقد کارتخوان: قیمت نهایی = (بخرید نهایی فرشاد زنده کارت اصلی / نقدی فردا یا دستی id:1 + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."
                   : `قیمت این کارت همیشه از آیتم id:${c.price_source_item_id || 1013} (زنده یا دستی) گرفته می‌شود.`}
               {" "}
               کارمزد/اختلاف هر دسته‌بندی را پایین تنظیم کنید.
@@ -919,8 +919,9 @@ export default function AdminPricesTab() {
       )}
 
       <p className="price-cards-admin__hint">
-        کارت اصلی مشتری «نقدی یکشنبه» است (id:1013)، همان کاشی معامله فرشاد.
-        متفرقه و نقد کارتخوان هر ۳ ثانیه از بخرید نهایی زندهٔ همان کاشی (id:1013) به‌روز می‌شوند؛ اگر id:1 دستی باشد همان پایه است.
+        کارت اصلی معامله (id:1013) همیشه قیمت و نام «نقدی فردا»ی فرشاد را از goldbridge نشان می‌دهد
+        (مثلاً نقدی دوشنبه / سه‌شنبه / چهارشنبه — نه فقط یکشنبه).
+        متفرقه و نقد کارتخوان از همان پایهٔ زنده پیروی می‌کنند؛ اگر id:1 دستی باشد همان پایه است.
         حاشیه ثابت فروشگاه حذف شده؛ سود/کاهش شما فقط از کارمزد دسته‌بندی روی هر خرید و فروش اعمال می‌شود.
         کارت‌های دیگر تا تیک «جزئیات» فقط عنوان را نشان می‌دهند.
       </p>
