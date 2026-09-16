@@ -355,6 +355,7 @@ def test_frozen_1013_follows_tomorrow_farshad_day():
 def test_main_trade_card_name_follows_goldbridge_tomorrow_even_if_inactive():
     """Tuesday → نقدی چهارشنبه (1011) on main card 900000 when alias is missing."""
     from datetime import datetime
+    from unittest.mock import patch
     from zoneinfo import ZoneInfo
 
     price_cards._latest_items[1013] = {
@@ -408,7 +409,129 @@ def test_main_trade_card_name_follows_goldbridge_tomorrow_even_if_inactive():
         "allow_buy": True,
         "allow_sell": True,
     }
-    out = price_cards._live_or_manual_item(card, stub)
+    # Overlay uses wall-clock; pin next-open day to چهارشنبه for this case.
+    with patch.object(price_cards, "_next_open_weekday_fa", return_value="چهارشنبه"):
+        out = price_cards._live_or_manual_item(card, stub)
     assert out["buy"] == 100_940_000
     assert out["name"] == "نقدی چهارشنبه"
     assert out.get("live_from_item_id") == 1011
+
+
+def test_next_open_weekday_skips_thursday_and_friday():
+    """پنجشنبه + جمعه are closed → Wednesday/Thursday jump to شنبه."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    wed = datetime(2026, 9, 16, 12, 0, tzinfo=ZoneInfo("Asia/Tehran"))
+    thu = datetime(2026, 9, 17, 12, 0, tzinfo=ZoneInfo("Asia/Tehran"))
+    fri = datetime(2026, 9, 18, 12, 0, tzinfo=ZoneInfo("Asia/Tehran"))
+    sun = datetime(2026, 9, 13, 16, 0, tzinfo=ZoneInfo("Asia/Tehran"))
+    assert price_cards._next_open_weekday_fa(wed) == "شنبه"
+    assert price_cards._next_open_weekday_fa(thu) == "شنبه"
+    assert price_cards._next_open_weekday_fa(fri) == "شنبه"
+    assert price_cards._next_open_weekday_fa(sun) == "دوشنبه"
+
+
+def test_wednesday_main_and_specials_follow_shanbeh_not_panjshanbeh():
+    """On Wednesday, ignore closed پنجشنبه alias and use نقدی شنبه."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    # Goldbridge alias wrongly still pointing at closed پنجشنبه (live bug).
+    price_cards._latest_items[900000] = {
+        "goldbridge_item_id": 900000,
+        "name": "نقد پنجشنبه",
+        "type": 1,
+        "buy": 82_005_000,
+        "sell": 81_995_000,
+        "active": True,
+        "allow_buy": True,
+        "allow_sell": True,
+    }
+    price_cards._latest_items[2] = {
+        "goldbridge_item_id": 2,
+        "name": "نقد پنجشنبه",
+        "type": 1,
+        "buy": 82_005_000,
+        "sell": 81_995_000,
+        "active": False,
+        "allow_buy": True,
+        "allow_sell": True,
+    }
+    price_cards._latest_items[1012] = {
+        "goldbridge_item_id": 1012,
+        "name": "نقدی شنبه",
+        "type": 1,
+        "buy": 102_220_000,
+        "sell": 102_080_000,
+        "active": True,
+        "allow_buy": True,
+        "allow_sell": True,
+    }
+    price_cards._latest_items[1011] = {
+        "goldbridge_item_id": 1011,
+        "name": "نقدی چهارشنبه",
+        "type": 1,
+        "buy": 101_990_000,
+        "sell": 101_850_000,
+        "active": False,
+        "allow_buy": True,
+        "allow_sell": True,
+    }
+
+    wed = datetime(2026, 9, 16, 12, 0, tzinfo=ZoneInfo("Asia/Tehran"))
+    live = price_cards.resolve_live_farshad_cash_item(now=wed)
+    assert live["goldbridge_item_id"] == 1012
+    assert live["name"] == "نقدی شنبه"
+
+    card = type("C", (), {
+        "goldbridge_item_id": 900000,
+        "display_name": None,
+        "use_manual_price": False,
+        "manual_buy": None,
+        "manual_sell": None,
+    })()
+    out = price_cards._live_or_manual_item(card, price_cards._latest_items[900000])
+    assert out["buy"] == 102_220_000
+    assert out["name"] == "نقدی شنبه"
+    assert out.get("live_from_item_id") == 1012
+
+    mota = type("C", (), {
+        "goldbridge_item_id": price_cards.SPECIAL_CARD_MOTAFEREGHE_ID,
+        "display_name": "متفرقه",
+        "use_manual_price": False,
+        "manual_buy": None,
+        "manual_sell": None,
+        "price_source_item_id": price_cards.MAIN_CASH_ITEM_ID,
+    })()
+    src = type("C", (), {
+        "goldbridge_item_id": 900000,
+        "display_name": None,
+        "use_manual_price": False,
+        "manual_buy": None,
+        "manual_sell": None,
+        "price_source_item_id": None,
+    })()
+    mota_out = price_cards.resolve_effective_item(mota, None, source_card=src)
+    assert mota_out["buy"] == 102_220_000
+    assert mota_out.get("mirrored_from") == 1012
+
+    kart = type("C", (), {
+        "goldbridge_item_id": price_cards.SPECIAL_CARD_NAGHD_KARTKHAN_ID,
+        "display_name": "نقد کارتخوان",
+        "use_manual_price": False,
+        "manual_buy": None,
+        "manual_sell": None,
+        "price_source_item_id": price_cards.MAIN_CASH_ITEM_ID,
+    })()
+    kart_out = price_cards.resolve_effective_item(kart, None, source_card=src)
+    assert kart_out["buy"] == 102_220_000
+    assert kart_out.get("mirrored_from") == 1012
+
+
+def test_shanbeh_name_does_not_match_seshanbeh_or_yekshanbeh():
+    assert price_cards._name_has_weekday("نقدی شنبه", "شنبه") is True
+    assert price_cards._name_has_weekday("نقدی سه‌شنبه", "شنبه") is False
+    assert price_cards._name_has_weekday("نقدی دوشنبه", "شنبه") is False
+    assert price_cards._name_has_weekday("نقدی یکشنبه", "شنبه") is False
+    assert price_cards._name_has_weekday("نقدی چهارشنبه", "شنبه") is False

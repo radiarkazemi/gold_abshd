@@ -863,6 +863,7 @@ _FARSHAD_FRESH_MS = 5 * 60 * 1000
 
 # Match goldbridge BRIDGE_TARGET_MODE=tomorrow: Farshad names cash by
 # *delivery* weekday. On Sunday the live board tile is نقدی دوشنبه.
+# پنجشنبه + جمعه are closed — jump to the next open delivery day (شنبه).
 _WEEKDAY_FA = {
     0: "دوشنبه",
     1: "سه‌شنبه",
@@ -872,6 +873,7 @@ _WEEKDAY_FA = {
     5: "شنبه",
     6: "یکشنبه",
 }
+_CLOSED_DELIVERY_WEEKDAYS_FA = frozenset({"پنجشنبه", "جمعه"})
 
 
 def _item_update_ms(item: dict | None) -> float:
@@ -898,14 +900,32 @@ def _name_has_weekday(name: str | None, weekday_fa: str) -> bool:
     w = _normalize_fa_name(weekday_fa)
     if not n or not w:
         return False
-    # 'شنبه' is a suffix of 'یکشنبه' — require an exact-day match.
+    # 'شنبه' is a suffix of یکشنبه/دوشنبه/سه‌شنبه/… — require an exact-day match.
     if w == "شنبه":
-        return "شنبه" in n and "یکشنبه" not in n
+        if "شنبه" not in n:
+            return False
+        for longer in ("یکشنبه", "دوشنبه", "سهشنبه", "چهارشنبه", "پنجشنبه"):
+            if longer in n:
+                return False
+        return True
     return w in n
 
 
-def _tomorrow_weekday_fa(now=None) -> str:
-    """Persian weekday label for tomorrow in Asia/Tehran (goldbridge parity)."""
+def _name_is_closed_delivery_day(name: str | None) -> bool:
+    """True when the Farshad name is a closed delivery day (پنجشنبه/جمعه)."""
+    return any(_name_has_weekday(name, day) for day in _CLOSED_DELIVERY_WEEKDAYS_FA)
+
+
+def _name_has_any_weekday(name: str | None) -> bool:
+    return any(_name_has_weekday(name, day) for day in _WEEKDAY_FA.values())
+
+
+def _next_open_weekday_fa(now=None) -> str:
+    """Next open Farshad delivery weekday in Asia/Tehran.
+
+    Starts at calendar tomorrow, then skips پنجشنبه and جمعه (market closed).
+    Wednesday/Thursday → شنبه; other weekdays → tomorrow as usual.
+    """
     from datetime import timedelta
     from zoneinfo import ZoneInfo
 
@@ -914,7 +934,18 @@ def _tomorrow_weekday_fa(now=None) -> str:
         local = datetime.now(tehran)
     else:
         local = now.astimezone(tehran) if getattr(now, "tzinfo", None) else now.replace(tzinfo=tehran)
-    return _WEEKDAY_FA[(local + timedelta(days=1)).weekday()]
+    day = local + timedelta(days=1)
+    for _ in range(8):
+        label = _WEEKDAY_FA[day.weekday()]
+        if label not in _CLOSED_DELIVERY_WEEKDAYS_FA:
+            return label
+        day += timedelta(days=1)
+    return _WEEKDAY_FA[day.weekday()]
+
+
+def _tomorrow_weekday_fa(now=None) -> str:
+    """Back-compat alias — now returns the next *open* delivery weekday."""
+    return _next_open_weekday_fa(now)
 
 
 def _is_farshad_day_cash(item: dict) -> bool:
@@ -924,49 +955,58 @@ def _is_farshad_day_cash(item: dict) -> bool:
     name = str(item.get("name") or "")
     if "کارتخوان" in name:
         return False
-    return name.startswith("نقدی") or name.startswith("نقدي")
+    return name.startswith("نقدی") or name.startswith("نقدي") or name.startswith("نقد ")
+
+
+def _prefer_naqdi_board(item: dict) -> tuple[int, int, float]:
+    """Sort key: نقدی board first, then active, then freshest."""
+    name = str(item.get("name") or "")
+    is_board = 1 if (name.startswith("نقدی") or name.startswith("نقدي")) else 0
+    return (is_board, 1 if item.get("active") else 0, _item_update_ms(item))
 
 
 def resolve_live_farshad_cash_item(*, now=None) -> dict | None:
     """
-    Best Farshad mesghal-cash quote — same intent as goldbridge
-    ``BRIDGE_TARGET_MODE=tomorrow`` / ``GET /price``.
+    Best Farshad mesghal-cash quote for نقد فردا.
 
-    Prefer goldbridge alias ``900000`` (tomorrow's live نقدی from GET /price).
-    If that alias is missing, fall back to tomorrow's weekday نقدی tile by
-    name in Asia/Tehran, then any active نقدی day.
+    Uses the next *open* delivery weekday (skip پنجشنبه/جمعه → شنبه).
+    Prefer the matching Farshad day tile; only trust goldbridge alias
+    ``900000`` when it matches that open day (never a closed پنجشنبه/جمعه
+    alias while شنبه is the target).
     """
-    alias = _latest_items.get(MAIN_CASH_ITEM_ID)
-    if alias is not None and alias.get("buy") is not None:
-        return alias
-
-    preferred = _latest_items.get(FARSHAD_TRADE_CASH_ITEM_ID)
-    tomorrow = _tomorrow_weekday_fa(now)
+    target = _next_open_weekday_fa(now)
 
     day_matches: list[dict] = []
-    active_days: list[dict] = []
+    active_open_days: list[dict] = []
     for it in _latest_items.values():
         if not _is_farshad_day_cash(it) or it.get("buy") is None:
             continue
         # Skip the synthetic alias itself when scanning Farshad day tiles.
         if int(it.get("goldbridge_item_id") or 0) == MAIN_CASH_ITEM_ID:
             continue
-        if _name_has_weekday(it.get("name"), tomorrow):
+        if _name_has_weekday(it.get("name"), target):
             day_matches.append(it)
-        if it.get("active"):
-            active_days.append(it)
+        if it.get("active") and not _name_is_closed_delivery_day(it.get("name")):
+            active_open_days.append(it)
 
     if day_matches:
-        day_matches.sort(
-            key=lambda it: (1 if it.get("active") else 0, _item_update_ms(it)),
-            reverse=True,
-        )
+        day_matches.sort(key=_prefer_naqdi_board, reverse=True)
         return day_matches[0]
 
-    if active_days:
-        active_days.sort(key=_item_update_ms, reverse=True)
-        return active_days[0]
+    alias = _latest_items.get(MAIN_CASH_ITEM_ID)
+    if alias is not None and alias.get("buy") is not None:
+        aname = alias.get("name")
+        if _name_has_weekday(aname, target):
+            return alias
+        # Generic alias name (no weekday) is ok; closed-day alias is not.
+        if not _name_has_any_weekday(aname) and not _name_is_closed_delivery_day(aname):
+            return alias
 
+    if active_open_days:
+        active_open_days.sort(key=_item_update_ms, reverse=True)
+        return active_open_days[0]
+
+    preferred = _latest_items.get(FARSHAD_TRADE_CASH_ITEM_ID)
     if preferred is not None and preferred.get("buy") is not None:
         return preferred
     return None
