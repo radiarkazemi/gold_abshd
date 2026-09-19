@@ -29,22 +29,28 @@ export function usePriceFeed() {
 
     function personalizeAll(rawCards) {
       const { commission_type, commission_value, by_card } = commissionRef.current;
-      return (rawCards || []).map((c) => {
+      // Until /api/order-limits loads, by_card is empty → show all enabled cards.
+      // After limits load, can_order=false (per دسته) removes the card entirely
+      // (متفرقه / کارتخوان for خانگی, etc.).
+      const limitsReady = Object.keys(by_card || {}).length > 0;
+      return (rawCards || []).flatMap((c) => {
         const override = c.goldbridge_item_id != null ? by_card[c.goldbridge_item_id] : null;
+        if (limitsReady && override && override.can_order === false) {
+          return [];
+        }
         const personalized = personalizePrice(
           c,
           override?.commission_type ?? commission_type,
           override?.commission_buy_value ?? override?.commission_value ?? commission_value,
           override?.commission_sell_value ?? override?.commission_value ?? commission_value,
         );
-        // Manual-price role denylist: keep the card visible but block order buttons.
         const canOrder = override?.can_order !== false;
-        if (canOrder) return personalized;
-        return {
+        if (canOrder) return [personalized];
+        return [{
           ...personalized,
           orderable_buy: false,
           orderable_sell: false,
-        };
+        }];
       });
     }
 

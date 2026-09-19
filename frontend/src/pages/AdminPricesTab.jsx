@@ -4,7 +4,9 @@ import { formatTomanFa } from "../utils/formatFa";
 import {
   SPECIAL_MOTAFEREGHE_ID,
   SPECIAL_NAGHD_KARTKHAN_ID,
+  cardActionSideMode,
   SOURCE_MIRROR_ITEM_ID,
+  MAIN_CASH_ITEM_ID,
   FARSHAD_TRADE_CASH_ITEM_ID,
   isFarshadTradeTile,
   isFarshadHiddenMaster,
@@ -28,7 +30,7 @@ const fa = formatTomanFa;
 const TYPE_LABEL = { 1: "طلا (گرم/عیار)", 2: "سکه" };
 
 function cardRole(card) {
-  if (isFarshadTradeTile(card)) return { kind: "main", label: "کارت اصلی معامله" };
+  if (isFarshadTradeTile(card)) return { kind: "main", label: "کارت اصلی · نقد فردا" };
   if (isFarshadHiddenMaster(card)) return { kind: "source", label: "منبع آینه متفرقه/کارتخوان" };
   if (Number(card.goldbridge_item_id) === SPECIAL_MOTAFEREGHE_ID) {
     return { kind: "mirror", label: "کارت ویژه · متفرقه" };
@@ -47,50 +49,83 @@ function quoteStatus(card) {
     return { kind: "unavailable", label: "ناموجود" };
   }
   if (isMirrored) {
+    // Mirrored mode follows the main card's checkbox — never a stale price_source.
     if (card.mirrored_source_mode === "manual") {
-      return { kind: "manual", label: "دستی (از id:1)" };
+      return { kind: "manual", label: "دستی (از نقد فردا)" };
     }
     return { kind: "source", label: "از منبع" };
   }
-  if (card.use_manual_price || card.price_source === "manual") {
+  // Checkbox flag is the source of truth. Stale price_source==="manual" after
+  // untick must not keep the «دستی» badge on.
+  if (card.use_manual_price) {
     return { kind: "manual", label: "دستی" };
   }
   return { kind: "source", label: "از منبع" };
 }
 function syncMirroredCardQuotes(cards) {
   if (!Array.isArray(cards)) return cards;
-  const master = cards.find((c) => Number(c.goldbridge_item_id) === SOURCE_MIRROR_ITEM_ID);
-  const trade = cards.find((c) => Number(c.goldbridge_item_id) === FARSHAD_TRADE_CASH_ITEM_ID);
-  if (!master && !trade) return cards;
-  const mirroredMode =
-    (master && (master.use_manual_price || master.price_source === "manual"))
-      ? "manual"
-      : "live";
-  // Live base = Farshad final buy on the active trade tile (id:1013), which
-  // ticks every poll. id:1 is often inactive/frozen on goldbridge. Manual on
-  // id:1 still overrides. Never apply shop padding to this base.
+  // Specials follow the shop main cash card (900000 / نقد فردا), including
+  // when that card is manual — never silently fall back to live Farshad or id:1.
+  const main =
+    cards.find((c) => Number(c.goldbridge_item_id) === MAIN_CASH_ITEM_ID)
+    || cards.find((c) => isFarshadTradeTile(c));
+  const legacyMaster = cards.find((c) => Number(c.goldbridge_item_id) === SOURCE_MIRROR_ITEM_ID);
+  const source = main || legacyMaster;
+  if (!source) return cards;
+
+  // Only the admin checkbox (use_manual_price) switches specials to manual.
+  // Do NOT key off price_source==="manual" — after untick the optimistic
+  // patch can leave that string around when live_buy is null (900000 alias),
+  // which wrongly kept متفرقه/کارتخوان on «دستی (از نقد فردا)» until refresh
+  // fought the server and looked like "came back to manual".
+  const mirroredMode = source.use_manual_price ? "manual" : "live";
+
+  const stripMargin = (card) => {
+    if (!card) return NaN;
+    let v = Number(
+      card.live_from_item_id
+        ? card.buy
+        : (card.live_buy ?? card.farshad_buy ?? card.buy)
+    );
+    if (!(v > 0) && card.buy != null) {
+      const padded = Number(card.buy);
+      const margin = Number(card.shop_margin_toman) || 0;
+      v = margin > 0 ? padded - margin : padded;
+    }
+    return v;
+  };
+
   let buy;
-  let sourceItemId = SOURCE_MIRROR_ITEM_ID;
+  let sourceItemId = Number(source.goldbridge_item_id) || MAIN_CASH_ITEM_ID;
   if (mirroredMode === "manual") {
-    buy = Number(master.buy);
-    sourceItemId = SOURCE_MIRROR_ITEM_ID;
+    // Prefer the saved/displayed buy on the main card (manual_buy may lag
+    // while the admin is still typing; buy is what the API already resolved).
+    buy = Number(source.buy);
+    if (!(buy > 0)) buy = Number(source.manual_buy);
+    sourceItemId = Number(source.goldbridge_item_id) || MAIN_CASH_ITEM_ID;
   } else {
-    const stripMargin = (card) => {
-      if (!card) return NaN;
-      let v = Number(card.live_buy ?? card.farshad_buy);
-      if (!(v > 0) && card.buy != null) {
-        const padded = Number(card.buy);
-        const margin = Number(card.shop_margin_toman) || 0;
-        v = margin > 0 ? padded - margin : padded;
+    buy = stripMargin(source);
+    if (!(buy > 0) && legacyMaster && source !== legacyMaster) {
+      buy = stripMargin(legacyMaster);
+      if (buy > 0) sourceItemId = SOURCE_MIRROR_ITEM_ID;
+    }
+    if (!(buy > 0)) {
+      // Last resort: any active Farshad day tile (same as backend failover).
+      const isFarshadDayCash = (card) => {
+        const name = String(card.display_name || card.name || "");
+        if (name.includes("کارتخوان")) return false;
+        return name.startsWith("نقدی") || name.startsWith("نقدي");
+      };
+      const candidates = cards
+        .filter((c) => isFarshadDayCash(c) && c.active !== false)
+        .map((c) => ({ c, buy: stripMargin(c) }))
+        .filter((x) => x.buy > 0);
+      candidates.sort((a, b) => Number(b.c.active) - Number(a.c.active));
+      const trade = candidates[0]?.c;
+      if (trade) {
+        buy = stripMargin(trade);
+        sourceItemId = Number(trade.live_from_item_id || trade.goldbridge_item_id) || FARSHAD_TRADE_CASH_ITEM_ID;
       }
-      return v;
-    };
-    buy = stripMargin(trade);
-    if (buy > 0) {
-      sourceItemId = FARSHAD_TRADE_CASH_ITEM_ID;
-    } else {
-      buy = stripMargin(master);
-      sourceItemId = SOURCE_MIRROR_ITEM_ID;
     }
   }
   if (!(buy > 0)) return cards;
@@ -233,7 +268,7 @@ function ManualPriceEditor({ card, busy, onSave }) {
       >
         ذخیره قیمت دستی
       </button>
-      {card.use_manual_price || card.price_source === "manual" ? (
+      {card.use_manual_price ? (
         <p className="price-cards-admin__manual-note">در حال نمایش قیمت دستی به مشتری</p>
       ) : (
         <p className="price-cards-admin__manual-note">در حال نمایش قیمت منبع (goldbridge)</p>
@@ -265,7 +300,7 @@ function RoleCommissionEditor({ card, busy, onSave }) {
   const [drafts, setDrafts] = useState({});
   const [savingRoleId, setSavingRoleId] = useState(null);
   const dirtyRolesRef = useRef(new Set());
-  const manualMode = !!card.use_manual_price || card.price_source === "manual";
+  const manualMode = !!card.use_manual_price;
   const isSpecialMirror =
     card.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
     || card.goldbridge_item_id === SPECIAL_NAGHD_KARTKHAN_ID;
@@ -322,8 +357,8 @@ function RoleCommissionEditor({ card, busy, onSave }) {
       {isSpecialMirror ? (
         <p className="price-cards-admin__manual-note">
           {card.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
-            ? "متفرقه: کارمزد ثابت/درصدی به قیمت پایه id:1 اضافه می‌شود، سپس گرم ۱۸ با ÷ ۴٫۳۹ محاسبه می‌گردد."
-            : "نقد کارتخوان: کارمزد دسته‌بندی به بخریدِ id:1 اضافه می‌شود، سپس ثابت ۱۰۰٬۰۰۰ تومان روی قیمت نهایی اعمال می‌شود."}
+            ? "متفرقه: کارمزد ثابت/درصدی به قیمت پایه کارت اصلی (۹۰۰۰۰۰ / نقدی فردا) اضافه می‌شود، سپس گرم ۱۸ با ÷ ۴٫۳۹ محاسبه می‌گردد."
+            : "نقد کارتخوان: کارمزد دسته‌بندی به بخریدِ کارت اصلی (۹۰۰۰۰۰) اضافه می‌شود، سپس ثابت ۱۰۰٬۰۰۰ تومان روی قیمت نهایی اعمال می‌شود."}
         </p>
       ) : splitCommission ? (
         <p className="price-cards-admin__hint">
@@ -335,11 +370,11 @@ function RoleCommissionEditor({ card, busy, onSave }) {
           افزودن خودکار ۱۰۰٬۰۰۰ تومان فقط مخصوص «نقد کارتخوان» است؛ فرمول ÷۴٫۳۹ فقط مخصوص «متفرقه».
         </p>
       )}
-      {manualMode && (
-        <p className="price-cards-admin__manual-note">
-          حالت قیمت دستی فعال است — با سوییچ «مجاز به سفارش» مشخص کنید کدام دسته‌بندی می‌تواند با این قیمت سفارش بدهد.
-        </p>
-      )}
+      <p className="price-cards-admin__manual-note">
+        سوییچ «نمایش و سفارش برای این دسته» را خاموش کنید تا این کارت برای آن دسته‌بندی (مثلاً خانگی)
+        اصلاً نشان داده نشود — برای متفرقه و کارتخوان هم اعمال می‌شود
+        {manualMode ? " (هم‌اکنون قیمت دستی فعال است)." : "."}
+      </p>
       {rows.map((r) => {
         const draft = drafts[r.role_id] || draftFromRow(r);
         const rowBusy = busy || savingRoleId === r.role_id;
@@ -366,7 +401,7 @@ function RoleCommissionEditor({ card, busy, onSave }) {
                   }));
                 }}
               />
-              مجاز به سفارش{manualMode ? " با قیمت دستی" : ""}
+              نمایش و سفارش برای این دسته
             </label>
             <div className={`price-cards-admin__commission-fields ${splitCommission ? "is-split" : ""}`}>
               <select
@@ -578,12 +613,14 @@ export default function AdminPricesTab() {
     busyIdRef.current = card.goldbridge_item_id;
     setBusyId(card.goldbridge_item_id);
     const usingManual = !!payload.useManualPrice;
+    // When leaving manual, prefer live_buy / farshad_buy; 900000 often has
+    // null live_buy (alias not in goldbridge feed) so fall back carefully.
     const nextBuy = usingManual
       ? Number(payload.manualBuy)
-      : Number(card.live_buy);
+      : Number(card.live_buy ?? card.farshad_buy);
     const nextSell = usingManual
       ? Number(payload.manualSell)
-      : Number(card.live_sell);
+      : Number(card.live_sell ?? card.farshad_sell);
     setCards((prev) => {
       const patched = (prev || []).map((c) => {
         if (Number(c.goldbridge_item_id) !== Number(card.goldbridge_item_id)) return c;
@@ -592,9 +629,11 @@ export default function AdminPricesTab() {
           use_manual_price: usingManual,
           manual_buy: payload.manualBuy,
           manual_sell: payload.manualSell,
-          buy: Number.isFinite(nextBuy) ? nextBuy : c.buy,
-          sell: Number.isFinite(nextSell) ? nextSell : c.sell,
-          price_source: usingManual ? "manual" : (card.live_buy != null ? "live" : "unavailable"),
+          buy: Number.isFinite(nextBuy) && nextBuy > 0 ? nextBuy : (usingManual ? c.buy : c.live_buy ?? c.farshad_buy ?? c.buy),
+          sell: Number.isFinite(nextSell) && nextSell > 0 ? nextSell : (usingManual ? c.sell : c.live_sell ?? c.farshad_sell ?? c.sell),
+          // Always clear "manual" on untick — never leave a stale price_source
+          // that would keep specials in mirrored_source_mode=manual.
+          price_source: usingManual ? "manual" : "live",
         };
       });
       return syncMirroredCardQuotes(patched);
@@ -663,7 +702,7 @@ export default function AdminPricesTab() {
       c.price_source === "manual"
         ? "دستی"
         : c.price_source === "mirrored" || isMirrored
-          ? `آینه id:${c.price_source_item_id || 1}${c.mirrored_source_mode === "manual" ? " (دستی)" : ""}`
+          ? `آینه id:${c.price_source_item_id || MAIN_CASH_ITEM_ID}${c.mirrored_source_mode === "manual" ? " (دستی)" : ""}`
           : c.price_source === "live"
             ? "زنده"
             : "ناموجود";
@@ -688,7 +727,7 @@ export default function AdminPricesTab() {
         >
           <div className="admin-price-card__top">
             <div className="admin-price-card__title">
-              <span className="admin-price-card__name">{c.display_name}</span>
+              <span className="admin-price-card__name">{c.display_name || c.name || c.live_from_name}</span>
               <span className="admin-price-card__id-chip">id:{c.goldbridge_item_id}</span>
             </div>
             <label className="admin-price-card__expand-toggle">
@@ -716,7 +755,7 @@ export default function AdminPricesTab() {
       >
         <div className="admin-price-card__top">
           <div className="admin-price-card__title">
-            <span className="admin-price-card__name">{c.display_name}</span>
+            <span className="admin-price-card__name">{c.display_name || c.name || c.live_from_name}</span>
             {role && (
               <span className={`admin-price-card__role is-${role.kind}`}>{role.label}</span>
             )}
@@ -739,14 +778,14 @@ export default function AdminPricesTab() {
         </div>
 
         <div className="admin-price-card__quote-block">
-          <QuotePair buy={c.buy} sell={c.sell} size="md" />
+          <QuotePair buy={c.buy} sell={c.sell} size="md" sides={cardActionSideMode(c)} />
           {!isMirrored && hasFarshadQuote(c) && <FarshadQuoteBreakdown card={c} />}
         </div>
 
         {isHiddenMaster && (
           <p className="admin-price-card__explain">
-            این همان «نقد یکشنبه · مستر مخفی» است: کارت خاموش فرشاد (id:1).
-            اگر قیمت دستی این کارت فعال باشد، پایهٔ متفرقه و نقد کارتخوان همان بخرید دستی است؛ وگرنه پایه از بخرید زندهٔ کاشی معامله (id:1013) می‌آید.
+            این «مستر مخفی» فرشاد است (id:1) — فقط برای سازگاری قدیمی.
+            پایهٔ متفرقه و نقد کارتخوان از کارت اصلی (نقد فردا / id:900000) می‌آید؛ اگر آن کارت دستی باشد همان بخرید دستی، وگرنه بخرید زندهٔ goldbridge.
             کارمزد یا کاهش شما فقط از کمیسیون دسته‌بندی همان کارت‌های ویژه اعمال می‌شود.
           </p>
         )}
@@ -754,8 +793,8 @@ export default function AdminPricesTab() {
         {(c.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID || c.goldbridge_item_id === SPECIAL_NAGHD_KARTKHAN_ID) && (
           <p className="admin-price-card__explain">
             {c.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
-              ? "پایه = بخرید نهایی فرشاد (زنده id:1013، یا دستی id:1). بفروشید مشتری = (پایه + کارمزد دسته‌بندی) ÷ ۴٫۳۹. کارمزد منفی = کاهش قیمت."
-              : "پایه = بخرید نهایی فرشاد (زنده id:1013، یا دستی id:1) برای خرید و فروش کارت. قیمت نهایی = (پایه + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."}
+              ? "پایه = بخرید کارت اصلی (نقد فردا / id:900000) — زنده یا دستی. بفروشید مشتری = (پایه + کارمزد دسته‌بندی) ÷ ۴٫۳۹. کارمزد منفی = کاهش قیمت."
+              : "پایه = بخرید کارت اصلی (نقد فردا / id:900000) — زنده یا دستی. قیمت نهایی = (پایه + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."}
           </p>
         )}
         <div className="admin-price-card__type-row">
@@ -857,10 +896,10 @@ export default function AdminPricesTab() {
           {isMirrored && (
             <p className="price-cards-admin__manual-note">
               {c.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
-                ? "متفرقه: پایه = بخرید نهایی فرشاد (زنده id:1013 یا دستی id:1) — گرم ۱۸ = (قیمت + کارمزد) ÷ ۴٫۳۹ برای بفروشید."
+                ? "متفرقه: پایه = بخرید کارت اصلی (نقد فردا) — زنده یا دستی. گرم ۱۸ = (قیمت + کارمزد) ÷ ۴٫۳۹ برای بفروشید."
                 : c.goldbridge_item_id === SPECIAL_NAGHD_KARTKHAN_ID
-                  ? "نقد کارتخوان: قیمت نهایی = (بخرید نهایی فرشاد زنده id:1013 یا دستی id:1 + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."
-                  : `قیمت این کارت همیشه از آیتم id:${c.price_source_item_id || 1013} (زنده یا دستی) گرفته می‌شود.`}
+                  ? "نقد کارتخوان: قیمت نهایی = (بخرید کارت اصلی نقد فردا — زنده یا دستی + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."
+                  : `قیمت این کارت همیشه از آیتم id:${c.price_source_item_id || MAIN_CASH_ITEM_ID} (زنده یا دستی) گرفته می‌شود.`}
               {" "}
               کارمزد/اختلاف هر دسته‌بندی را پایین تنظیم کنید.
             </p>
@@ -900,8 +939,9 @@ export default function AdminPricesTab() {
       )}
 
       <p className="price-cards-admin__hint">
-        کارت اصلی مشتری «نقدی یکشنبه» است (id:1013)، همان کاشی معامله فرشاد.
-        متفرقه و نقد کارتخوان هر ۳ ثانیه از بخرید نهایی زندهٔ همان کاشی (id:1013) به‌روز می‌شوند؛ اگر id:1 دستی باشد همان پایه است.
+        کارت اصلی معامله (id:900000 / نقد فردا) همیشه قیمت و نام نقدی فردای فرشاد را از goldbridge نشان می‌دهد
+        (مثلاً نقدی دوشنبه / سه‌شنبه / چهارشنبه — نه فقط یکشنبه).
+        متفرقه و نقد کارتخوان از همان پایه پیروی می‌کنند؛ اگر کارت اصلی دستی باشد، پایه همان بخرید دستی است.
         حاشیه ثابت فروشگاه حذف شده؛ سود/کاهش شما فقط از کارمزد دسته‌بندی روی هر خرید و فروش اعمال می‌شود.
         کارت‌های دیگر تا تیک «جزئیات» فقط عنوان را نشان می‌دهند.
       </p>

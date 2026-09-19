@@ -76,6 +76,56 @@
   filter: blur(0.5px);
 }
 
+/* Single-side cards (متفرقه = sell, کارتخوان = buy): one centered panel,
+   clearly smaller than the full buy/sell stage — same size for both. */
+.price-stage--single {
+  grid-template-columns: 1fr;
+  width: 58%;
+  max-width: 380px;
+  margin-inline: auto;
+}
+
+.price-stage--single::after {
+  display: none;
+}
+
+.price-card-row--single-side {
+  gap: 5px;
+}
+
+.price-card-row--single-side .price-card-row__head {
+  width: 58%;
+  max-width: 380px;
+}
+
+.price-card-row--single-side .price-card-row__name {
+  font-size: 12px;
+}
+
+.price-card-row--single-side .price-panel {
+  padding: 12px 16px 11px;
+}
+
+.price-card-row--single-side .price-panel__cta {
+  min-width: 7em;
+  font-size: 13px;
+  padding: 7px 14px;
+}
+
+.price-card-row--single-side .price-panel__value {
+  font-size: clamp(14px, 4vw, 17px);
+}
+
+.price-card-row--single-side .price-panel__eyebrow {
+  font-size: 10px;
+}
+
+.price-card-row--single-side .price-panel__unit-qualifier,
+.price-card-row--single-side .price-panel__unit-badge {
+  font-size: 9.5px;
+  padding: 2px 8px;
+}
+
 .price-panel__eyebrow {
   font-size: 11px;
   letter-spacing: 0.02em;
@@ -111,12 +161,12 @@
 
 .price-panel--buy .price-panel__cta {
   background: var(--buy);
-  color: #eafff2;
+  color: var(--status-on-buy-fg);
 }
 
 .price-panel--sell .price-panel__cta {
   background: var(--sell);
-  color: #ffece5;
+  color: var(--status-on-sell-fg);
 }
 
 /* Price text now sits under the button, a bit smaller than before */
@@ -247,6 +297,20 @@
   margin-top: 6px;
 }
 
+@media (max-width: 640px) {
+  /* Tablets/phones in portrait: single-side cards stay visibly narrower
+     than the full-width double card, and match each other. */
+  .price-stage--single {
+    width: 68%;
+    max-width: 68%;
+  }
+
+  .price-card-row--single-side .price-card-row__head {
+    width: 68%;
+    max-width: 68%;
+  }
+}
+
 @media (max-width: 420px) {
   .price-stage {
     max-width: 100%;
@@ -270,5 +334,42 @@
   .secondary-cards-grid {
     width: 100%;
     max-width: 100%;
+  }
+
+  /* Keep متفرقه / کارتخوان the same size as each other and smaller
+     than the full two-sided card (which stays full-bleed). */
+  .price-stage--single {
+    width: 68%;
+    max-width: 68%;
+  }
+
+  .price-card-row--single-side .price-card-row__head {
+    width: 68%;
+    max-width: 68%;
+  }
+
+  .price-card-row--single-side .price-panel {
+    padding: 9px 10px 8px;
+    gap: 3px;
+  }
+
+  .price-card-row--single-side .price-panel__cta {
+    width: auto;
+    max-width: 8em;
+    min-width: 6.5em;
+    padding: 6px 12px;
+    font-size: 11.5px;
+  }
+
+  .price-card-row--single-side .price-panel__value {
+    font-size: clamp(13px, 3.6vw, 15px);
+  }
+
+  .price-card-row--single-side .price-card-row__name {
+    font-size: 11px;
+  }
+
+  .price-card-row--single-side .price-panel__eyebrow {
+    font-size: 9.5px;
   }
 }

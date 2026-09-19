@@ -31,45 +31,69 @@ COIN_ITEM_TYPE = 2
 SPECIAL_CARD_MOTAFEREGHE_ID = 900001       # متفرقه — sell only, گرم۱۸
 SPECIAL_CARD_NAGHD_KARTKHAN_ID = 900002    # نقد کارتخوان — buy only, مثقال۱۷
 DEFAULT_PRICE_SOURCE_ITEM_ID = 1
-# Farshad /trade cash tile (نقدی یکشنبه). Id 1 is the hidden master.
-FARSHAD_TRADE_CASH_ITEM_ID = 1013
-# نقد کارتخوان is always id:1 (مثقال۱۷) + this fixed markup (تومان).
+# Goldbridge stable alias for tomorrow's Farshad نقدی (GET /price). Prefer this
+# over weekday Farshad ids (1013/1009/…). See goldbridge docs/goldapp-price-cards-update.md
+MAIN_CASH_ITEM_ID = 900000
+# Back-compat alias used across the codebase / admin flags.
+FARSHAD_TRADE_CASH_ITEM_ID = MAIN_CASH_ITEM_ID
+# Legacy Farshad weekday ids that used to be pinned as "main cash".
+LEGACY_MAIN_CASH_ITEM_IDS = frozenset({1009, 1010, 1011, 1012, 1013})
+# نقد کارتخوان fixed markup (تومان) on top of mirrored base buy.
 NAGHD_KARTKHAN_MARKUP_TOMAN = 100_000
 
 
+def is_main_cash_item_id(item_id: int | None) -> bool:
+    """True only for the shop's stable نقد فردا card (goldbridge alias 900000)."""
+    try:
+        return int(item_id or 0) == MAIN_CASH_ITEM_ID
+    except (TypeError, ValueError):
+        return False
+
+
+def is_legacy_weekday_cash_id(item_id: int | None) -> bool:
+    """Farshad weekday نقدی ids (1013/1009/…) — not the shop main card."""
+    try:
+        return int(item_id or 0) in LEGACY_MAIN_CASH_ITEM_IDS
+    except (TypeError, ValueError):
+        return False
+
+
 def card_list_rank(item_id: int, sort_order: int | None = None, *, in_use: bool = False) -> tuple[int, int, int]:
-    """Stable list order: 1013 first, then specials, then hidden master id:1."""
+    """Customer/admin order: نقد فردا → کارتخوان → متفرقه → everything else."""
     iid = int(item_id or 0)
     so = int(sort_order or 0)
-    if iid == FARSHAD_TRADE_CASH_ITEM_ID:
+    if iid == MAIN_CASH_ITEM_ID:
         return (0, so, iid)
-    if iid == SPECIAL_CARD_MOTAFEREGHE_ID:
-        return (1, so, iid)
     if iid == SPECIAL_CARD_NAGHD_KARTKHAN_ID:
+        return (1, so, iid)
+    if iid == SPECIAL_CARD_MOTAFEREGHE_ID:
         return (2, so, iid)
     if iid == DEFAULT_PRICE_SOURCE_ITEM_ID:
         return (3, so, iid)
+    # Push leftover Farshad weekday tiles after the organized shop cards.
+    if is_legacy_weekday_cash_id(iid):
+        return (4 if in_use else 5, so, iid)
     return (4 if in_use else 5, so, iid)
 
 
 SPECIAL_MIRRORED_CARDS = (
     {
-        "goldbridge_item_id": SPECIAL_CARD_MOTAFEREGHE_ID,
-        "display_name": "متفرقه",
-        "price_source_item_id": DEFAULT_PRICE_SOURCE_ITEM_ID,
-        "price_label_mode": "gram18_only",
-        "orderable_buy": False,
-        "orderable_sell": True,
-        "sort_order": 100,
-    },
-    {
         "goldbridge_item_id": SPECIAL_CARD_NAGHD_KARTKHAN_ID,
         "display_name": "نقد کارتخوان",
-        "price_source_item_id": DEFAULT_PRICE_SOURCE_ITEM_ID,
+        "price_source_item_id": MAIN_CASH_ITEM_ID,
         "price_label_mode": "mesghal17_only",
         "orderable_buy": True,
         "orderable_sell": False,
-        "sort_order": 101,
+        "sort_order": 10,
+    },
+    {
+        "goldbridge_item_id": SPECIAL_CARD_MOTAFEREGHE_ID,
+        "display_name": "متفرقه",
+        "price_source_item_id": MAIN_CASH_ITEM_ID,
+        "price_label_mode": "gram18_only",
+        "orderable_buy": False,
+        "orderable_sell": True,
+        "sort_order": 20,
     },
 )
 
@@ -290,10 +314,13 @@ def _merge_polled_items(cleaned: dict[int, dict]) -> bool:
         )
         if price_changed:
             any_change = True
-            # When Farshad live buy moves, mirrored specials must refresh too
-            # (admin poll / WS clients key off per-item change stamps).
-            if int(item_id) in (FARSHAD_TRADE_CASH_ITEM_ID, DEFAULT_PRICE_SOURCE_ITEM_ID):
-                stamp = _normalize_source_ts(item.get("last_update_time")) or now
+            # When any live Farshad cash day moves, refresh 1013 + specials
+            # (1013 may be overlaying that day's quote while its own tile is frozen).
+            stamp = _normalize_source_ts(item.get("last_update_time")) or now
+            if int(item_id) == DEFAULT_PRICE_SOURCE_ITEM_ID or _is_farshad_day_cash(item):
+                _item_price_changed_at[MAIN_CASH_ITEM_ID] = stamp
+                for legacy_id in LEGACY_MAIN_CASH_ITEM_IDS:
+                    _item_price_changed_at[legacy_id] = stamp
                 for special_id in (SPECIAL_CARD_MOTAFEREGHE_ID, SPECIAL_CARD_NAGHD_KARTKHAN_ID):
                     _item_price_changed_at[special_id] = stamp
 
@@ -305,13 +332,35 @@ def _merge_polled_items(cleaned: dict[int, dict]) -> bool:
 
         src_ts = _normalize_source_ts(item.get("last_update_time"))
         if src_ts:
-            _item_price_changed_at[item_id] = src_ts
+            # Frozen 1013 must not clobber a fresher stamp set when an
+            # active day-cash tile moved (overlay path). Other items
+            # always follow goldbridge last_update_time (needed after
+            # unticking manual so the clock re-syncs even to an older ts).
+            if is_main_cash_item_id(item_id):
+                existing_ms = _parse_ts_ms(_item_price_changed_at.get(item_id))
+                new_ms = _parse_ts_ms(src_ts)
+                if existing_ms is None or new_ms is None or new_ms >= existing_ms:
+                    _item_price_changed_at[item_id] = src_ts
+            else:
+                _item_price_changed_at[item_id] = src_ts
             src_ms = _parse_ts_ms(src_ts)
             if src_ms is not None and (newest_src_ms is None or src_ms > newest_src_ms):
                 newest_src_ms = src_ms
                 newest_src_ts = src_ts
         elif item_id not in _item_price_changed_at:
             _item_price_changed_at[item_id] = now
+
+    # Items that vanished from this poll are no longer live — mark inactive
+    # so resolve_live_farshad_cash_item() can fail over (e.g. 1013 dropped).
+    for item_id, prev in list(_latest_items.items()):
+        if item_id in cleaned:
+            continue
+        if item_id in (SPECIAL_CARD_MOTAFEREGHE_ID, SPECIAL_CARD_NAGHD_KARTKHAN_ID):
+            continue
+        if prev.get("active"):
+            stale = dict(prev)
+            stale["active"] = False
+            _latest_items[item_id] = stale
 
     if newest_src_ts and (
         _latest_updated_at is None
@@ -362,19 +411,44 @@ def _remember_manual_quote(
 
 
 def _hydrate_manual_quotes_from_cards(cards) -> None:
-    """Fill missing cache entries only — never clobber a just-saved quote."""
+    """Seed / reconcile the in-memory manual cache from DB rows.
+
+    The admin checkbox in Postgres is the on/off source of truth. If memory
+    still says use_manual=True after the admin unticked (or after a partial
+    save), mirrored specials would keep serving the typed quote and look
+    "stuck on manual" across refresh. We never promote memory back to
+    manual when the DB flag is off.
+
+    When the DB flag is on, missing cache entries are filled as before.
+    Cache=False beating a stale ORM=True still happens inside
+    ``_live_or_manual_item`` / ``_mirror_base_buy`` (see tests) — that path
+    does not go through hydrate.
+    """
     for card in cards:
         iid = int(card.goldbridge_item_id)
         ts = _dt_to_iso(getattr(card, "manual_updated_at", None))
-        if iid not in _manual_quotes:
+        db_manual = bool(getattr(card, "use_manual_price", False))
+        buy = getattr(card, "manual_buy", None)
+        sell = getattr(card, "manual_sell", None)
+        cached = _manual_quotes.get(iid)
+        if cached is None:
             _remember_manual_quote(
                 iid,
-                use_manual=bool(getattr(card, "use_manual_price", False)),
-                buy=getattr(card, "manual_buy", None),
-                sell=getattr(card, "manual_sell", None),
+                use_manual=db_manual,
+                buy=buy,
+                sell=sell,
                 updated_at=ts,
             )
-        elif bool(getattr(card, "use_manual_price", False)) and ts:
+        elif cached.get("use_manual") and not db_manual:
+            # DB untick wins — drop sticky manual mode from memory.
+            _remember_manual_quote(
+                iid,
+                use_manual=False,
+                buy=cached.get("buy", buy),
+                sell=cached.get("sell", sell),
+                updated_at=ts,
+            )
+        elif db_manual and ts:
             if iid not in _item_price_changed_at:
                 mark_item_price_changed(iid, ts)
 
@@ -435,7 +509,7 @@ def _load_card_snapshots(db: Session) -> list:
 
 
 def ensure_special_mirrored_cards(db: Session | None = None) -> None:
-    """Idempotently create متفرقه / نقد کارتخوان rows (mirror item id 1).
+    """Idempotently create متفرقه / نقد کارتخوان rows (mirror main cash alias).
 
     Product identity fields stay synced; admin-controlled visibility
     (`is_enabled`) and side toggles are only set on first create so
@@ -456,6 +530,7 @@ def ensure_special_mirrored_cards(db: Session | None = None) -> None:
     if owns_session:
         db = SessionLocal()
     try:
+        ensure_main_cash_card(db)
         dirty = False
         found = 0
         for spec in SPECIAL_MIRRORED_CARDS:
@@ -489,7 +564,7 @@ def ensure_special_mirrored_cards(db: Session | None = None) -> None:
             if card.use_manual_price:
                 card.use_manual_price = False
                 dirty = True
-            if card.sort_order is None or card.sort_order == 0:
+            if card.sort_order != spec["sort_order"]:
                 card.sort_order = spec["sort_order"]
                 dirty = True
             found += 1
@@ -503,6 +578,132 @@ def ensure_special_mirrored_cards(db: Session | None = None) -> None:
         raise
     finally:
         if owns_session:
+            db.close()
+
+
+
+def ensure_main_cash_card(db: Session | None = None) -> None:
+    """Pin shop main cash to goldbridge alias 900000 (not a weekday Farshad id).
+
+    Remaps legacy cards/commissions from 1013/1009/… → 900000 and points
+    متفرقه / کارتخوان mirrors at 900000. Safe to call repeatedly.
+    """
+    from app.db import SessionLocal
+    from app.models_db import PriceCard, PriceCardCommission
+
+    owns = db is None
+    if owns:
+        db = SessionLocal()
+    try:
+        main = (
+            db.query(PriceCard)
+            .filter(PriceCard.goldbridge_item_id == MAIN_CASH_ITEM_ID)
+            .first()
+        )
+        legacy = (
+            db.query(PriceCard)
+            .filter(PriceCard.goldbridge_item_id.in_(tuple(LEGACY_MAIN_CASH_ITEM_IDS)))
+            .order_by(PriceCard.is_enabled.desc(), PriceCard.goldbridge_item_id)
+            .all()
+        )
+        dirty = False
+        if main is None and legacy:
+            src = legacy[0]
+            src.goldbridge_item_id = MAIN_CASH_ITEM_ID
+            src.display_name = None  # live Farshad name from goldbridge
+            src.price_source_item_id = None
+            src.sort_order = 0
+            src.is_enabled = True
+            main = src
+            dirty = True
+            # Drop duplicate legacy rows (keep first remapped).
+            for extra in legacy[1:]:
+                db.query(PriceCardCommission).filter(
+                    PriceCardCommission.goldbridge_item_id == extra.goldbridge_item_id
+                ).delete(synchronize_session=False)
+                db.delete(extra)
+                dirty = True
+        elif main is None:
+            main = PriceCard(
+                goldbridge_item_id=MAIN_CASH_ITEM_ID,
+                display_name=None,  # live Farshad name from goldbridge (نقد فردا)
+                is_enabled=True,
+                orderable_buy=True,
+                orderable_sell=True,
+                override_source_restriction=True,
+                price_source_item_id=None,
+                sort_order=0,
+            )
+            db.add(main)
+            dirty = True
+        else:
+            if main.price_source_item_id is not None:
+                main.price_source_item_id = None
+                dirty = True
+            if getattr(main, "sort_order", None) != 0:
+                main.sort_order = 0
+                dirty = True
+            # Let goldbridge supply the live weekday name (نقدی چهارشنبه, …).
+            if main.display_name in (None, "", "نقدی") or any(
+                day in str(main.display_name or "")
+                for day in ("یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه", "شنبه")
+            ):
+                if main.display_name is not None:
+                    main.display_name = None
+                    dirty = True
+            # Disable leftover weekday pins so they don't appear as extra «main» cards.
+            for extra in legacy:
+                if extra.goldbridge_item_id == MAIN_CASH_ITEM_ID:
+                    continue
+                if extra.is_enabled or extra.orderable_buy or extra.orderable_sell:
+                    extra.is_enabled = False
+                    extra.orderable_buy = False
+                    extra.orderable_sell = False
+                    dirty = True
+
+        # Move commissions from legacy weekday ids onto 900000.
+        for legacy_id in LEGACY_MAIN_CASH_ITEM_IDS:
+            rows = (
+                db.query(PriceCardCommission)
+                .filter(PriceCardCommission.goldbridge_item_id == legacy_id)
+                .all()
+            )
+            for row in rows:
+                exists = (
+                    db.query(PriceCardCommission)
+                    .filter(
+                        PriceCardCommission.goldbridge_item_id == MAIN_CASH_ITEM_ID,
+                        PriceCardCommission.role_id == row.role_id,
+                    )
+                    .first()
+                )
+                if exists:
+                    db.delete(row)
+                else:
+                    row.goldbridge_item_id = MAIN_CASH_ITEM_ID
+                dirty = True
+
+        # Specials must mirror the stable alias.
+        for special_id in (SPECIAL_CARD_MOTAFEREGHE_ID, SPECIAL_CARD_NAGHD_KARTKHAN_ID):
+            card = (
+                db.query(PriceCard)
+                .filter(PriceCard.goldbridge_item_id == special_id)
+                .first()
+            )
+            if card and card.price_source_item_id != MAIN_CASH_ITEM_ID:
+                card.price_source_item_id = MAIN_CASH_ITEM_ID
+                dirty = True
+
+        if dirty:
+            db.commit()
+            _invalidate_card_config_cache()
+            global _specials_ready
+            _specials_ready = False
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        if owns:
             db.close()
 
 
@@ -682,6 +883,189 @@ def _manual_quote_for(item_id: int | None) -> dict | None:
     return _manual_quotes.get(int(item_id))
 
 
+# How long a Farshad cash quote can lag before we treat it as frozen.
+_FARSHAD_FRESH_MS = 5 * 60 * 1000
+
+# Match goldbridge BRIDGE_TARGET_MODE=tomorrow: Farshad names cash by
+# *delivery* weekday. On Sunday the live board tile is نقدی دوشنبه.
+# پنجشنبه + جمعه are closed — jump to the next open delivery day (شنبه).
+_WEEKDAY_FA = {
+    0: "دوشنبه",
+    1: "سه‌شنبه",
+    2: "چهارشنبه",
+    3: "پنجشنبه",
+    4: "جمعه",
+    5: "شنبه",
+    6: "یکشنبه",
+}
+_CLOSED_DELIVERY_WEEKDAYS_FA = frozenset({"پنجشنبه", "جمعه"})
+
+
+def _item_update_ms(item: dict | None) -> float:
+    if not item:
+        return 0.0
+    return float(_parse_ts_ms(item.get("last_update_time")) or 0.0)
+
+
+def _normalize_fa_name(name: str | None) -> str:
+    if not name:
+        return ""
+    return (
+        str(name)
+        .replace("\u200c", "")
+        .replace("\u200e", "")
+        .replace("\u200f", "")
+        .replace(" ", "")
+        .replace("ـ", "")
+    )
+
+
+def _name_has_weekday(name: str | None, weekday_fa: str) -> bool:
+    n = _normalize_fa_name(name)
+    w = _normalize_fa_name(weekday_fa)
+    if not n or not w:
+        return False
+    # 'شنبه' is a suffix of یکشنبه/دوشنبه/سه‌شنبه/… — require an exact-day match.
+    if w == "شنبه":
+        if "شنبه" not in n:
+            return False
+        for longer in ("یکشنبه", "دوشنبه", "سهشنبه", "چهارشنبه", "پنجشنبه"):
+            if longer in n:
+                return False
+        return True
+    return w in n
+
+
+def _name_is_closed_delivery_day(name: str | None) -> bool:
+    """True when the Farshad name is a closed delivery day (پنجشنبه/جمعه)."""
+    return any(_name_has_weekday(name, day) for day in _CLOSED_DELIVERY_WEEKDAYS_FA)
+
+
+def _name_has_any_weekday(name: str | None) -> bool:
+    return any(_name_has_weekday(name, day) for day in _WEEKDAY_FA.values())
+
+
+def _next_open_weekday_fa(now=None) -> str:
+    """Next open Farshad delivery weekday in Asia/Tehran.
+
+    Starts at calendar tomorrow, then skips پنجشنبه and جمعه (market closed).
+    Wednesday/Thursday → شنبه; other weekdays → tomorrow as usual.
+    """
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
+
+    tehran = ZoneInfo("Asia/Tehran")
+    if now is None:
+        local = datetime.now(tehran)
+    else:
+        local = now.astimezone(tehran) if getattr(now, "tzinfo", None) else now.replace(tzinfo=tehran)
+    day = local + timedelta(days=1)
+    for _ in range(8):
+        label = _WEEKDAY_FA[day.weekday()]
+        if label not in _CLOSED_DELIVERY_WEEKDAYS_FA:
+            return label
+        day += timedelta(days=1)
+    return _WEEKDAY_FA[day.weekday()]
+
+
+def _tomorrow_weekday_fa(now=None) -> str:
+    """Back-compat alias — now returns the next *open* delivery weekday."""
+    return _next_open_weekday_fa(now)
+
+
+def _is_farshad_day_cash(item: dict) -> bool:
+    """Farshad weekday نقدی tiles (not کارتخوان, not coins, not id:1 masters)."""
+    if not item or item.get("type") != GOLD_ITEM_TYPE:
+        return False
+    name = str(item.get("name") or "")
+    if "کارتخوان" in name:
+        return False
+    return name.startswith("نقدی") or name.startswith("نقدي") or name.startswith("نقد ")
+
+
+def _prefer_naqdi_board(item: dict) -> tuple[int, int, float]:
+    """Sort key: نقدی board first, then active, then freshest."""
+    name = str(item.get("name") or "")
+    is_board = 1 if (name.startswith("نقدی") or name.startswith("نقدي")) else 0
+    return (is_board, 1 if item.get("active") else 0, _item_update_ms(item))
+
+
+def resolve_live_farshad_cash_item(*, now=None) -> dict | None:
+    """
+    Best Farshad mesghal-cash quote for نقد فردا.
+
+    Uses the next *open* delivery weekday (skip پنجشنبه/جمعه → شنبه).
+    Prefer the matching Farshad day tile; only trust goldbridge alias
+    ``900000`` when it matches that open day (never a closed پنجشنبه/جمعه
+    alias while شنبه is the target).
+    """
+    target = _next_open_weekday_fa(now)
+
+    day_matches: list[dict] = []
+    active_open_days: list[dict] = []
+    for it in _latest_items.values():
+        if not _is_farshad_day_cash(it) or it.get("buy") is None:
+            continue
+        # Skip the synthetic alias itself when scanning Farshad day tiles.
+        if int(it.get("goldbridge_item_id") or 0) == MAIN_CASH_ITEM_ID:
+            continue
+        if _name_has_weekday(it.get("name"), target):
+            day_matches.append(it)
+        if it.get("active") and not _name_is_closed_delivery_day(it.get("name")):
+            active_open_days.append(it)
+
+    if day_matches:
+        day_matches.sort(key=_prefer_naqdi_board, reverse=True)
+        return day_matches[0]
+
+    alias = _latest_items.get(MAIN_CASH_ITEM_ID)
+    if alias is not None and alias.get("buy") is not None:
+        aname = alias.get("name")
+        if _name_has_weekday(aname, target):
+            return alias
+        # Generic alias name (no weekday) is ok; closed-day alias is not.
+        if not _name_has_any_weekday(aname) and not _name_is_closed_delivery_day(aname):
+            return alias
+
+    if active_open_days:
+        active_open_days.sort(key=_item_update_ms, reverse=True)
+        return active_open_days[0]
+
+    preferred = _latest_items.get(FARSHAD_TRADE_CASH_ITEM_ID)
+    if preferred is not None and preferred.get("buy") is not None:
+        return preferred
+    return None
+
+
+def _overlay_live_farshad_cash(out: dict) -> dict:
+    """Map the shop's main-trade card onto goldbridge's tomorrow Farshad cash.
+
+    Keeps the shop card id (900000, or a legacy weekday id) but copies
+    buy/sell *and* the live Farshad name from the goldbridge alias / day tile.
+    """
+    if not is_main_cash_item_id(out.get("goldbridge_item_id")):
+        return out
+    if out.get("price_source") == "manual":
+        return out
+    live = resolve_live_farshad_cash_item()
+    if not live or live.get("buy") is None:
+        return _apply_live_shop_margin(out)
+    live_id = int(live.get("goldbridge_item_id") or 0)
+    patched = dict(out)
+    patched["buy"] = float(live["buy"])
+    if live.get("sell") is not None:
+        patched["sell"] = float(live["sell"])
+    patched["farshad_buy"] = float(live["buy"])
+    patched["farshad_sell"] = float(live["sell"]) if live.get("sell") is not None else patched.get("farshad_sell")
+    if live.get("name"):
+        patched["name"] = live["name"]
+    patched["live_from_item_id"] = live_id
+    patched["live_from_name"] = live.get("name")
+    patched["last_update_time"] = live.get("last_update_time") or patched.get("last_update_time")
+    patched["price_source"] = "live"
+    return _apply_live_shop_margin(patched)
+
+
 def _mirror_base_buy(
     src_card,
     source_live: dict | None,
@@ -692,18 +1076,15 @@ def _mirror_base_buy(
 
     Returns (buy, mode, mirrored_from_id).
 
-    Manual on id:1 wins (exact admin-typed buy).
-
-    Live mode follows Farshad's *active* cash tile (id:1013) — that is the
-    quote that ticks on goldbridge. Hidden master id:1 is often inactive and
-    frozen, which previously left متفرقه / کارتخوان stuck while 1013 moved.
-    Falls back to id:1 live buy only if 1013 has no buy.
+    Manual on the source card (normally 900000 / نقد فردا) wins.
+    Live mode follows the next open Farshad نقدی day tile. Falls back
+    to the source card's live buy only if no Farshad cash quote exists.
     """
     sid = source_id
     if sid is None and src_card is not None:
         sid = getattr(src_card, "goldbridge_item_id", None)
     if sid is None:
-        sid = DEFAULT_PRICE_SOURCE_ITEM_ID
+        sid = MAIN_CASH_ITEM_ID
     sid = int(sid)
     cached = _manual_quote_for(sid)
     if cached is not None:
@@ -711,9 +1092,9 @@ def _mirror_base_buy(
             return float(cached["buy"]), "manual", sid
     elif src_card is not None and src_card.use_manual_price and src_card.manual_buy is not None:
         return float(src_card.manual_buy), "manual", sid
-    trade_live = _latest_items.get(FARSHAD_TRADE_CASH_ITEM_ID)
+    trade_live = resolve_live_farshad_cash_item()
     if trade_live is not None and trade_live.get("buy") is not None:
-        return float(trade_live["buy"]), "live", FARSHAD_TRADE_CASH_ITEM_ID
+        return float(trade_live["buy"]), "live", int(trade_live["goldbridge_item_id"])
     if source_live is not None and source_live.get("buy") is not None:
         return float(source_live["buy"]), "live", sid
     return None, "unavailable", None
@@ -764,12 +1145,31 @@ def _live_or_manual_item(card, live_item: dict | None, *, buy_only_ok: bool = Fa
         out = dict(live_item)
         if card:
             out["goldbridge_item_id"] = card.goldbridge_item_id
-            if card.display_name:
+            # Main trade slot: keep Farshad live name (tomorrow tile), not a
+            # stale admin «نقدی یکشنبه» label. Other cards may use display_name.
+            if card.display_name and not is_main_cash_item_id(card.goldbridge_item_id):
                 out["name"] = card.display_name
         out["price_source"] = "live"
         out["farshad_buy"] = out.get("buy")
         out["farshad_sell"] = out.get("sell")
+        # Main trade slot: overlay tomorrow Farshad cash (price + name).
+        # Other cards just get the normal live shop margin.
+        if card and is_main_cash_item_id(getattr(card, "goldbridge_item_id", 0)):
+            return _overlay_live_farshad_cash(out)
         return _apply_live_shop_margin(out)
+    # 1013 may have a row but be inactive with no usable sell — still try failover.
+    if card and is_main_cash_item_id(getattr(card, "goldbridge_item_id", 0)):
+        live = resolve_live_farshad_cash_item()
+        if live and live.get("buy") is not None:
+            out = dict(live)
+            out["goldbridge_item_id"] = int(card.goldbridge_item_id)
+            # Keep live Farshad instrument name (e.g. نقدی چهارشنبه).
+            out["price_source"] = "live"
+            out["farshad_buy"] = out.get("buy")
+            out["farshad_sell"] = out.get("sell")
+            out["live_from_item_id"] = int(live.get("goldbridge_item_id") or 0)
+            out["live_from_name"] = live.get("name")
+            return _apply_live_shop_margin(out)
     return None
 
 
@@ -832,10 +1232,10 @@ def resolve_effective_item(
     Unticking it returns every card — including متفرقه / نقد کارتخوان —
     to the goldbridge quote immediately.
 
-    متفرقه / نقد کارتخوان base = Farshad final buy:
-      • id:1 manual (if set), else
-      • live buy from trade tile id:1013 (ticks every poll), else
-      • live buy from hidden master id:1
+    متفرقه / نقد کارتخوان base = Farshad final buy from source (900000):
+      • source card manual (if set), else
+      • live buy from next open Farshad نقدی day tile, else
+      • live buy from the source card feed
     Shop padding is never applied to this base. Formulas stay:
       متفرقه:       (base + commission) / 4.39
       نقد کارتخوان: (base + commission) + 100_000
@@ -844,14 +1244,17 @@ def resolve_effective_item(
         card
         and (is_motaferaghe_card(card.goldbridge_item_id) or is_naghd_kartkhan_card(card.goldbridge_item_id))
     )
-    # Hard-lock specials to id:1 even if a row was pointed at 1013.
-    source_id = DEFAULT_PRICE_SOURCE_ITEM_ID if is_special_mirror else (
-        getattr(card, "price_source_item_id", None) if card else None
-    )
+    # Specials follow the configured source (900000 / نقد فردا), including
+    # when that card is manual. Never hard-lock to legacy id:1 — that made
+    # متفرقه/کارتخوان ignore main-card manuals.
+    if is_special_mirror:
+        source_id = getattr(card, "price_source_item_id", None) or MAIN_CASH_ITEM_ID
+    else:
+        source_id = getattr(card, "price_source_item_id", None) if card else None
     if source_id:
         source_live = _latest_items.get(int(source_id))
         if is_special_mirror:
-            # Prefer the real id:1 ORM row over a stale/wrong source_card.
+            # Prefer the real source ORM row (900000) over a stale/wrong source_card.
             if source_card is not None and int(getattr(source_card, "goldbridge_item_id", 0) or 0) == int(source_id):
                 src_card = _snapshot_price_card(source_card)
             elif _manual_quote_for(int(source_id)) is not None:
@@ -987,7 +1390,16 @@ def list_admin_cards(db: Session) -> list[dict]:
         result.append({
             **item,
             "goldbridge_item_id": item_id,
-            "display_name": (card.display_name if card and card.display_name else item["name"]),
+            "display_name": (
+                (effective or {}).get("name")
+                if is_main_cash_item_id(item_id) and (effective or {}).get("name")
+                else (card.display_name if card and card.display_name else item["name"])
+            ),
+            "name": (
+                (effective or {}).get("name")
+                if is_main_cash_item_id(item_id) and (effective or {}).get("name")
+                else item.get("name")
+            ),
             "is_enabled": bool(card.is_enabled) if card else False,
             "orderable_buy": bool(card.orderable_buy) if card else False,
             "orderable_sell": bool(card.orderable_sell) if card else False,
@@ -997,16 +1409,18 @@ def list_admin_cards(db: Session) -> list[dict]:
             "manual_sell": card.manual_sell if card else None,
             "price_source_item_id": card.price_source_item_id if card else None,
             "price_label_mode": card.price_label_mode if card else None,
-            "live_buy": item.get("buy"),
-            "live_sell": item.get("sell"),
-            "farshad_buy": item.get("buy"),
-            "farshad_sell": item.get("sell"),
+            "live_buy": (effective or {}).get("farshad_buy") or item.get("buy"),
+            "live_sell": (effective or {}).get("farshad_sell") or item.get("sell"),
+            "farshad_buy": (effective or {}).get("farshad_buy") or item.get("buy"),
+            "farshad_sell": (effective or {}).get("farshad_sell") or item.get("sell"),
             "buy": effective["buy"] if effective else item.get("buy"),
             "sell": effective["sell"] if effective else item.get("sell"),
             "price_source": effective["price_source"] if effective else "unavailable",
             "mirrored_source_mode": (effective or {}).get("mirrored_source_mode"),
+            "live_from_item_id": (effective or {}).get("live_from_item_id"),
+            "live_from_name": (effective or {}).get("live_from_name") or (effective or {}).get("name"),
             "shop_margin_toman": (effective or {}).get("shop_margin_toman") or 0,
-            "is_farshad_trade_tile": int(item_id) == FARSHAD_TRADE_CASH_ITEM_ID,
+            "is_farshad_trade_tile": is_main_cash_item_id(item_id),
             "is_farshad_hidden_master": int(item_id) == DEFAULT_PRICE_SOURCE_ITEM_ID,
             "sort_order": card.sort_order if card else 0,
             "role_commissions": _role_commissions_for_card(db, item_id, roles, commissions_by_item.get(item_id, {})),
@@ -1049,12 +1463,22 @@ def list_admin_cards(db: Session) -> list[dict]:
                 "price_source": "unavailable",
                 "mirrored_source_mode": None,
                 "shop_margin_toman": 0,
-                "is_farshad_trade_tile": int(item_id) == FARSHAD_TRADE_CASH_ITEM_ID,
+                "is_farshad_trade_tile": is_main_cash_item_id(item_id),
                 "is_farshad_hidden_master": int(item_id) == DEFAULT_PRICE_SOURCE_ITEM_ID,
                 "sort_order": card.sort_order,
                 "role_commissions": _role_commissions_for_card(db, item_id, roles, commissions_by_item.get(item_id, {})),
             })
             continue
+        live_buy = effective.get("farshad_buy")
+        live_sell = effective.get("farshad_sell")
+        # 900000 is a shop alias — not in the goldbridge feed — so the first
+        # loop never sets live_*. Without these, admin untick optimistic UI
+        # had nowhere to fall back and left price_source sticky as "manual".
+        if (live_buy is None or live_sell is None) and is_main_cash_item_id(item_id):
+            trade = resolve_live_farshad_cash_item()
+            if trade:
+                live_buy = live_buy if live_buy is not None else trade.get("buy")
+                live_sell = live_sell if live_sell is not None else trade.get("sell")
         result.append({
             "goldbridge_item_id": item_id,
             "name": card.display_name or effective.get("name") or f"#{item_id}",
@@ -1064,8 +1488,10 @@ def list_admin_cards(db: Session) -> list[dict]:
             "item_weight": effective.get("item_weight"),
             "buy": effective["buy"],
             "sell": effective["sell"],
-            "live_buy": None,
-            "live_sell": None,
+            "live_buy": live_buy,
+            "live_sell": live_sell,
+            "farshad_buy": live_buy,
+            "farshad_sell": live_sell,
             "allow_buy": True,
             "allow_sell": True,
             "active": True,
@@ -1081,7 +1507,7 @@ def list_admin_cards(db: Session) -> list[dict]:
             "price_source": effective.get("price_source", "mirrored"),
             "mirrored_source_mode": effective.get("mirrored_source_mode"),
             "shop_margin_toman": 0,
-            "is_farshad_trade_tile": int(item_id) == FARSHAD_TRADE_CASH_ITEM_ID,
+            "is_farshad_trade_tile": is_main_cash_item_id(item_id),
             "is_farshad_hidden_master": int(item_id) == DEFAULT_PRICE_SOURCE_ITEM_ID,
             "sort_order": card.sort_order,
             "role_commissions": _role_commissions_for_card(db, item_id, roles, commissions_by_item.get(item_id, {})),
@@ -1259,14 +1685,14 @@ def resolve_commission_for_user(db: Session, user, goldbridge_item_id: int) -> t
 
 def resolve_can_order_for_user(db: Session, user, card, effective_item: dict | None) -> bool:
     """
-    When a card is on manual prices, admin can allow/deny each role
-    (دسته بندی) from placing orders. Live-feed cards ignore this and
-    use the normal orderable_buy/sell toggles for everyone.
+    Per-role access for a price card (دسته بندی).
+
+    ``can_order=False`` on PriceCardCommission means this role must not
+    see or trade the card — including mirrored specials (متفرقه /
+    کارتخوان). Missing override → allowed.
     """
     from app.models_db import PriceCardCommission
 
-    if not effective_item or effective_item.get("price_source") != "manual":
-        return True
     if not user or not getattr(user, "role_id", None):
         return False
     ov = (
@@ -1305,10 +1731,8 @@ def card_commissions_for_user(db: Session, user) -> list[dict]:
         effective = resolve_effective_item(
             card, _latest_items.get(card.goldbridge_item_id), db, source_card=src
         )
-        is_manual = bool(effective and effective.get("price_source") == "manual")
-        can_order = True
-        if is_manual:
-            can_order = bool(ov.can_order) if ov is not None else True
+        # can_order=False hides + blocks the card for this role (all sources).
+        can_order = bool(ov.can_order) if ov is not None else True
         buy_value, sell_value = _commission_pair(ov, default_value)
         result.append({
             "goldbridge_item_id": card.goldbridge_item_id,
@@ -1396,9 +1820,15 @@ def get_enabled_cards_for_broadcast(db: Session | None = None) -> list[dict]:
             src_card = by_id.get(int(source_id))
             manual_ts = _dt_to_iso(getattr(src_card, "manual_updated_at", None)) if src_card else None
             card_updated_at = item_price_changed_at(source_id) or manual_ts
+        # Main cash: prefer live goldbridge Farshad name (نقدی چهارشنبه, …)
+        # over a static admin label like «نقدی».
+        if is_main_cash_item_id(card.goldbridge_item_id) and item.get("name"):
+            card_name = item.get("name")
+        else:
+            card_name = card.display_name or item.get("name") or f"#{card.goldbridge_item_id}"
         result.append({
             "goldbridge_item_id": card.goldbridge_item_id,
-            "name": card.display_name or item.get("name") or f"#{card.goldbridge_item_id}",
+            "name": card_name,
             "type": item.get("type", GOLD_ITEM_TYPE),
             "unit": "count" if item.get("type") == COIN_ITEM_TYPE else "gram18",
             "item_weight": item.get("item_weight"),

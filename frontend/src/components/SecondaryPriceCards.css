@@ -97,3 +97,12 @@
   padding: 1px 8px;
   border-radius: 999px;
 }
+
+.secondary-card--single-side .secondary-card__values {
+  align-items: center;
+}
+
+.secondary-card--single-side .secondary-card__value {
+  justify-content: center;
+  gap: 8px;
+}
