@@ -259,6 +259,7 @@ def test_coins_do_not_get_shop_margin():
 def test_frozen_1013_follows_tomorrow_farshad_day():
     """Main cash 900000 overlays goldbridge tomorrow tile (Sunday → دوشنبه/1009)."""
     from datetime import datetime
+    from unittest.mock import patch
     from zoneinfo import ZoneInfo
 
     price_cards._latest_items[1013] = {
@@ -313,7 +314,8 @@ def test_frozen_1013_follows_tomorrow_farshad_day():
         "allow_buy": True,
         "allow_sell": True,
     }
-    out = price_cards._live_or_manual_item(card, stub)
+    with patch.object(price_cards, "_next_open_weekday_fa", return_value="دوشنبه"):
+        out = price_cards._live_or_manual_item(card, stub)
     assert out["buy"] == 102_850_000
     assert out.get("live_from_item_id") == 1009
     assert out["name"] == "نقدی دوشنبه"
@@ -347,7 +349,8 @@ def test_frozen_1013_follows_tomorrow_farshad_day():
         "manual_sell": None,
         "price_source_item_id": None,
     })()
-    mota_out = price_cards.resolve_effective_item(mota, None, source_card=src)
+    with patch.object(price_cards, "_next_open_weekday_fa", return_value="دوشنبه"):
+        mota_out = price_cards.resolve_effective_item(mota, None, source_card=src)
     assert mota_out["buy"] == 102_850_000
     assert mota_out.get("mirrored_from") == 1009
 

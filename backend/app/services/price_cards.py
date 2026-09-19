@@ -1051,18 +1051,15 @@ def _mirror_base_buy(
 
     Returns (buy, mode, mirrored_from_id).
 
-    Manual on id:1 wins (exact admin-typed buy).
-
-    Live mode follows the best live Farshad نقدی day tile (prefers 1013
-    while it is active/fresh; otherwise the current active day such as
-    دوشنبه / سه‌شنبه). Falls back to id:1 live buy only if no Farshad
-    cash quote exists.
+    Manual on the source card (normally 900000 / نقد فردا) wins.
+    Live mode follows the next open Farshad نقدی day tile. Falls back
+    to the source card's live buy only if no Farshad cash quote exists.
     """
     sid = source_id
     if sid is None and src_card is not None:
         sid = getattr(src_card, "goldbridge_item_id", None)
     if sid is None:
-        sid = DEFAULT_PRICE_SOURCE_ITEM_ID
+        sid = MAIN_CASH_ITEM_ID
     sid = int(sid)
     cached = _manual_quote_for(sid)
     if cached is not None:
@@ -1210,10 +1207,10 @@ def resolve_effective_item(
     Unticking it returns every card — including متفرقه / نقد کارتخوان —
     to the goldbridge quote immediately.
 
-    متفرقه / نقد کارتخوان base = Farshad final buy:
-      • id:1 manual (if set), else
-      • live buy from trade tile id:1013 (ticks every poll), else
-      • live buy from hidden master id:1
+    متفرقه / نقد کارتخوان base = Farshad final buy from source (900000):
+      • source card manual (if set), else
+      • live buy from next open Farshad نقدی day tile, else
+      • live buy from the source card feed
     Shop padding is never applied to this base. Formulas stay:
       متفرقه:       (base + commission) / 4.39
       نقد کارتخوان: (base + commission) + 100_000
@@ -1222,14 +1219,17 @@ def resolve_effective_item(
         card
         and (is_motaferaghe_card(card.goldbridge_item_id) or is_naghd_kartkhan_card(card.goldbridge_item_id))
     )
-    # Hard-lock specials to id:1 even if a row was pointed at 1013.
-    source_id = DEFAULT_PRICE_SOURCE_ITEM_ID if is_special_mirror else (
-        getattr(card, "price_source_item_id", None) if card else None
-    )
+    # Specials follow the configured source (900000 / نقد فردا), including
+    # when that card is manual. Never hard-lock to legacy id:1 — that made
+    # متفرقه/کارتخوان ignore main-card manuals.
+    if is_special_mirror:
+        source_id = getattr(card, "price_source_item_id", None) or MAIN_CASH_ITEM_ID
+    else:
+        source_id = getattr(card, "price_source_item_id", None) if card else None
     if source_id:
         source_live = _latest_items.get(int(source_id))
         if is_special_mirror:
-            # Prefer the real id:1 ORM row over a stale/wrong source_card.
+            # Prefer the real source ORM row (900000) over a stale/wrong source_card.
             if source_card is not None and int(getattr(source_card, "goldbridge_item_id", 0) or 0) == int(source_id):
                 src_card = _snapshot_price_card(source_card)
             elif _manual_quote_for(int(source_id)) is not None:

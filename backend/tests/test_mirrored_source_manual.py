@@ -352,3 +352,80 @@ if __name__ == "__main__":
     setup_function()
     test_poll_updates_clock_again_after_manual_untick()
     print("ok")
+
+
+def test_specials_follow_main_cash_900000_manual():
+    """When نقد فردا (900000) is manual, متفرقه/کارتخوان must use that buy."""
+    price_cards._latest_items[900000] = {
+        "goldbridge_item_id": 900000,
+        "name": "نقدی شنبه",
+        "type": 1,
+        "buy": 1,  # live must lose to manual
+        "sell": 1,
+        "allow_buy": True,
+        "allow_sell": True,
+        "active": True,
+    }
+    # Live Farshad day tile present — still must not win over main manual.
+    price_cards._latest_items[1012] = {
+        "goldbridge_item_id": 1012,
+        "name": "نقدی شنبه",
+        "type": 1,
+        "buy": 99_999_999,
+        "sell": 99_888_888,
+        "allow_buy": True,
+        "allow_sell": True,
+        "active": True,
+    }
+    main = SimpleNamespace(
+        goldbridge_item_id=900000,
+        display_name=None,
+        use_manual_price=True,
+        manual_buy=101_860_000,
+        manual_sell=101_740_000,
+        price_source_item_id=None,
+    )
+    mota = SimpleNamespace(
+        goldbridge_item_id=price_cards.SPECIAL_CARD_MOTAFEREGHE_ID,
+        display_name="متفرقه",
+        use_manual_price=False,
+        manual_buy=None,
+        manual_sell=None,
+        price_source_item_id=900000,
+    )
+    naghd = SimpleNamespace(
+        goldbridge_item_id=price_cards.SPECIAL_CARD_NAGHD_KARTKHAN_ID,
+        display_name="نقد کارتخوان",
+        use_manual_price=False,
+        manual_buy=None,
+        manual_sell=None,
+        price_source_item_id=900000,
+    )
+    mota_out = price_cards.resolve_effective_item(mota, None, source_card=main)
+    naghd_out = price_cards.resolve_effective_item(naghd, None, source_card=main)
+    assert mota_out["buy"] == 101_860_000
+    assert mota_out["mirrored_source_mode"] == "manual"
+    assert mota_out.get("mirrored_from") == 900000
+    assert naghd_out["buy"] == 101_860_000
+    assert naghd_out["mirrored_source_mode"] == "manual"
+    assert naghd_out.get("mirrored_from") == 900000
+
+
+def test_specials_follow_main_cash_900000_manual_cache_without_orm():
+    price_cards._latest_items.clear()
+    price_cards._manual_quotes[900000] = {
+        "use_manual": True,
+        "buy": 55_500_000,
+        "sell": 55_400_000,
+    }
+    mota = SimpleNamespace(
+        goldbridge_item_id=price_cards.SPECIAL_CARD_MOTAFEREGHE_ID,
+        display_name="متفرقه",
+        use_manual_price=False,
+        manual_buy=None,
+        manual_sell=None,
+        price_source_item_id=900000,
+    )
+    out = price_cards.resolve_effective_item(mota, None, source_card=None)
+    assert out["buy"] == 55_500_000
+    assert out["mirrored_source_mode"] == "manual"
