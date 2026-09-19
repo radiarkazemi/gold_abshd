@@ -411,19 +411,44 @@ def _remember_manual_quote(
 
 
 def _hydrate_manual_quotes_from_cards(cards) -> None:
-    """Fill missing cache entries only — never clobber a just-saved quote."""
+    """Seed / reconcile the in-memory manual cache from DB rows.
+
+    The admin checkbox in Postgres is the on/off source of truth. If memory
+    still says use_manual=True after the admin unticked (or after a partial
+    save), mirrored specials would keep serving the typed quote and look
+    "stuck on manual" across refresh. We never promote memory back to
+    manual when the DB flag is off.
+
+    When the DB flag is on, missing cache entries are filled as before.
+    Cache=False beating a stale ORM=True still happens inside
+    ``_live_or_manual_item`` / ``_mirror_base_buy`` (see tests) — that path
+    does not go through hydrate.
+    """
     for card in cards:
         iid = int(card.goldbridge_item_id)
         ts = _dt_to_iso(getattr(card, "manual_updated_at", None))
-        if iid not in _manual_quotes:
+        db_manual = bool(getattr(card, "use_manual_price", False))
+        buy = getattr(card, "manual_buy", None)
+        sell = getattr(card, "manual_sell", None)
+        cached = _manual_quotes.get(iid)
+        if cached is None:
             _remember_manual_quote(
                 iid,
-                use_manual=bool(getattr(card, "use_manual_price", False)),
-                buy=getattr(card, "manual_buy", None),
-                sell=getattr(card, "manual_sell", None),
+                use_manual=db_manual,
+                buy=buy,
+                sell=sell,
                 updated_at=ts,
             )
-        elif bool(getattr(card, "use_manual_price", False)) and ts:
+        elif cached.get("use_manual") and not db_manual:
+            # DB untick wins — drop sticky manual mode from memory.
+            _remember_manual_quote(
+                iid,
+                use_manual=False,
+                buy=cached.get("buy", buy),
+                sell=cached.get("sell", sell),
+                updated_at=ts,
+            )
+        elif db_manual and ts:
             if iid not in _item_price_changed_at:
                 mark_item_price_changed(iid, ts)
 
@@ -1444,6 +1469,16 @@ def list_admin_cards(db: Session) -> list[dict]:
                 "role_commissions": _role_commissions_for_card(db, item_id, roles, commissions_by_item.get(item_id, {})),
             })
             continue
+        live_buy = effective.get("farshad_buy")
+        live_sell = effective.get("farshad_sell")
+        # 900000 is a shop alias — not in the goldbridge feed — so the first
+        # loop never sets live_*. Without these, admin untick optimistic UI
+        # had nowhere to fall back and left price_source sticky as "manual".
+        if (live_buy is None or live_sell is None) and is_main_cash_item_id(item_id):
+            trade = resolve_live_farshad_cash_item()
+            if trade:
+                live_buy = live_buy if live_buy is not None else trade.get("buy")
+                live_sell = live_sell if live_sell is not None else trade.get("sell")
         result.append({
             "goldbridge_item_id": item_id,
             "name": card.display_name or effective.get("name") or f"#{item_id}",
@@ -1453,8 +1488,10 @@ def list_admin_cards(db: Session) -> list[dict]:
             "item_weight": effective.get("item_weight"),
             "buy": effective["buy"],
             "sell": effective["sell"],
-            "live_buy": None,
-            "live_sell": None,
+            "live_buy": live_buy,
+            "live_sell": live_sell,
+            "farshad_buy": live_buy,
+            "farshad_sell": live_sell,
             "allow_buy": True,
             "allow_sell": True,
             "active": True,

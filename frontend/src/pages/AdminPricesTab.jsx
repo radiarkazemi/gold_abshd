@@ -49,12 +49,15 @@ function quoteStatus(card) {
     return { kind: "unavailable", label: "ناموجود" };
   }
   if (isMirrored) {
+    // Mirrored mode follows the main card's checkbox — never a stale price_source.
     if (card.mirrored_source_mode === "manual") {
       return { kind: "manual", label: "دستی (از نقد فردا)" };
     }
     return { kind: "source", label: "از منبع" };
   }
-  if (card.use_manual_price || card.price_source === "manual") {
+  // Checkbox flag is the source of truth. Stale price_source==="manual" after
+  // untick must not keep the «دستی» badge on.
+  if (card.use_manual_price) {
     return { kind: "manual", label: "دستی" };
   }
   return { kind: "source", label: "از منبع" };
@@ -70,10 +73,12 @@ function syncMirroredCardQuotes(cards) {
   const source = main || legacyMaster;
   if (!source) return cards;
 
-  const mirroredMode =
-    (source.use_manual_price || source.price_source === "manual")
-      ? "manual"
-      : "live";
+  // Only the admin checkbox (use_manual_price) switches specials to manual.
+  // Do NOT key off price_source==="manual" — after untick the optimistic
+  // patch can leave that string around when live_buy is null (900000 alias),
+  // which wrongly kept متفرقه/کارتخوان on «دستی (از نقد فردا)» until refresh
+  // fought the server and looked like "came back to manual".
+  const mirroredMode = source.use_manual_price ? "manual" : "live";
 
   const stripMargin = (card) => {
     if (!card) return NaN;
@@ -263,7 +268,7 @@ function ManualPriceEditor({ card, busy, onSave }) {
       >
         ذخیره قیمت دستی
       </button>
-      {card.use_manual_price || card.price_source === "manual" ? (
+      {card.use_manual_price ? (
         <p className="price-cards-admin__manual-note">در حال نمایش قیمت دستی به مشتری</p>
       ) : (
         <p className="price-cards-admin__manual-note">در حال نمایش قیمت منبع (goldbridge)</p>
@@ -295,7 +300,7 @@ function RoleCommissionEditor({ card, busy, onSave }) {
   const [drafts, setDrafts] = useState({});
   const [savingRoleId, setSavingRoleId] = useState(null);
   const dirtyRolesRef = useRef(new Set());
-  const manualMode = !!card.use_manual_price || card.price_source === "manual";
+  const manualMode = !!card.use_manual_price;
   const isSpecialMirror =
     card.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
     || card.goldbridge_item_id === SPECIAL_NAGHD_KARTKHAN_ID;
@@ -608,12 +613,14 @@ export default function AdminPricesTab() {
     busyIdRef.current = card.goldbridge_item_id;
     setBusyId(card.goldbridge_item_id);
     const usingManual = !!payload.useManualPrice;
+    // When leaving manual, prefer live_buy / farshad_buy; 900000 often has
+    // null live_buy (alias not in goldbridge feed) so fall back carefully.
     const nextBuy = usingManual
       ? Number(payload.manualBuy)
-      : Number(card.live_buy);
+      : Number(card.live_buy ?? card.farshad_buy);
     const nextSell = usingManual
       ? Number(payload.manualSell)
-      : Number(card.live_sell);
+      : Number(card.live_sell ?? card.farshad_sell);
     setCards((prev) => {
       const patched = (prev || []).map((c) => {
         if (Number(c.goldbridge_item_id) !== Number(card.goldbridge_item_id)) return c;
@@ -622,9 +629,11 @@ export default function AdminPricesTab() {
           use_manual_price: usingManual,
           manual_buy: payload.manualBuy,
           manual_sell: payload.manualSell,
-          buy: Number.isFinite(nextBuy) ? nextBuy : c.buy,
-          sell: Number.isFinite(nextSell) ? nextSell : c.sell,
-          price_source: usingManual ? "manual" : (card.live_buy != null ? "live" : "unavailable"),
+          buy: Number.isFinite(nextBuy) && nextBuy > 0 ? nextBuy : (usingManual ? c.buy : c.live_buy ?? c.farshad_buy ?? c.buy),
+          sell: Number.isFinite(nextSell) && nextSell > 0 ? nextSell : (usingManual ? c.sell : c.live_sell ?? c.farshad_sell ?? c.sell),
+          // Always clear "manual" on untick — never leave a stale price_source
+          // that would keep specials in mirrored_source_mode=manual.
+          price_source: usingManual ? "manual" : "live",
         };
       });
       return syncMirroredCardQuotes(patched);

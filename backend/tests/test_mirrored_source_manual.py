@@ -241,6 +241,29 @@ def test_untick_manual_cache_beats_stale_orm_still_flagged_on():
     assert mota["mirrored_source_mode"] == "live"
 
 
+def test_hydrate_reconciles_sticky_manual_cache_when_db_unticked():
+    """Memory use_manual=True must not survive after DB checkbox is off."""
+    from types import SimpleNamespace
+
+    price_cards._manual_quotes[price_cards.MAIN_CASH_ITEM_ID] = {
+        "use_manual": True,
+        "buy": 102_300_000,
+        "sell": 102_180_000,
+        "updated_at": None,
+    }
+    price_cards._hydrate_manual_quotes_from_cards([
+        SimpleNamespace(
+            goldbridge_item_id=price_cards.MAIN_CASH_ITEM_ID,
+            use_manual_price=False,
+            manual_buy=102_300_000,
+            manual_sell=102_180_000,
+            manual_updated_at=None,
+        ),
+    ])
+    cached = price_cards._manual_quotes[price_cards.MAIN_CASH_ITEM_ID]
+    assert cached["use_manual"] is False
+
+
 def test_poll_does_not_overwrite_manual_last_update_clock():
     """Client «آخرین بروزرسانی» must stay on the admin save, not goldbridge."""
     manual_ts = "2026-09-08T10:00:00+00:00"
