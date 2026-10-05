@@ -122,69 +122,106 @@ def bridge_agent_script():
     """
     token = (settings.TAHESAB_BRIDGE_TOKEN or "").replace("'", "''")
     base = "https://ghasrtala.ir"
+    # NOTE: this is a Python f-string — double every PowerShell `{` / `}` that
+    # must survive into the downloaded .ps1 (including -f placeholders).
     script = f'''# Tahesab pull-bridge for قصر طلا — run on the Windows PC where Tahesab API is open
 $ErrorActionPreference = "Continue"
+$ProgressPreference = "SilentlyContinue"
 $BridgeBase = "{base}"
 $BridgeToken = if ($env:GOLDAPP_TAHESAB_BRIDGE_TOKEN) {{ $env:GOLDAPP_TAHESAB_BRIDGE_TOKEN }} else {{ "{token}" }}
 $Headers = @{{ "X-Bridge-Token" = $BridgeToken; "Accept" = "application/json" }}
 
 Write-Host "Fetching Tahesab config from VPS..."
 try {{
-  $cfg = Invoke-RestMethod -Uri "$BridgeBase/api/tahesab-bridge/config" -Headers $Headers -TimeoutSec 30
+  $cfg = Invoke-RestMethod -Uri "$BridgeBase/api/tahesab-bridge/config" -Headers $Headers -TimeoutSec 30 -UseBasicParsing
 }} catch {{
   Write-Host "ERROR: cannot reach bridge config: $_"
   exit 1
 }}
 
-$TahesabUrl = $cfg.tahesab_base_url
-$TahesabToken = $cfg.tahesab_token
-$DbName = $cfg.tahesab_dbname
+$TahesabUrl = [string]$cfg.tahesab_base_url
+$TahesabToken = [string]$cfg.tahesab_token
+$DbName = [string]$cfg.tahesab_dbname
 $VerifySsl = [bool]$cfg.tahesab_verify_ssl
 $Poll = [int]$cfg.poll_seconds
 if ($Poll -lt 1) {{ $Poll = 2 }}
 
 if (-not $VerifySsl) {{
-  add-type @"
+  try {{
+    add-type @"
 using System.Net;
+using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
-public class TrustAll : ICertificatePolicy {{
-  public bool CheckValidationResult(ServicePoint s, X509Certificate c, WebRequest r, int p) {{ return true; }}
+public static class TahesabTls {{
+  public static void Trust() {{
+    ServicePointManager.ServerCertificateValidationCallback =
+      delegate {{ return true; }};
+    ServicePointManager.SecurityProtocol =
+      SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
+  }}
 }}
 "@
-  [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAll
-  [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+    [TahesabTls]::Trust()
+  }} catch {{
+    # Already registered from a previous run in this session — ignore.
+  }}
 }}
 
 $ThHeaders = @{{
   "Authorization" = "Bearer $TahesabToken"
   "DBName" = $DbName
-  "Content-Type" = "application/json"
+  "Content-Type" = "application/json; charset=utf-8"
+  "Accept" = "application/json"
 }}
 
 Write-Host "Bridge OK. Tahesab=$TahesabUrl DB=$DbName — polling every ${{Poll}}s. Ctrl+C to stop."
 
 while ($true) {{
   try {{
-    $next = Invoke-RestMethod -Uri "$BridgeBase/api/tahesab-bridge/next" -Headers $Headers -TimeoutSec 30
+    $next = Invoke-RestMethod -Uri "$BridgeBase/api/tahesab-bridge/next" -Headers $Headers -TimeoutSec 30 -UseBasicParsing
     if ($null -eq $next.job) {{
       Start-Sleep -Seconds $Poll
       continue
     }}
     $job = $next.job
-    Write-Host ("[{0}] {1} id={2}" -f (Get-Date -Format "HH:mm:ss"), $job.method, $job.id)
-    $body = $job.body | ConvertTo-Json -Compress -Depth 10
+    $methodName = [string]$job.method
+    $jobId = [string]$job.id
+    $stamp = Get-Date -Format "HH:mm:ss"
+    Write-Host "[$stamp] $methodName id=$jobId"
+
+    # Prefer the pre-built body object from the VPS; rebuild if missing.
+    if ($null -ne $job.body) {{
+      $bodyObj = $job.body
+    }} else {{
+      $bodyObj = @{{ $methodName = @($job.params) }}
+    }}
+    $bodyJson = $bodyObj | ConvertTo-Json -Compress -Depth 20
+
     try {{
-      $resp = Invoke-WebRequest -Uri $TahesabUrl -Method POST -Headers $ThHeaders -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) -ContentType "application/json" -TimeoutSec 60
-      $text = $resp.Content
-      $parsed = $text | ConvertFrom-Json
-      $ack = @{{ id = $job.id; ok = $true; result = $parsed }} | ConvertTo-Json -Compress -Depth 10
-      Invoke-RestMethod -Uri "$BridgeBase/api/tahesab-bridge/ack" -Method POST -Headers $Headers -Body $ack -ContentType "application/json" -TimeoutSec 30 | Out-Null
-      Write-Host "  OK: $text"
+      # Invoke-RestMethod + UseBasicParsing avoids the IE "Script Execution Risk" prompt.
+      $parsed = Invoke-RestMethod -Uri $TahesabUrl -Method POST -Headers $ThHeaders `
+        -Body ([System.Text.Encoding]::UTF8.GetBytes($bodyJson)) `
+        -ContentType "application/json; charset=utf-8" `
+        -TimeoutSec 60 -UseBasicParsing
+      $ackObj = @{{ id = $jobId; ok = $true; result = $parsed }}
+      $ackJson = $ackObj | ConvertTo-Json -Compress -Depth 20
+      Invoke-RestMethod -Uri "$BridgeBase/api/tahesab-bridge/ack" -Method POST -Headers $Headers `
+        -Body ([System.Text.Encoding]::UTF8.GetBytes($ackJson)) `
+        -ContentType "application/json; charset=utf-8" `
+        -TimeoutSec 30 -UseBasicParsing | Out-Null
+      $okText = $parsed | ConvertTo-Json -Compress -Depth 10
+      Write-Host "  OK: $okText"
     }} catch {{
       $err = "$_"
       Write-Host "  FAIL: $err"
-      $ack = @{{ id = $job.id; ok = $false; error = $err }} | ConvertTo-Json -Compress -Depth 5
-      Invoke-RestMethod -Uri "$BridgeBase/api/tahesab-bridge/ack" -Method POST -Headers $Headers -Body $ack -ContentType "application/json" -TimeoutSec 30 | Out-Null
+      $ackObj = @{{ id = $jobId; ok = $false; error = $err }}
+      $ackJson = $ackObj | ConvertTo-Json -Compress -Depth 5
+      try {{
+        Invoke-RestMethod -Uri "$BridgeBase/api/tahesab-bridge/ack" -Method POST -Headers $Headers `
+          -Body ([System.Text.Encoding]::UTF8.GetBytes($ackJson)) `
+          -ContentType "application/json; charset=utf-8" `
+          -TimeoutSec 30 -UseBasicParsing | Out-Null
+      }} catch {{}}
       Start-Sleep -Seconds 3
     }}
   }} catch {{
