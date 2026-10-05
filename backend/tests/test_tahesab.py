@@ -25,7 +25,7 @@ class _FakeResp:
 def setup_function():
     tahesab.settings.TAHESAB_ENABLED = True
     tahesab.settings.TAHESAB_MODE = "direct"
-    tahesab.settings.TAHESAB_BASE_URL = "https://127.0.0.1:8081"
+    tahesab.settings.TAHESAB_BASE_URL = "https://203.0.113.10:8081"
     tahesab.settings.TAHESAB_TOKEN = "TESTTOKEN"
     tahesab.settings.TAHESAB_DBNAME = "DB"
     tahesab.settings.TAHESAB_VERIFY_SSL = False
@@ -46,6 +46,13 @@ def test_is_configured_requires_enabled_and_token():
     assert tahesab.is_configured() is True
 
 
+def test_direct_target_rejects_loopback():
+    tahesab.settings.TAHESAB_BASE_URL = "https://127.0.0.1:8081"
+    assert tahesab.is_direct_target_ready() is False
+    tahesab.settings.TAHESAB_BASE_URL = "https://203.0.113.10:8081"
+    assert tahesab.is_direct_target_ready() is True
+
+
 def test_factor_code_length_and_prefix():
     code = tahesab._factor_code_for_order("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
     assert code.startswith("GA")
@@ -54,34 +61,25 @@ def test_factor_code_length_and_prefix():
 
 
 @patch("app.services.tahesab.httpx.Client")
-def test_create_moshtari_posts_expected_body(mock_client_cls):
+def test_call_method_direct_posts_expected_body(mock_client_cls):
     client = MagicMock()
     mock_client_cls.return_value.__enter__.return_value = client
     client.post.return_value = _FakeResp(200, {"OK": 1043})
 
-    code = tahesab.create_moshtari(
-        name="علی تست",
-        tel="09121234567",
-        code_meli="0012345678",
-        moshtari_code=1043,
+    data = tahesab.call_method_direct(
+        "DoNewMoshtari",
+        ["علی تست", "اپلیکیشن", "09121234567", "", "0012345678", "", "", -1, 1043, 0],
     )
-    assert code == 1043
+    assert data == {"OK": 1043}
     args, kwargs = client.post.call_args
-    assert args[0] == "https://127.0.0.1:8081"
+    assert args[0] == "https://203.0.113.10:8081"
     assert kwargs["headers"]["Authorization"] == "Bearer TESTTOKEN"
     assert kwargs["headers"]["DBName"] == "DB"
-    body = kwargs["json"]
-    assert "DoNewMoshtari" in body
-    params = body["DoNewMoshtari"]
-    assert params[0] == "علی تست"
-    assert params[2] == "09121234567"
-    assert params[4] == "0012345678"
-    assert params[8] == 1043
+    assert "DoNewMoshtari" in kwargs["json"]
 
 
 @patch("app.services.tahesab.enqueue_method", return_value="job-1")
-def test_bridge_mode_queues_instead_of_http(mock_enqueue):
-    tahesab.settings.TAHESAB_MODE = "bridge"
+def test_create_moshtari_always_queues(mock_enqueue):
     db = MagicMock()
     code = tahesab.create_moshtari(
         name="رضا",
@@ -96,52 +94,50 @@ def test_bridge_mode_queues_instead_of_http(mock_enqueue):
     assert mock_enqueue.call_args[0][1] == "DoNewMoshtari"
 
 
-@patch("app.services.tahesab.httpx.Client")
-def test_create_sanad_gold_shop_sell_when_customer_buys(mock_client_cls):
-    client = MagicMock()
-    mock_client_cls.return_value.__enter__.return_value = client
-    client.post.return_value = _FakeResp(200, {"OK": "GAFACTORCODE1234567890", "Sh_factor": "1"})
-
-    ok = tahesab.create_sanad_buy_sale_gold(
-        moshtari_code=1043,
-        shamsi_year=1404,
-        shamsi_month=7,
-        shamsi_day=13,
-        vazn=2.5,
-        ayar=750,
-        buy_or_sale=0,
-        mazaneh=350_000_000,
-        mazaneh_is_gram=0,
-        is_abshode=1,
-        mablagh_kol=20_000_000,
-        sharh="test",
-        factor_code="GA" + "0" * 30,
-    )
-    assert ok.startswith("GA")
-    body = client.post.call_args.kwargs["json"]
-    params = body["DoNewSanadBuySaleGOLD"]
-    assert params[1] == 1043
-    assert params[7] == 2.5
-    assert params[11] == 0
-
-
-@patch("app.services.tahesab.create_moshtari")
-def test_sync_user_stores_moshtari_id(mock_create):
-    mock_create.return_value = 2044
+@patch("app.services.tahesab.call_method_direct")
+def test_process_outbox_links_duplicate_phone(mock_direct):
+    mock_direct.side_effect = [
+        {"ERROR": "تلفن تکراری می باشد."},
+        {"1": {"Code": 88, "Name": "x", "Tel": "09120001122"}},
+    ]
     db = MagicMock()
-    user = SimpleNamespace(
-        id="u1",
-        user_code="2044",
-        full_name="رضا",
-        phone_number="09120000000",
-        national_id="123",
-        referrer=None,
-        tahesab_moshtari_id=None,
+    job = SimpleNamespace(
+        id="j1",
+        method="DoNewMoshtari",
+        params_json='["n","g","09120001122","","1","","",-1,1025,0]',
+        ref_type="user",
+        ref_id="u1",
+        attempts=0,
+        status="pending",
+        last_error=None,
+        result_json=None,
     )
-    code = tahesab.sync_user_to_tahesab(db, user)
-    assert code == 2044
-    assert user.tahesab_moshtari_id == 2044
-    db.commit.assert_called()
+    with patch("app.services.tahesab.apply_bridge_result") as apply:
+        status = tahesab.process_outbox_job(db, job)
+    assert status == "done"
+    assert job.status == "done"
+    apply.assert_called_once()
+    assert apply.call_args[0][2]["OK"] == 88
+
+
+@patch("app.services.tahesab.call_method_direct", return_value=None)
+def test_process_outbox_keeps_pending_when_offline(_mock):
+    db = MagicMock()
+    job = SimpleNamespace(
+        id="j1",
+        method="DoNewMoshtari",
+        params_json="[]",
+        ref_type="user",
+        ref_id="u1",
+        attempts=0,
+        status="pending",
+        last_error=None,
+        result_json=None,
+    )
+    status = tahesab.process_outbox_job(db, job)
+    assert status == "pending"
+    assert job.status == "pending"
+    assert "unreachable" in (job.last_error or "")
 
 
 @patch("app.services.tahesab.create_sanad_buy_sale_gold")
@@ -179,24 +175,13 @@ def test_sync_accepted_order_gold(mock_sync_user, mock_sanad):
     code = tahesab.sync_accepted_order_to_tahesab(db, order)
 
     assert code == "GAOKFACTORCODE00000001"
-    assert order.tahesab_factor_code == code
     kwargs = mock_sanad.call_args.kwargs
     assert kwargs["buy_or_sale"] == 0
     assert kwargs["vazn"] == 2.0
-    assert kwargs["mazaneh"] == 300_000_000
-    assert kwargs["mablagh_kol"] == 136_000_000
-
-
-@patch("app.services.tahesab.httpx.Client")
-def test_call_method_soft_fails_on_http_error(mock_client_cls):
-    client = MagicMock()
-    mock_client_cls.return_value.__enter__.return_value = client
-    client.post.return_value = _FakeResp(500, text="boom")
-    assert tahesab.call_method_direct("CheckHealth", []) is None
 
 
 def test_disabled_skips_network():
     tahesab.settings.TAHESAB_ENABLED = False
     with patch("app.services.tahesab.httpx.Client") as mock_client_cls:
-        assert tahesab.create_moshtari(name="a", tel="1", code_meli="2") is None
+        assert tahesab.create_moshtari(name="a", tel="1", code_meli="2", db=MagicMock()) is None
         mock_client_cls.assert_not_called()

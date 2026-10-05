@@ -160,10 +160,14 @@ class Settings:
     # same Windows machine (or via tunnel/VPN); a remote VPS cannot
     # reach the shop PC's loopback.
     TAHESAB_ENABLED: bool = os.getenv("GOLDAPP_TAHESAB_ENABLED", "false").lower() == "true"
-    # bridge = VPS queues jobs; Windows agent posts to local Tahesab (127.0.0.1).
-    # direct = VPS HTTP-posts to TAHESAB_BASE_URL (only works if reachable).
-    TAHESAB_MODE: str = os.getenv("GOLDAPP_TAHESAB_MODE", "bridge").strip().lower()
-    TAHESAB_BASE_URL: str = os.getenv("GOLDAPP_TAHESAB_BASE_URL", "https://127.0.0.1:8081").rstrip("/")
+    # direct (recommended by Tahesab support) = VPS POSTs to public/static IP:8081
+    #   (modem port-forward + Windows firewall). Jobs stay in outbox and retry
+    #   until the shop PC is online.
+    # bridge = optional Windows pull-agent fallback (no port-forward).
+    TAHESAB_MODE: str = os.getenv("GOLDAPP_TAHESAB_MODE", "direct").strip().lower()
+    # Public URL of the Windows API, e.g. https://STATIC.IP:8081 or http://STATIC.IP:9550
+    # Do NOT use 127.0.0.1 here when the app runs on the VPS.
+    TAHESAB_BASE_URL: str = os.getenv("GOLDAPP_TAHESAB_BASE_URL", "").rstrip("/")
     TAHESAB_TOKEN: str = os.getenv("GOLDAPP_TAHESAB_TOKEN", "")
     # Access folder name (DB) or SQL Server db name (TahesabDB).
     TAHESAB_DBNAME: str = os.getenv("GOLDAPP_TAHESAB_DBNAME", "DB")
@@ -177,8 +181,10 @@ class Settings:
     TAHESAB_SABTE_KOL: int = int(os.getenv("GOLDAPP_TAHESAB_SABTE_KOL", "1"))
     # 0 = متفرقه, 1 = آبشده
     TAHESAB_IS_ABSHODE: int = int(os.getenv("GOLDAPP_TAHESAB_IS_ABSHODE", "1"))
-    # Shared secret for the Windows pull-bridge agent.
+    # Shared secret for the optional Windows pull-bridge agent.
     TAHESAB_BRIDGE_TOKEN: str = os.getenv("GOLDAPP_TAHESAB_BRIDGE_TOKEN", "")
+    # How often the VPS retries pending outbox jobs against BASE_URL.
+    TAHESAB_OUTBOX_POLL_SECONDS: float = float(os.getenv("GOLDAPP_TAHESAB_OUTBOX_POLL_SECONDS", "15"))
 
     # Receipt uploads (proof of bank transfer / حواله for cash orders)
     UPLOAD_DIR: str = os.getenv("GOLDAPP_UPLOAD_DIR", "uploads/receipts")

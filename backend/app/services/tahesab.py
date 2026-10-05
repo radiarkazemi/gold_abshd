@@ -1,23 +1,27 @@
 """
 Tahesab (ته‌حساب) accounting API client.
 
-Two modes (GOLDAPP_TAHESAB_MODE):
-  - bridge (default): VPS cannot reach the Windows PC's 127.0.0.1 API.
-    Jobs go into tahesab_outbox; a tiny agent on that PC pulls and POSTs
-    them to local Tahesab.
-  - direct: VPS HTTP-posts to GOLDAPP_TAHESAB_BASE_URL (needs reachable host).
+Recommended (Tahesab support): direct mode
+  - Shop PC: API on port 8081, static public IP, modem port-forward, firewall open
+  - VPS always queues jobs in tahesab_outbox, then a background worker POSTs to
+    GOLDAPP_TAHESAB_BASE_URL. When the Windows PC is offline, jobs wait and
+    drain automatically once it comes back online — no pull agent required.
 
-Auth for direct / agent posts:
+Optional: bridge mode (Windows agent pulls jobs) if port-forward is not possible.
+
+Auth:
   Authorization: Bearer <token>
   DBName: <env>
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 import jdatetime
@@ -39,7 +43,21 @@ def is_configured() -> bool:
 
 
 def is_bridge_mode() -> bool:
-    return (settings.TAHESAB_MODE or "bridge").strip().lower() != "direct"
+    return (settings.TAHESAB_MODE or "direct").strip().lower() == "bridge"
+
+
+def is_direct_target_ready() -> bool:
+    """True when BASE_URL looks like a reachable non-loopback host."""
+    url = (settings.TAHESAB_BASE_URL or "").strip()
+    if not url:
+        return False
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return False
+    if not host or host in {"127.0.0.1", "localhost", "::1"}:
+        return False
+    return True
 
 
 def _headers() -> dict[str, str]:
@@ -114,7 +132,11 @@ def enqueue_method(
 
 
 def call_method_direct(method: str, params: list[Any]) -> dict[str, Any] | None:
-    if not is_configured():
+    """
+    POST one method to TAHESAB_BASE_URL.
+    Returns parsed JSON dict (may include ERROR), or None if unreachable/invalid.
+    """
+    if not is_configured() or not (settings.TAHESAB_BASE_URL or "").strip():
         return None
     url = settings.TAHESAB_BASE_URL
     body = {method: params}
@@ -125,32 +147,23 @@ def call_method_direct(method: str, params: list[Any]) -> dict[str, Any] | None:
             follow_redirects=True,
         ) as client:
             resp = client.post(url, headers=_headers(), json=body)
-    except Exception:
-        logger.exception("[tahesab] %s request failed", method)
+    except Exception as exc:
+        logger.warning("[tahesab] %s unreachable: %s", method, exc)
         return None
 
-    if resp.status_code >= 400:
+    try:
+        data = resp.json()
+    except Exception:
         logger.error(
-            "[tahesab] %s HTTP %s: %s",
+            "[tahesab] %s HTTP %s non-JSON: %s",
             method,
             resp.status_code,
             (resp.text or "")[:500],
         )
         return None
 
-    try:
-        data = resp.json()
-    except Exception:
-        logger.error("[tahesab] %s non-JSON response: %s", method, (resp.text or "")[:500])
-        return None
-
     if not isinstance(data, dict):
         logger.error("[tahesab] %s unexpected payload type: %r", method, type(data))
-        return None
-
-    err = data.get("Error") or data.get("error") or data.get("Message")
-    if err and "OK" not in data and "Api_Status" not in data:
-        logger.error("[tahesab] %s error payload: %s", method, data)
         return None
 
     return data
@@ -165,20 +178,17 @@ def call_method(
     ref_id: str | None = None,
 ) -> dict[str, Any] | None:
     """
-    Execute (direct) or enqueue (bridge) a Tahesab method.
-    Bridge mode returns {"queued": true, "outbox_id": "..."} on success.
+    Always enqueue to outbox (so offline Windows does not lose events).
+    In direct mode the VPS worker drains the queue when the API is reachable.
+    In bridge mode the Windows agent pulls the same queue.
     """
     if not is_configured():
         return None
-
-    if is_bridge_mode():
-        if db is None:
-            logger.error("[tahesab] bridge mode requires db session for %s", method)
-            return None
-        oid = enqueue_method(db, method, params, ref_type=ref_type, ref_id=ref_id)
-        return {"queued": True, "outbox_id": oid} if oid else None
-
-    return call_method_direct(method, params)
+    if db is None:
+        logger.error("[tahesab] db session required to queue %s", method)
+        return None
+    oid = enqueue_method(db, method, params, ref_type=ref_type, ref_id=ref_id)
+    return {"queued": True, "outbox_id": oid} if oid else None
 
 
 def check_health() -> dict[str, Any] | None:
@@ -509,7 +519,7 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
 
 
 def apply_bridge_result(db: Session, job, result: dict[str, Any]) -> None:
-    """Apply successful bridge response onto User / Order rows."""
+    """Apply successful response onto User / Order rows."""
     from app.models_db import Order, User
 
     ok = result.get("OK")
@@ -526,6 +536,174 @@ def apply_bridge_result(db: Session, job, result: dict[str, Any]) -> None:
         if order:
             order.tahesab_factor_code = str(ok)
             db.add(order)
+
+
+def _error_text(data: dict[str, Any] | None) -> str:
+    if not data:
+        return ""
+    return str(data.get("ERROR") or data.get("Error") or data.get("error") or "")
+
+
+def lookup_moshtari_by_phone(tel: str) -> int | None:
+    """DoListMoshtari filtered by phone; returns first Code or None."""
+    digits = _digits(tel)
+    if not digits:
+        return None
+    candidates: list[Any] = []
+    try:
+        candidates.append(int(digits))
+    except ValueError:
+        candidates.append(digits)
+    if digits.startswith("0") and len(digits) > 1:
+        try:
+            candidates.append(int(digits[1:]))
+        except ValueError:
+            candidates.append(digits[1:])
+    else:
+        try:
+            candidates.append(int("0" + digits))
+        except ValueError:
+            candidates.append("0" + digits)
+
+    for cand in candidates:
+        data = call_method_direct("DoListMoshtari", [cand])
+        if not data or _error_text(data):
+            continue
+        for _key, row in data.items():
+            if not isinstance(row, dict):
+                continue
+            code = row.get("Code", row.get("code"))
+            if code is None:
+                continue
+            try:
+                return int(code)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def process_outbox_job(db: Session, job) -> str:
+    """
+    Push one outbox job to Tahesab (direct). Returns done|pending|error.
+    Unreachable API → pending (retry when Windows comes online).
+    """
+    try:
+        params = json.loads(job.params_json or "[]")
+    except json.JSONDecodeError:
+        params = []
+
+    job.attempts = (job.attempts or 0) + 1
+    job.updated_at = datetime.utcnow()
+
+    data = call_method_direct(job.method, params)
+    if data is None:
+        job.last_error = "unreachable (Windows offline or BASE_URL not ready)"
+        job.status = "pending"
+        db.add(job)
+        db.commit()
+        return "pending"
+
+    err = _error_text(data)
+    if err:
+        if job.method == "DoNewMoshtari" and ("تلفن تکراری" in err or "تکراری" in err):
+            tel = params[2] if len(params) > 2 else ""
+            linked = lookup_moshtari_by_phone(str(tel))
+            if linked is not None:
+                result = {"OK": linked, "linked": True, "note": err}
+                job.status = "done"
+                job.result_json = json.dumps(result, ensure_ascii=False)
+                job.last_error = None
+                apply_bridge_result(db, job, result)
+                db.add(job)
+                db.commit()
+                logger.info("[tahesab] linked duplicate phone → moshtari %s", linked)
+                return "done"
+
+        job.last_error = err[:2000]
+        # Permanent business errors stop retrying; transient keep pending.
+        if any(x in err for x in ("تکراری", "نامعتبر", "مجاز نیست")) and job.attempts >= 3:
+            job.status = "error"
+        elif job.attempts >= 50:
+            job.status = "error"
+        else:
+            job.status = "pending"
+        db.add(job)
+        db.commit()
+        return job.status
+
+    # Success shapes: {"OK": ...} or CheckHealth {"Api_Status": "OK"}
+    if "OK" not in data and "Api_Status" not in data:
+        job.last_error = f"unexpected response: {str(data)[:500]}"
+        job.status = "pending"
+        db.add(job)
+        db.commit()
+        return "pending"
+
+    job.status = "done"
+    job.result_json = json.dumps(data, ensure_ascii=False)
+    job.last_error = None
+    apply_bridge_result(db, job, data)
+    db.add(job)
+    db.commit()
+    logger.info("[tahesab] outbox %s %s done", job.id, job.method)
+    return "done"
+
+
+def process_outbox_batch(db: Session, limit: int = 20) -> dict[str, int]:
+    from app.models_db import TahesabOutbox
+
+    counts = {"done": 0, "pending": 0, "error": 0, "skipped": 0}
+    if not is_configured():
+        return counts
+    if is_bridge_mode():
+        # Windows agent owns delivery in bridge mode.
+        counts["skipped"] = 1
+        return counts
+    if not is_direct_target_ready():
+        counts["skipped"] = 1
+        return counts
+
+    jobs = (
+        db.query(TahesabOutbox)
+        .filter(TahesabOutbox.status == "pending")
+        .order_by(TahesabOutbox.created_at.asc())
+        .limit(limit)
+        .all()
+    )
+    for job in jobs:
+        status = process_outbox_job(db, job)
+        counts[status] = counts.get(status, 0) + 1
+        # If unreachable, don't hammer the rest this tick.
+        if status == "pending" and (job.last_error or "").startswith("unreachable"):
+            break
+    return counts
+
+
+async def outbox_worker_loop() -> None:
+    """Background: drain tahesab_outbox to the public Windows API."""
+    from app.db import SessionLocal
+
+    poll = max(5.0, float(getattr(settings, "TAHESAB_OUTBOX_POLL_SECONDS", 15) or 15))
+    logger.info(
+        "[tahesab] outbox worker started mode=%s base=%s ready=%s poll=%ss",
+        settings.TAHESAB_MODE,
+        settings.TAHESAB_BASE_URL or "(unset)",
+        is_direct_target_ready(),
+        poll,
+    )
+    while True:
+        try:
+            if is_configured() and not is_bridge_mode():
+                db = SessionLocal()
+                try:
+                    stats = process_outbox_batch(db)
+                    if stats.get("done") or stats.get("error"):
+                        logger.info("[tahesab] outbox tick %s", stats)
+                finally:
+                    db.close()
+        except Exception:
+            logger.exception("[tahesab] outbox worker tick failed")
+        await asyncio.sleep(poll)
 
 
 def sync_user_isolated(user_id: str) -> None:
