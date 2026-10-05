@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, Query, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect, Query, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -15,6 +15,7 @@ from app.services.orders import (
     order_to_dict,
     order_to_admin_out,
 )
+from app.services import tahesab
 
 router = APIRouter(prefix="/api/admin/orders", tags=["admin-orders"])
 
@@ -44,14 +45,27 @@ async def list_orders(status: str | None = None, db: Session = Depends(get_db), 
 
 
 @router.post("/{order_id}/decide", response_model=OrderOut)
-async def decide_order(order_id: str, decision: OrderDecisionIn, db: Session = Depends(get_db), _admin=Depends(require_permission("orders"))):
+async def decide_order(
+    order_id: str,
+    decision: OrderDecisionIn,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_permission("orders")),
+):
     order = decide_order_db(db, order_id, decision.status)
+    if decision.status == "accepted" and tahesab.is_configured():
+        background_tasks.add_task(tahesab.sync_accepted_order_isolated, order.id)
     await manager.broadcast_to_admins({"type": "order_updated", "order": order_to_dict(db, order)})
     return order_to_admin_out(db, order)
 
 
 @router.post("/phone", response_model=OrderOut)
-async def create_phone_order_endpoint(payload: PhoneOrderCreateIn, db: Session = Depends(get_db), _admin=Depends(require_permission("phone-order"))):
+async def create_phone_order_endpoint(
+    payload: PhoneOrderCreateIn,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_permission("phone-order")),
+):
     order = create_phone_order_db(
         db,
         user_id=payload.user_id,
@@ -61,6 +75,9 @@ async def create_phone_order_endpoint(payload: PhoneOrderCreateIn, db: Session =
         mesghal17_price=payload.mesghal17_price,
         description=payload.description,
     )
+    # Phone orders are created already-accepted; sync sanad the same way.
+    if order.status.value == "accepted" and tahesab.is_configured():
+        background_tasks.add_task(tahesab.sync_accepted_order_isolated, order.id)
     await manager.broadcast_to_admins({"type": "order_updated", "order": order_to_dict(db, order)})
     return order_to_admin_out(db, order)
 

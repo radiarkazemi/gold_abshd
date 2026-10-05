@@ -98,6 +98,7 @@ def _patch_users_table():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_trading_banned BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer VARCHAR",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS max_devices INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS tahesab_moshtari_id INTEGER",
     ]
     with engine.connect() as conn:
         for stmt in statements:
@@ -158,6 +159,9 @@ def _patch_orders_table():
         ))
         conn.execute(text(
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS reject_reason VARCHAR"
+        ))
+        conn.execute(text(
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tahesab_factor_code VARCHAR"
         ))
         # Existing pending rows with no deadline would be invisible to
         # the admin queue (filter requires deadline > now). Give them a

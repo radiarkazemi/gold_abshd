@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.orm import Session
 from datetime import datetime, time
 
@@ -11,6 +11,7 @@ from app.schemas.admin import (
     TermsAcceptanceSummaryOut, TermsAcceptancesReportOut, BalanceTransactionUpdateIn,
 )
 from app.services.registration import create_user_with_key, delete_user
+from app.services import tahesab
 from app.services.devices import list_user_devices, revoke_user_device, count_user_devices
 from app.services.terms import (
     list_user_terms_acceptances,
@@ -55,7 +56,12 @@ def _user_summary(db: Session, user: User) -> UserSummaryOut:
 
 
 @router.post("", response_model=AdminCreateUserOut)
-async def create_user(payload: AdminCreateUserIn, db: Session = Depends(get_db), _admin=Depends(require_permission("add-user"))):
+async def create_user(
+    payload: AdminCreateUserIn,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_permission("add-user")),
+):
     user, reg_key = create_user_with_key(
         db,
         phone_number=payload.phone_number,
@@ -67,6 +73,8 @@ async def create_user(payload: AdminCreateUserIn, db: Session = Depends(get_db),
         key_ttl_days=payload.key_ttl_days,
         max_devices=payload.max_devices,
     )
+    if tahesab.is_configured():
+        background_tasks.add_task(tahesab.sync_user_isolated, user.id)
     return AdminCreateUserOut(
         user_id=user.id,
         user_code=user.user_code,

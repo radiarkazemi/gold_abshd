@@ -154,6 +154,27 @@ class Settings:
     # already reports in Toman.
     PRICE_API_RIAL_TO_TOMAN: bool = os.getenv("GOLDAPP_PRICE_API_RIAL_TO_TOMAN", "true").lower() == "true"
 
+    # --- Tahesab (ته‌حساب) accounting API ---
+    # Self-hosted Windows service. Typically https://HOST:8081 or
+    # http://HOST:9550. 127.0.0.1 only works when the app runs on the
+    # same Windows machine (or via tunnel/VPN); a remote VPS cannot
+    # reach the shop PC's loopback.
+    TAHESAB_ENABLED: bool = os.getenv("GOLDAPP_TAHESAB_ENABLED", "false").lower() == "true"
+    TAHESAB_BASE_URL: str = os.getenv("GOLDAPP_TAHESAB_BASE_URL", "https://127.0.0.1:8081").rstrip("/")
+    TAHESAB_TOKEN: str = os.getenv("GOLDAPP_TAHESAB_TOKEN", "")
+    # Access folder name (DB) or SQL Server db name (TahesabDB).
+    TAHESAB_DBNAME: str = os.getenv("GOLDAPP_TAHESAB_DBNAME", "DB")
+    TAHESAB_TIMEOUT: float = float(os.getenv("GOLDAPP_TAHESAB_TIMEOUT", "20"))
+    # Local/self-signed certs are common; set true once a real cert is active.
+    TAHESAB_VERIFY_SSL: bool = os.getenv("GOLDAPP_TAHESAB_VERIFY_SSL", "false").lower() == "true"
+    # App amounts are Toman; Tahesab usually expects Rial → multiply by 10.
+    TAHESAB_AMOUNT_SCALE: float = float(os.getenv("GOLDAPP_TAHESAB_AMOUNT_SCALE", "10"))
+    TAHESAB_DEFAULT_GROUP: str = os.getenv("GOLDAPP_TAHESAB_DEFAULT_GROUP", "اپلیکیشن")
+    # 1 = ثبت کل, 0 = ثبت موقت
+    TAHESAB_SABTE_KOL: int = int(os.getenv("GOLDAPP_TAHESAB_SABTE_KOL", "1"))
+    # 0 = متفرقه, 1 = آبشده
+    TAHESAB_IS_ABSHODE: int = int(os.getenv("GOLDAPP_TAHESAB_IS_ABSHODE", "1"))
+
     # Receipt uploads (proof of bank transfer / حواله for cash orders)
     UPLOAD_DIR: str = os.getenv("GOLDAPP_UPLOAD_DIR", "uploads/receipts")
     MAX_RECEIPT_SIZE_MB: int = int(os.getenv("GOLDAPP_MAX_RECEIPT_SIZE_MB", "5"))

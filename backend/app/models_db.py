@@ -145,6 +145,9 @@ class User(Base):
     kyc_reviewed_at = Column(DateTime, nullable=True)
     kyc_reject_reason = Column(String, nullable=True)
 
+    # Tahesab (ته‌حساب) moshtari/account code after DoNewMoshtari sync.
+    tahesab_moshtari_id = Column(Integer, nullable=True, index=True)
+
     @property
     def is_online(self) -> bool:
         if not self.last_seen_at:
@@ -242,6 +245,9 @@ class Order(Base):
     # Optional reject reason. Currently used for admin "رد به دلیل تغییر مظنه"
     # which sets reject_reason="price_change" while status stays "rejected".
     reject_reason = Column(String, nullable=True)
+
+    # Tahesab Factor_Code returned by DoNewSanadBuySale* on accept.
+    tahesab_factor_code = Column(String, nullable=True, index=True)
 
     @property
     def has_receipt(self) -> bool:
