@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -304,3 +304,100 @@ while ($true) {{
 }}
 '''
     return PlainTextResponse(script, media_type="text/plain; charset=utf-8")
+
+
+def _bat_download(filename: str, content: str) -> Response:
+    # CRLF for Windows Notepad / cmd.exe
+    body = content.replace("\n", "\r\n").encode("utf-8")
+    return Response(
+        content=body,
+        media_type="application/x-bat",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.get("/agent.bat")
+def bridge_agent_bat():
+    """
+    Double-click daily on the Tahesab Windows PC (API window must be open).
+    Download: https://ghasrtala.ir/api/tahesab-bridge/agent.bat
+    """
+    content = r"""@echo off
+chcp 65001 >nul
+title همگام‌سازی ته‌حساب - قصر طلا
+cd /d "%~dp0"
+
+echo ============================================
+echo   قصر طلا - همگام‌سازی ته‌حساب (Agent)
+echo ============================================
+echo.
+echo قبل از اجرا:
+echo   1^) برنامه ته حساب باز باشد
+echo   2^) افزونه API روشن باشد ^(پورت 8081^)
+echo.
+echo این پنجره را باز بگذارید. برای توقف: Ctrl+C
+echo.
+
+:loop
+echo [%date% %time%] در حال اتصال به سرور...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { irm https://ghasrtala.ir/api/tahesab-bridge/agent.ps1 | iex } catch { Write-Host $_; exit 1 }"
+echo.
+echo [%date% %time%] ارتباط قطع شد. تلاش دوباره تا ۵ ثانیه دیگر...
+timeout /t 5 /nobreak >nul
+goto loop
+"""
+    return _bat_download("Tahesab-Sync-GhasrTala.bat", content)
+
+
+@router.get("/install-autostart.bat")
+def bridge_install_autostart_bat():
+    """
+    One-time install: copies the agent bat and registers a Windows
+    Task Scheduler job at user logon (accounting PC).
+    """
+    content = r"""@echo off
+chcp 65001 >nul
+title نصب اجرای خودکار همگام‌سازی ته‌حساب
+setlocal EnableExtensions
+
+set "DIR=%LOCALAPPDATA%\GhasrTala"
+set "BAT=%DIR%\Tahesab-Sync-GhasrTala.bat"
+set "TASK=GhasrTala-Tahesab-Sync"
+
+echo در حال آماده‌سازی پوشه...
+mkdir "%DIR%" 2>nul
+
+echo در حال دانلود فایل روزانه...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "Invoke-WebRequest -Uri 'https://ghasrtala.ir/api/tahesab-bridge/agent.bat' -OutFile '%BAT%' -UseBasicParsing"
+
+if not exist "%BAT%" (
+  echo خطا: دانلود نشد. اینترنت این سیستم را چک کنید.
+  pause
+  exit /b 1
+)
+
+echo در حال ثبت اجرا در شروع ویندوز ^(Task Scheduler^)...
+schtasks /Delete /TN "%TASK%" /F >nul 2>&1
+schtasks /Create /TN "%TASK%" /TR "\"%BAT%\"" /SC ONLOGON /RL LIMITED /F
+if errorlevel 1 (
+  echo.
+  echo ثبت خودکار ناموفق بود. می‌توانید هر روز خودتان فایل زیر را اجرا کنید:
+  echo   %BAT%
+  pause
+  exit /b 1
+)
+
+echo.
+echo نصب شد.
+echo فایل روزانه: %BAT%
+echo اجرای خودکار: با ورود کاربر به ویندوز
+echo.
+echo همین الان همگام‌سازی را باز می‌کنم...
+start "Tahesab Sync" "%BAT%"
+pause
+"""
+    return _bat_download("Install-Tahesab-Sync-Autostart.bat", content)
