@@ -299,6 +299,37 @@ def _patch_expert_hedges_table():
         conn.commit()
 
 
+def _patch_tahesab_outbox_table():
+    """Create tahesab_outbox if missing (create_all also covers new installs)."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS tahesab_outbox (
+                id VARCHAR NOT NULL PRIMARY KEY,
+                method VARCHAR NOT NULL,
+                params_json TEXT NOT NULL DEFAULT '[]',
+                ref_type VARCHAR,
+                ref_id VARCHAR,
+                status VARCHAR NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                result_json TEXT,
+                created_at TIMESTAMP WITHOUT TIME ZONE,
+                updated_at TIMESTAMP WITHOUT TIME ZONE
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_tahesab_outbox_status ON tahesab_outbox (status)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_tahesab_outbox_ref_id ON tahesab_outbox (ref_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_tahesab_outbox_created_at ON tahesab_outbox (created_at)"
+        ))
+        conn.commit()
+
+
 def init_db():
     """Call once at app startup: creates the database, then the tables."""
     ensure_database_exists()
@@ -315,6 +346,7 @@ def init_db():
     _patch_price_cards_table()
     _patch_expert_hedges_table()
     _patch_amount_type_enum()
+    _patch_tahesab_outbox_table()
     _backfill_user_devices()
     print("[db] Tables ready")
 

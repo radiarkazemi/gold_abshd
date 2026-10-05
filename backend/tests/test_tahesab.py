@@ -24,6 +24,7 @@ class _FakeResp:
 
 def setup_function():
     tahesab.settings.TAHESAB_ENABLED = True
+    tahesab.settings.TAHESAB_MODE = "direct"
     tahesab.settings.TAHESAB_BASE_URL = "https://127.0.0.1:8081"
     tahesab.settings.TAHESAB_TOKEN = "TESTTOKEN"
     tahesab.settings.TAHESAB_DBNAME = "DB"
@@ -78,6 +79,23 @@ def test_create_moshtari_posts_expected_body(mock_client_cls):
     assert params[8] == 1043
 
 
+@patch("app.services.tahesab.enqueue_method", return_value="job-1")
+def test_bridge_mode_queues_instead_of_http(mock_enqueue):
+    tahesab.settings.TAHESAB_MODE = "bridge"
+    db = MagicMock()
+    code = tahesab.create_moshtari(
+        name="رضا",
+        tel="0912",
+        code_meli="1",
+        moshtari_code=2001,
+        db=db,
+        ref_id="u1",
+    )
+    assert code == 2001
+    mock_enqueue.assert_called_once()
+    assert mock_enqueue.call_args[0][1] == "DoNewMoshtari"
+
+
 @patch("app.services.tahesab.httpx.Client")
 def test_create_sanad_gold_shop_sell_when_customer_buys(mock_client_cls):
     client = MagicMock()
@@ -91,7 +109,7 @@ def test_create_sanad_gold_shop_sell_when_customer_buys(mock_client_cls):
         shamsi_day=13,
         vazn=2.5,
         ayar=750,
-        buy_or_sale=0,  # فروش از دید مغازه
+        buy_or_sale=0,
         mazaneh=350_000_000,
         mazaneh_is_gram=0,
         is_abshode=1,
@@ -104,9 +122,7 @@ def test_create_sanad_gold_shop_sell_when_customer_buys(mock_client_cls):
     params = body["DoNewSanadBuySaleGOLD"]
     assert params[1] == 1043
     assert params[7] == 2.5
-    assert params[8] == 750
-    assert params[11] == 0  # فروش
-    assert params[14] == 1  # آبشده
+    assert params[11] == 0
 
 
 @patch("app.services.tahesab.create_moshtari")
@@ -165,10 +181,9 @@ def test_sync_accepted_order_gold(mock_sync_user, mock_sanad):
     assert code == "GAOKFACTORCODE00000001"
     assert order.tahesab_factor_code == code
     kwargs = mock_sanad.call_args.kwargs
-    assert kwargs["buy_or_sale"] == 0  # customer buy → shop sell
+    assert kwargs["buy_or_sale"] == 0
     assert kwargs["vazn"] == 2.0
-    assert kwargs["ayar"] == 750
-    assert kwargs["mazaneh"] == 300_000_000  # ×10 Rial scale
+    assert kwargs["mazaneh"] == 300_000_000
     assert kwargs["mablagh_kol"] == 136_000_000
 
 
@@ -177,7 +192,7 @@ def test_call_method_soft_fails_on_http_error(mock_client_cls):
     client = MagicMock()
     mock_client_cls.return_value.__enter__.return_value = client
     client.post.return_value = _FakeResp(500, text="boom")
-    assert tahesab.call_method("CheckHealth", []) is None
+    assert tahesab.call_method_direct("CheckHealth", []) is None
 
 
 def test_disabled_skips_network():

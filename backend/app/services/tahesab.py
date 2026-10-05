@@ -1,15 +1,19 @@
 """
 Tahesab (ته‌حساب) accounting API client.
 
-Posts JSON method bodies to the self-hosted Windows API with:
-  Authorization: Bearer <token>
-  DBName: <env / Access folder or SQL Server db>
+Two modes (GOLDAPP_TAHESAB_MODE):
+  - bridge (default): VPS cannot reach the Windows PC's 127.0.0.1 API.
+    Jobs go into tahesab_outbox; a tiny agent on that PC pulls and POSTs
+    them to local Tahesab.
+  - direct: VPS HTTP-posts to GOLDAPP_TAHESAB_BASE_URL (needs reachable host).
 
-Soft-fails on every error so order accept / user create never breaks
-when the Windows host is offline.
+Auth for direct / agent posts:
+  Authorization: Bearer <token>
+  DBName: <env>
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import datetime
@@ -31,11 +35,11 @@ def _to_jalali(dt: datetime) -> jdatetime.date:
 
 
 def is_configured() -> bool:
-    return bool(
-        settings.TAHESAB_ENABLED
-        and settings.TAHESAB_BASE_URL
-        and settings.TAHESAB_TOKEN
-    )
+    return bool(settings.TAHESAB_ENABLED and settings.TAHESAB_TOKEN)
+
+
+def is_bridge_mode() -> bool:
+    return (settings.TAHESAB_MODE or "bridge").strip().lower() != "direct"
 
 
 def _headers() -> dict[str, str]:
@@ -58,7 +62,6 @@ def _digits(value: str | None) -> str:
 
 
 def _factor_code_for_order(order_id: str) -> str:
-    """Unique ≥20-char Factor_Code so re-accept retries don't duplicate."""
     compact = (order_id or "").replace("-", "")
     code = f"GA{compact}"
     if len(code) < 20:
@@ -66,14 +69,53 @@ def _factor_code_for_order(order_id: str) -> str:
     return code[:40]
 
 
-def call_method(method: str, params: list[Any]) -> dict[str, Any] | None:
-    """
-    POST {"MethodName": [...params...]} to the Tahesab base URL.
-    Returns parsed JSON dict on success, or None on soft failure.
-    """
+def enqueue_method(
+    db: Session,
+    method: str,
+    params: list[Any],
+    *,
+    ref_type: str | None = None,
+    ref_id: str | None = None,
+) -> str | None:
+    """Queue a Tahesab method for the Windows bridge. Returns outbox id."""
+    from app.models_db import TahesabOutbox, gen_uuid
+
+    # Dedupe pending identical ref jobs
+    if ref_type and ref_id:
+        existing = (
+            db.query(TahesabOutbox)
+            .filter(
+                TahesabOutbox.ref_type == ref_type,
+                TahesabOutbox.ref_id == ref_id,
+                TahesabOutbox.method == method,
+                TahesabOutbox.status == "pending",
+            )
+            .first()
+        )
+        if existing:
+            return existing.id
+
+    row = TahesabOutbox(
+        id=gen_uuid(),
+        method=method,
+        params_json=json.dumps(params, ensure_ascii=False),
+        ref_type=ref_type,
+        ref_id=ref_id,
+        status="pending",
+        attempts=0,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    logger.info("[tahesab] queued %s ref=%s/%s id=%s", method, ref_type, ref_id, row.id)
+    return row.id
+
+
+def call_method_direct(method: str, params: list[Any]) -> dict[str, Any] | None:
     if not is_configured():
         return None
-
     url = settings.TAHESAB_BASE_URL
     body = {method: params}
     try:
@@ -106,7 +148,6 @@ def call_method(method: str, params: list[Any]) -> dict[str, Any] | None:
         logger.error("[tahesab] %s unexpected payload type: %r", method, type(data))
         return None
 
-    # Soft error shapes seen in the wild / docs
     err = data.get("Error") or data.get("error") or data.get("Message")
     if err and "OK" not in data and "Api_Status" not in data:
         logger.error("[tahesab] %s error payload: %s", method, data)
@@ -115,8 +156,33 @@ def call_method(method: str, params: list[Any]) -> dict[str, Any] | None:
     return data
 
 
+def call_method(
+    method: str,
+    params: list[Any],
+    *,
+    db: Session | None = None,
+    ref_type: str | None = None,
+    ref_id: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    Execute (direct) or enqueue (bridge) a Tahesab method.
+    Bridge mode returns {"queued": true, "outbox_id": "..."} on success.
+    """
+    if not is_configured():
+        return None
+
+    if is_bridge_mode():
+        if db is None:
+            logger.error("[tahesab] bridge mode requires db session for %s", method)
+            return None
+        oid = enqueue_method(db, method, params, ref_type=ref_type, ref_id=ref_id)
+        return {"queued": True, "outbox_id": oid} if oid else None
+
+    return call_method_direct(method, params)
+
+
 def check_health() -> dict[str, Any] | None:
-    return call_method("CheckHealth", [])
+    return call_method_direct("CheckHealth", [])
 
 
 def create_moshtari(
@@ -131,28 +197,33 @@ def create_moshtari(
     code_moaref: str | int = -1,
     moshtari_code: int = -1,
     jens_felez: int = 0,
+    db: Session | None = None,
+    ref_id: str | None = None,
 ) -> int | None:
-    """
-    DoNewMoshtari → returns new/assigned Moshtari_Code (int), or None.
-    Response shape: {"OK": 11113}
-    """
+    params = [
+        name or "",
+        group_name if group_name is not None else settings.TAHESAB_DEFAULT_GROUP,
+        _digits(tel) or (tel or ""),
+        address or "",
+        _digits(code_meli) or (code_meli or ""),
+        birth_date or "",
+        moaref or "",
+        code_moaref if code_moaref is not None else -1,
+        int(moshtari_code),
+        int(jens_felez),
+    ]
     payload = call_method(
         "DoNewMoshtari",
-        [
-            name or "",
-            group_name if group_name is not None else settings.TAHESAB_DEFAULT_GROUP,
-            _digits(tel) or (tel or ""),
-            address or "",
-            _digits(code_meli) or (code_meli or ""),
-            birth_date or "",
-            moaref or "",
-            code_moaref if code_moaref is not None else -1,
-            int(moshtari_code),
-            int(jens_felez),
-        ],
+        params,
+        db=db,
+        ref_type="user" if ref_id else None,
+        ref_id=ref_id,
     )
     if not payload:
         return None
+    if payload.get("queued"):
+        # Prefer known code so sanads can use it before bridge ack.
+        return int(moshtari_code) if int(moshtari_code) != -1 else None
     ok = payload.get("OK")
     try:
         return int(ok)
@@ -183,41 +254,45 @@ def create_sanad_buy_sale_gold(
     jens_felez: int = 0,
     zaman_tasvie: str = "",
     arz_name: str = "",
+    db: Session | None = None,
+    ref_id: str | None = None,
 ) -> str | None:
-    """
-    DoNewSanadBuySaleGOLD → Factor_Code string from {"OK": "..."}, or None.
-    BuyOrSale: 1=خرید (shop buys), 0=فروش (shop sells).
-    """
+    params = [
+        int(settings.TAHESAB_SABTE_KOL),
+        int(moshtari_code),
+        int(factor_number),
+        int(radif_number),
+        int(shamsi_year),
+        int(shamsi_month),
+        int(shamsi_day),
+        float(vazn),
+        float(ayar),
+        0,
+        "",
+        int(buy_or_sale),
+        float(mazaneh),
+        int(mazaneh_is_gram),
+        int(is_abshode),
+        float(mablagh_kol),
+        sharh or "",
+        factor_code,
+        int(havaleh_be),
+        int(multi_radif),
+        int(jens_felez),
+        zaman_tasvie or "",
+        arz_name or "",
+    ]
     payload = call_method(
         "DoNewSanadBuySaleGOLD",
-        [
-            int(settings.TAHESAB_SABTE_KOL),
-            int(moshtari_code),
-            int(factor_number),
-            int(radif_number),
-            int(shamsi_year),
-            int(shamsi_month),
-            int(shamsi_day),
-            float(vazn),
-            float(ayar),
-            0,
-            "",
-            int(buy_or_sale),
-            float(mazaneh),
-            int(mazaneh_is_gram),
-            int(is_abshode),
-            float(mablagh_kol),
-            sharh or "",
-            factor_code,
-            int(havaleh_be),
-            int(multi_radif),
-            int(jens_felez),
-            zaman_tasvie or "",
-            arz_name or "",
-        ],
+        params,
+        db=db,
+        ref_type="order" if ref_id else None,
+        ref_id=ref_id,
     )
     if not payload:
         return None
+    if payload.get("queued"):
+        return factor_code
     ok = payload.get("OK")
     if ok is None:
         logger.error("[tahesab] DoNewSanadBuySaleGOLD missing OK: %s", payload)
@@ -245,34 +320,42 @@ def create_sanad_buy_sale_sekeh(
     multi_radif: int = -1,
     jens_felez: int = 0,
     arz_name: str = "",
+    db: Session | None = None,
+    ref_id: str | None = None,
 ) -> str | None:
+    params = [
+        int(settings.TAHESAB_SABTE_KOL),
+        int(moshtari_code),
+        int(factor_number),
+        int(radif_number),
+        int(shamsi_year),
+        int(shamsi_month),
+        int(shamsi_day),
+        float(vazn),
+        float(ayar),
+        float(count),
+        name_sekeh or "سکه",
+        int(buy_or_sale),
+        float(mazaneh),
+        float(mablagh_kol),
+        sharh or "",
+        factor_code,
+        -1,
+        int(multi_radif),
+        int(jens_felez),
+        arz_name or "",
+    ]
     payload = call_method(
         "DoNewSanadBuySaleSEKEH",
-        [
-            int(settings.TAHESAB_SABTE_KOL),
-            int(moshtari_code),
-            int(factor_number),
-            int(radif_number),
-            int(shamsi_year),
-            int(shamsi_month),
-            int(shamsi_day),
-            float(vazn),
-            float(ayar),
-            float(count),
-            name_sekeh or "سکه",
-            int(buy_or_sale),
-            float(mazaneh),
-            float(mablagh_kol),
-            sharh or "",
-            factor_code,
-            -1,
-            int(multi_radif),
-            int(jens_felez),
-            arz_name or "",
-        ],
+        params,
+        db=db,
+        ref_type="order" if ref_id else None,
+        ref_id=ref_id,
     )
     if not payload:
         return None
+    if payload.get("queued"):
+        return factor_code
     ok = payload.get("OK")
     if ok is None:
         logger.error("[tahesab] DoNewSanadBuySaleSEKEH missing OK: %s", payload)
@@ -281,7 +364,6 @@ def create_sanad_buy_sale_sekeh(
 
 
 def sync_user_to_tahesab(db: Session, user) -> int | None:
-    """Create Tahesab moshtari for a User; store tahesab_moshtari_id."""
     if not is_configured():
         return None
     existing = getattr(user, "tahesab_moshtari_id", None)
@@ -300,15 +382,18 @@ def sync_user_to_tahesab(db: Session, user) -> int | None:
         code_meli=user.national_id or "",
         moaref=user.referrer or "",
         moshtari_code=preferred_code,
+        db=db,
+        ref_id=user.id,
     )
-    if code is None and preferred_code != -1:
-        # Preferred code may already exist in Tahesab — fall back to auto.
+    if code is None and preferred_code != -1 and not is_bridge_mode():
         code = create_moshtari(
             name=(user.full_name or user.phone_number or f"کاربر {user.user_code}"),
             tel=user.phone_number or "",
             code_meli=user.national_id or "",
             moaref=user.referrer or "",
             moshtari_code=-1,
+            db=db,
+            ref_id=user.id,
         )
     if code is None:
         return None
@@ -317,11 +402,7 @@ def sync_user_to_tahesab(db: Session, user) -> int | None:
     db.add(user)
     db.commit()
     db.refresh(user)
-    logger.info(
-        "[tahesab] synced user %s → moshtari %s",
-        user.user_code,
-        code,
-    )
+    logger.info("[tahesab] synced user %s → moshtari %s", user.user_code, code)
     return int(code)
 
 
@@ -341,7 +422,6 @@ def _order_total_toman(order) -> float:
 
 
 def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
-    """Post gold/coin buy-sale sanad for an accepted order; store factor code."""
     if not is_configured():
         return None
     existing = getattr(order, "tahesab_factor_code", None)
@@ -366,7 +446,6 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
 
     when = order.updated_at or order.created_at or datetime.utcnow()
     j = _to_jalali(when)
-    # Shop perspective: customer buy → shop sells (0); customer sell → shop buys (1)
     buy_or_sale = 0 if order.side.value == "buy" else 1
     qty = _order_quantity(order)
     total = _scale_amount(_order_total_toman(order))
@@ -396,6 +475,8 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
             mablagh_kol=total,
             sharh=sharh,
             factor_code=factor_code,
+            db=db,
+            ref_id=order.id,
         )
     else:
         ok = create_sanad_buy_sale_gold(
@@ -407,11 +488,13 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
             ayar=750,
             buy_or_sale=buy_or_sale,
             mazaneh=mazaneh,
-            mazaneh_is_gram=0,  # مثقال
+            mazaneh_is_gram=0,
             is_abshode=int(settings.TAHESAB_IS_ABSHODE),
             mablagh_kol=total,
             sharh=sharh,
             factor_code=factor_code,
+            db=db,
+            ref_id=order.id,
         )
 
     if not ok:
@@ -423,6 +506,26 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
     db.refresh(order)
     logger.info("[tahesab] order %s → factor %s", order.id, ok)
     return str(ok)
+
+
+def apply_bridge_result(db: Session, job, result: dict[str, Any]) -> None:
+    """Apply successful bridge response onto User / Order rows."""
+    from app.models_db import Order, User
+
+    ok = result.get("OK")
+    if job.ref_type == "user" and job.ref_id and ok is not None:
+        user = db.query(User).filter(User.id == job.ref_id).first()
+        if user:
+            try:
+                user.tahesab_moshtari_id = int(ok)
+                db.add(user)
+            except (TypeError, ValueError):
+                pass
+    if job.ref_type == "order" and job.ref_id and ok is not None:
+        order = db.query(Order).filter(Order.id == job.ref_id).first()
+        if order:
+            order.tahesab_factor_code = str(ok)
+            db.add(order)
 
 
 def sync_user_isolated(user_id: str) -> None:
@@ -459,3 +562,14 @@ def sync_accepted_order_isolated(order_id: str) -> None:
         logger.exception("[tahesab] isolated order sync failed for %s", order_id)
     finally:
         db.close()
+
+
+def bridge_agent_config() -> dict[str, Any]:
+    """Config the Windows agent needs (no bridge secret)."""
+    return {
+        "tahesab_base_url": settings.TAHESAB_BASE_URL,
+        "tahesab_token": settings.TAHESAB_TOKEN,
+        "tahesab_dbname": settings.TAHESAB_DBNAME,
+        "tahesab_verify_ssl": settings.TAHESAB_VERIFY_SSL,
+        "poll_seconds": 2,
+    }

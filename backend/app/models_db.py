@@ -636,3 +636,26 @@ class TermsAcceptance(Base):
     accepted_at_client = Column(DateTime, nullable=True)
 
     user = relationship("User")
+
+
+class TahesabOutbox(Base):
+    """
+    Jobs for the Windows Tahesab pull-bridge. VPS cannot reach the shop
+    PC's 127.0.0.1 API, so the agent on that PC pulls pending rows and
+    POSTs them to local Tahesab.
+    """
+
+    __tablename__ = "tahesab_outbox"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    method = Column(String, nullable=False)
+    # JSON array of method params
+    params_json = Column(Text, nullable=False, default="[]")
+    ref_type = Column(String, nullable=True)  # user | order
+    ref_id = Column(String, nullable=True, index=True)
+    status = Column(String, nullable=False, default="pending", index=True)  # pending|done|error
+    attempts = Column(Integer, nullable=False, default=0)
+    last_error = Column(Text, nullable=True)
+    result_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)

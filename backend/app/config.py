@@ -160,6 +160,9 @@ class Settings:
     # same Windows machine (or via tunnel/VPN); a remote VPS cannot
     # reach the shop PC's loopback.
     TAHESAB_ENABLED: bool = os.getenv("GOLDAPP_TAHESAB_ENABLED", "false").lower() == "true"
+    # bridge = VPS queues jobs; Windows agent posts to local Tahesab (127.0.0.1).
+    # direct = VPS HTTP-posts to TAHESAB_BASE_URL (only works if reachable).
+    TAHESAB_MODE: str = os.getenv("GOLDAPP_TAHESAB_MODE", "bridge").strip().lower()
     TAHESAB_BASE_URL: str = os.getenv("GOLDAPP_TAHESAB_BASE_URL", "https://127.0.0.1:8081").rstrip("/")
     TAHESAB_TOKEN: str = os.getenv("GOLDAPP_TAHESAB_TOKEN", "")
     # Access folder name (DB) or SQL Server db name (TahesabDB).
@@ -174,6 +177,8 @@ class Settings:
     TAHESAB_SABTE_KOL: int = int(os.getenv("GOLDAPP_TAHESAB_SABTE_KOL", "1"))
     # 0 = متفرقه, 1 = آبشده
     TAHESAB_IS_ABSHODE: int = int(os.getenv("GOLDAPP_TAHESAB_IS_ABSHODE", "1"))
+    # Shared secret for the Windows pull-bridge agent.
+    TAHESAB_BRIDGE_TOKEN: str = os.getenv("GOLDAPP_TAHESAB_BRIDGE_TOKEN", "")
 
     # Receipt uploads (proof of bank transfer / حواله for cash orders)
     UPLOAD_DIR: str = os.getenv("GOLDAPP_UPLOAD_DIR", "uploads/receipts")

@@ -59,6 +59,7 @@ from app.routers import (
     admin_expert,
     admin_push,
     reygiri,
+    tahesab_bridge,
 )
 
 
@@ -249,3 +250,4 @@ app.include_router(transfers.router)
 app.include_router(admin_price_cards.router)
 app.include_router(admin_expert.router)
 app.include_router(admin_push.router)
+app.include_router(tahesab_bridge.router)
