@@ -40,6 +40,9 @@ class AckIn(BaseModel):
     ok: bool
     result: dict | None = None
     error: str | None = None
+    # True for business errors that must not be retried (e.g. duplicate phone
+    # when lookup also failed). Transient network errors leave this false.
+    permanent: bool = False
 
 
 @router.get("/config")
@@ -87,9 +90,9 @@ def bridge_ack(payload: AckIn, db: Session = Depends(get_db), _auth=Depends(_req
         job.last_error = None
         tahesab.apply_bridge_result(db, job, payload.result or {})
     else:
-        # Keep pending so the agent retries; mark error after many tries.
         job.last_error = (payload.error or "unknown")[:2000]
-        if job.attempts >= 20:
+        # Permanent business errors (duplicate phone, etc.) or too many tries.
+        if payload.permanent or job.attempts >= 8:
             job.status = "error"
         else:
             job.status = "pending"
@@ -174,6 +177,60 @@ $ThHeaders = @{{
   "Accept" = "application/json"
 }}
 
+function Send-Tahesab([object]$BodyObj) {{
+  $json = $BodyObj | ConvertTo-Json -Compress -Depth 20
+  return Invoke-RestMethod -Uri $TahesabUrl -Method POST -Headers $ThHeaders `
+    -Body ([System.Text.Encoding]::UTF8.GetBytes($json)) `
+    -ContentType "application/json; charset=utf-8" `
+    -TimeoutSec 60 -UseBasicParsing
+}}
+
+function Ack-Bridge([string]$Id, [bool]$Ok, $Result, [string]$ErrorText, [bool]$Permanent) {{
+  $ackObj = @{{ id = $Id; ok = $Ok; permanent = $Permanent }}
+  if ($null -ne $Result) {{ $ackObj.result = $Result }}
+  if ($ErrorText) {{ $ackObj.error = $ErrorText }}
+  $ackJson = $ackObj | ConvertTo-Json -Compress -Depth 20
+  Invoke-RestMethod -Uri "$BridgeBase/api/tahesab-bridge/ack" -Method POST -Headers $Headers `
+    -Body ([System.Text.Encoding]::UTF8.GetBytes($ackJson)) `
+    -ContentType "application/json; charset=utf-8" `
+    -TimeoutSec 30 -UseBasicParsing | Out-Null
+}}
+
+function Resolve-DuplicateMoshtari($Params, [string]$ErrText) {{
+  # DoListMoshtari by phone: {{"DoListMoshtari":[912...]}}
+  $tel = ""
+  if ($Params -and $Params.Count -ge 3) {{ $tel = [string]$Params[2] }}
+  $digits = ($tel -replace '[^\d]', '')
+  if (-not $digits) {{ return $null }}
+  $candidates = @($digits)
+  if ($digits.StartsWith("0") -and $digits.Length -gt 1) {{ $candidates += $digits.Substring(1) }}
+  elseif (-not $digits.StartsWith("0")) {{ $candidates += ("0" + $digits) }}
+  foreach ($c in $candidates) {{
+    try {{
+      $asNum = [int64]0
+      if ([int64]::TryParse($c, [ref]$asNum)) {{
+        $list = Send-Tahesab (@{{ DoListMoshtari = @($asNum) }})
+      }} else {{
+        $list = Send-Tahesab (@{{ DoListMoshtari = @($c) }})
+      }}
+      if ($null -eq $list) {{ continue }}
+      foreach ($prop in $list.PSObject.Properties) {{
+        $row = $prop.Value
+        if ($null -eq $row) {{ continue }}
+        $code = $null
+        if ($row.Code) {{ $code = $row.Code }} elseif ($row.code) {{ $code = $row.code }}
+        if ($null -ne $code) {{
+          Write-Host "  Linked existing moshtari Code=$code (phone was duplicate)"
+          return @{{ OK = [int]$code; linked = $true; note = $ErrText }}
+        }}
+      }}
+    }} catch {{
+      Write-Host "  lookup try $c failed: $_"
+    }}
+  }}
+  return $null
+}}
+
 Write-Host "Bridge OK. Tahesab=$TahesabUrl DB=$DbName — polling every ${{Poll}}s. Ctrl+C to stop."
 
 while ($true) {{
@@ -189,41 +246,57 @@ while ($true) {{
     $stamp = Get-Date -Format "HH:mm:ss"
     Write-Host "[$stamp] $methodName id=$jobId"
 
-    # Prefer the pre-built body object from the VPS; rebuild if missing.
     if ($null -ne $job.body) {{
       $bodyObj = $job.body
     }} else {{
       $bodyObj = @{{ $methodName = @($job.params) }}
     }}
-    $bodyJson = $bodyObj | ConvertTo-Json -Compress -Depth 20
 
+    $parsed = $null
+    $err = ""
     try {{
-      # Invoke-RestMethod + UseBasicParsing avoids the IE "Script Execution Risk" prompt.
-      $parsed = Invoke-RestMethod -Uri $TahesabUrl -Method POST -Headers $ThHeaders `
-        -Body ([System.Text.Encoding]::UTF8.GetBytes($bodyJson)) `
-        -ContentType "application/json; charset=utf-8" `
-        -TimeoutSec 60 -UseBasicParsing
-      $ackObj = @{{ id = $jobId; ok = $true; result = $parsed }}
-      $ackJson = $ackObj | ConvertTo-Json -Compress -Depth 20
-      Invoke-RestMethod -Uri "$BridgeBase/api/tahesab-bridge/ack" -Method POST -Headers $Headers `
-        -Body ([System.Text.Encoding]::UTF8.GetBytes($ackJson)) `
-        -ContentType "application/json; charset=utf-8" `
-        -TimeoutSec 30 -UseBasicParsing | Out-Null
-      $okText = $parsed | ConvertTo-Json -Compress -Depth 10
-      Write-Host "  OK: $okText"
+      $parsed = Send-Tahesab $bodyObj
     }} catch {{
       $err = "$_"
-      Write-Host "  FAIL: $err"
-      $ackObj = @{{ id = $jobId; ok = $false; error = $err }}
-      $ackJson = $ackObj | ConvertTo-Json -Compress -Depth 5
       try {{
-        Invoke-RestMethod -Uri "$BridgeBase/api/tahesab-bridge/ack" -Method POST -Headers $Headers `
-          -Body ([System.Text.Encoding]::UTF8.GetBytes($ackJson)) `
-          -ContentType "application/json; charset=utf-8" `
-          -TimeoutSec 30 -UseBasicParsing | Out-Null
+        if ($_.ErrorDetails -and $_.ErrorDetails.Message) {{
+          $parsed = $_.ErrorDetails.Message | ConvertFrom-Json
+          $err = [string]$parsed.ERROR
+          if (-not $err) {{ $err = [string]$parsed.Error }}
+        }}
       }} catch {{}}
-      Start-Sleep -Seconds 3
     }}
+
+    $errText = ""
+    if ($parsed -and ($parsed.ERROR -or $parsed.Error)) {{
+      $errText = [string]($(if ($parsed.ERROR) {{ $parsed.ERROR }} else {{ $parsed.Error }}))
+    }} elseif ($err) {{
+      $errText = $err
+    }}
+
+    if ($errText -and $methodName -eq "DoNewMoshtari" -and ($errText -match "تلفن تکراری|شماره.*تکراری|duplicate")) {{
+      $linked = Resolve-DuplicateMoshtari $job.params $errText
+      if ($null -ne $linked) {{
+        Ack-Bridge $jobId $true $linked "" $false
+        Write-Host ("  OK (linked): " + ($linked | ConvertTo-Json -Compress))
+        continue
+      }}
+      Ack-Bridge $jobId $false $null $errText $true
+      Write-Host "  FAIL permanent: $errText"
+      Start-Sleep -Seconds 2
+      continue
+    }}
+
+    if ($errText) {{
+      $permanent = [bool]($errText -match "تکراری|نامعتبر|مجاز نیست")
+      Ack-Bridge $jobId $false $null $errText $permanent
+      Write-Host ("  FAIL" + $(if ($permanent) {{ " permanent" }} else {{ "" }}) + ": $errText")
+      Start-Sleep -Seconds 3
+      continue
+    }}
+
+    Ack-Bridge $jobId $true $parsed "" $false
+    Write-Host ("  OK: " + ($parsed | ConvertTo-Json -Compress -Depth 10))
   }} catch {{
     Write-Host "poll error: $_"
     Start-Sleep -Seconds $Poll
