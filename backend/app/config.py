@@ -172,8 +172,8 @@ class Settings:
     # DBName header: Access folder (DB / DB1) or SQL Server db (TahesabDB / TahesabDB1).
     # Point this at the TEST environment only — never the main shop books.
     TAHESAB_DBNAME: str = os.getenv("GOLDAPP_TAHESAB_DBNAME", "DB")
-    # Human label shown in the Windows agent banner (e.g. تست).
-    TAHESAB_TARGET_LABEL: str = os.getenv("GOLDAPP_TAHESAB_TARGET_LABEL", "تست")
+    # Human label shown in the Windows agent banner (ASCII-safe for cmd.exe).
+    TAHESAB_TARGET_LABEL: str = os.getenv("GOLDAPP_TAHESAB_TARGET_LABEL", "TEST")
     # If set (comma-separated), CheckHealth DBName must match one of these
     # (case-insensitive) or the agent/worker refuses to write.
     # Example for Access test folder: "db,DB1"

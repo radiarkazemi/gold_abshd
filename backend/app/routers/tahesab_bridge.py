@@ -127,9 +127,15 @@ def bridge_agent_script():
     base = "https://ghasrtala.ir"
     # NOTE: this is a Python f-string — double every PowerShell `{` / `}` that
     # must survive into the downloaded .ps1 (including -f placeholders).
-    script = f'''# Tahesab pull-bridge for قصر طلا — run on the Windows PC where Tahesab API is open
+    script = f'''# Tahesab pull-bridge — run on the Windows PC where TEST Tahesab API is open
 $ErrorActionPreference = "Continue"
 $ProgressPreference = "SilentlyContinue"
+try {{
+  chcp 65001 | Out-Null
+  [Console]::InputEncoding  = New-Object System.Text.UTF8Encoding $false
+  [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+  $OutputEncoding = [Console]::OutputEncoding
+}} catch {{}}
 $BridgeBase = "{base}"
 $BridgeToken = if ($env:GOLDAPP_TAHESAB_BRIDGE_TOKEN) {{ $env:GOLDAPP_TAHESAB_BRIDGE_TOKEN }} else {{ "{token}" }}
 $Headers = @{{ "X-Bridge-Token" = $BridgeToken; "Accept" = "application/json" }}
@@ -147,7 +153,9 @@ $TahesabToken = [string]$cfg.tahesab_token
 $DbName = [string]$cfg.tahesab_dbname
 $VerifySsl = [bool]$cfg.tahesab_verify_ssl
 $TargetLabel = [string]$cfg.target_label
-if (-not $TargetLabel) {{ $TargetLabel = "تست" }}
+if (-not $TargetLabel) {{ $TargetLabel = "TEST" }}
+# Keep banner ASCII-safe in older Windows consoles
+if ($TargetLabel -match "[^\\x00-\\x7F]") {{ $TargetLabel = "TEST" }}
 $Allowed = @()
 if ($cfg.allowed_dbnames) {{ $Allowed = @($cfg.allowed_dbnames | ForEach-Object {{ "$_".ToLower() }}) }}
 $Blocked = @()
@@ -185,16 +193,34 @@ $ThHeaders = @{{
 
 Write-Host ""
 Write-Host "############################################" -ForegroundColor Yellow
-Write-Host "  هدف همگام‌سازی: $TargetLabel" -ForegroundColor Yellow
+Write-Host "  TARGET: $TargetLabel  (TEST books only)" -ForegroundColor Yellow
 Write-Host "  DBName header: $DbName" -ForegroundColor Yellow
-Write-Host "  فقط ته حساب تست — روی ته حساب اصلی API روشن نکنید" -ForegroundColor Yellow
+Write-Host "  Do NOT enable API on MAIN Tahesab" -ForegroundColor Yellow
 Write-Host "############################################" -ForegroundColor Yellow
 Write-Host ""
 
-function Send-Tahesab([object]$BodyObj) {{
+function ConvertTo-AsciiJson([object]$BodyObj) {{
+  # Pure-ASCII JSON with \\uXXXX escapes so Tahesab (and older Windows
+  # stacks) never mis-decode Persian as Latin-1/CP1252 mojibake.
   $json = $BodyObj | ConvertTo-Json -Compress -Depth 20
+  $sb = New-Object System.Text.StringBuilder
+  foreach ($ch in $json.ToCharArray()) {{
+    $code = [int][char]$ch
+    if ($code -gt 127) {{
+      [void]$sb.Append('\\u')
+      [void]$sb.AppendFormat('{{0:x4}}', $code)
+    }} else {{
+      [void]$sb.Append($ch)
+    }}
+  }}
+  return $sb.ToString()
+}}
+
+function Send-Tahesab([object]$BodyObj) {{
+  $json = ConvertTo-AsciiJson $BodyObj
+  $bytes = [System.Text.Encoding]::ASCII.GetBytes($json)
   return Invoke-RestMethod -Uri $TahesabUrl -Method POST -Headers $ThHeaders `
-    -Body ([System.Text.Encoding]::UTF8.GetBytes($json)) `
+    -Body $bytes `
     -ContentType "application/json; charset=utf-8" `
     -TimeoutSec 60 -UseBasicParsing
 }}
