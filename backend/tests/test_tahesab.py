@@ -899,6 +899,26 @@ def test_parse_asnad_rows_running_balance_and_short_app_sharh():
     assert rows[1]["cash_balance"] == 638037758.0
 
 
+def test_parse_asnad_rows_unwraps_list_envelope():
+    payload = [
+        {
+            "23": {
+                "ID": 23,
+                "Factor_Code": "x23",
+                "NO": "ورود متفرقه",
+                "ZamanSabt": "1405/07/14 17:46:45",
+                "Vazn": 24.33,
+                "TahesabVazni": 2,
+                "TahesabMali": 0,
+                "User": "مدير",
+            }
+        }
+    ]
+    rows = tahesab.parse_asnad_rows(payload)
+    assert len(rows) == 1
+    assert rows[0]["doc_type"] == "ورود متفرقه"
+
+
 def test_books_reset_at_parses_iso():
     db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(

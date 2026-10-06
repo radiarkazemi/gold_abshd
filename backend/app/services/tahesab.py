@@ -336,6 +336,13 @@ def _shamsi_day_str(dt: datetime) -> str:
 
 def parse_asnad_rows(payload: Any) -> list[dict[str, Any]]:
     """Normalize DoListAsnad JSON into sorted ledger rows for the customer PDF."""
+    # Agent / Tahesab may deliver [{id: row, ...}] instead of a bare object.
+    if isinstance(payload, list):
+        merged: dict[str, Any] = {}
+        for item in payload:
+            if isinstance(item, dict):
+                merged.update(item)
+        payload = merged
     if not payload or not isinstance(payload, dict):
         return []
     if _error_text(payload):

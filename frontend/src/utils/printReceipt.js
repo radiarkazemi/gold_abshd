@@ -262,16 +262,20 @@ export function buildOrdersReceiptHtml(
     : buildCustomerLedgerDocs(orders, { priceLabelMode });
 
   if (useLedger && (dateFrom || dateTo)) {
-    docs = docs.filter((doc) => {
+    const filtered = docs.filter((doc) => {
       const day = tehranDayKey(doc.created_at);
       if (!day) return true;
       if (dateFrom && day < dateFrom) return false;
       if (dateTo && day > dateTo) return false;
       return true;
     });
-    const last = docs[docs.length - 1];
-    goldBalance = last ? last.goldBalance : 0;
-    cashBalance = last ? last.cashBalance : 0;
+    // Never blank a Tahesab ledger PDF because of a date mismatch — keep all docs.
+    if (filtered.length) {
+      docs = filtered;
+      const last = docs[docs.length - 1];
+      goldBalance = last ? last.goldBalance : 0;
+      cashBalance = last ? last.cashBalance : 0;
+    }
   }
 
   const rowsHtml = docs

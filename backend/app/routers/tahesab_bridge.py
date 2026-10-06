@@ -38,11 +38,27 @@ def _require_bridge(authorization: str | None = Header(default=None), x_bridge_t
 class AckIn(BaseModel):
     id: str
     ok: bool
-    result: dict | None = None
+    # Tahesab often wraps payloads as a one-element JSON array; accept both.
+    result: dict | list | None = None
     error: str | None = None
     # True for business errors that must not be retried (e.g. duplicate phone
     # when lookup also failed). Transient network errors leave this false.
     permanent: bool = False
+
+
+def _normalize_ack_result(result: dict | list | None) -> dict:
+    """Unwrap [{...}] / [{...}, ...] Tahesab envelopes into one dict for apply_*."""
+    if result is None:
+        return {}
+    if isinstance(result, dict):
+        return result
+    if isinstance(result, list):
+        merged: dict = {}
+        for item in result:
+            if isinstance(item, dict):
+                merged.update(item)
+        return merged
+    return {}
 
 
 @router.get("/config")
@@ -145,10 +161,11 @@ def bridge_ack(payload: AckIn, db: Session = Depends(get_db), _auth=Depends(_req
     job.attempts = (job.attempts or 0) + 1
     job.updated_at = datetime.utcnow()
     if payload.ok:
+        result = _normalize_ack_result(payload.result)
         job.status = "done"
-        job.result_json = json.dumps(payload.result or {}, ensure_ascii=False)
+        job.result_json = json.dumps(result, ensure_ascii=False)
         job.last_error = None
-        tahesab.apply_bridge_result(db, job, payload.result or {})
+        tahesab.apply_bridge_result(db, job, result)
     else:
         job.last_error = (payload.error or "unknown")[:2000]
         # Permanent business errors (duplicate phone, etc.) or too many tries.
@@ -545,6 +562,22 @@ while ($true) {{
       Write-Host ("  FAIL" + $(if ($permanent) {{ " permanent" }} else {{ "" }}) + ": $errText")
       Start-Sleep -Seconds 3
       continue
+    }}
+
+    # Tahesab often returns a one-element JSON array; FastAPI ack expects an object.
+    if ($parsed -is [System.Array]) {{
+      if (@($parsed).Count -eq 1) {{
+        $parsed = @($parsed)[0]
+      }} else {{
+        $merged = [ordered]@{{}}
+        foreach ($item in @($parsed)) {{
+          if ($null -eq $item) {{ continue }}
+          foreach ($prop in $item.PSObject.Properties) {{
+            $merged[$prop.Name] = $prop.Value
+          }}
+        }}
+        $parsed = [pscustomobject]$merged
+      }}
     }}
 
     Ack-Bridge $jobId $true $parsed "" $false
