@@ -52,9 +52,25 @@ def bridge_config(_auth=Depends(_require_bridge)):
 
 @router.get("/next")
 def bridge_next(db: Session = Depends(get_db), _auth=Depends(_require_bridge)):
+    from datetime import timedelta
+
+    from sqlalchemy import or_, and_
+
+    from app.models_db import Order, User
+
+    now = datetime.utcnow()
+    stale_before = now - timedelta(minutes=2)
     job = (
         db.query(TahesabOutbox)
-        .filter(TahesabOutbox.status == "pending")
+        .filter(
+            or_(
+                TahesabOutbox.status == "pending",
+                and_(
+                    TahesabOutbox.status == "claimed",
+                    TahesabOutbox.updated_at < stale_before,
+                ),
+            )
+        )
         .order_by(TahesabOutbox.created_at.asc())
         .first()
     )
@@ -64,11 +80,32 @@ def bridge_next(db: Session = Depends(get_db), _auth=Depends(_require_bridge)):
         params = json.loads(job.params_json or "[]")
     except json.JSONDecodeError:
         params = []
+
+    # Keep sanad moshtari_code in sync with the linked user (fixes phone-link races).
+    if (
+        job.method in ("DoNewSanadBuySaleGOLD", "DoNewSanadBuySaleSEKEH")
+        and job.ref_type == "order"
+        and job.ref_id
+        and len(params) > 1
+    ):
+        order = db.query(Order).filter(Order.id == job.ref_id).first()
+        if order and order.user_id:
+            user = db.query(User).filter(User.id == order.user_id).first()
+            if user and user.tahesab_moshtari_id is not None:
+                live = int(user.tahesab_moshtari_id)
+                if params[1] != live:
+                    params[1] = live
+                    job.params_json = json.dumps(params, ensure_ascii=False)
+
     mapped = [tahesab._persian_for_tahesab(p) for p in params]
     body = {job.method: mapped}
-    # Pre-built JSON so Windows PowerShell 5.1 never ConvertTo-Json a Hashtable
-    # (that serializes .NET Keys/Values instead of {"Method":[...]}).
     body_json = json.dumps(body, ensure_ascii=True, separators=(",", ":"))
+
+    job.status = "claimed"
+    job.updated_at = now
+    db.add(job)
+    db.commit()
+
     return {
         "job": {
             "id": job.id,

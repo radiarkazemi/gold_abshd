@@ -98,7 +98,7 @@ def enqueue_method(
     """Queue a Tahesab method for the Windows bridge. Returns outbox id."""
     from app.models_db import TahesabOutbox, gen_uuid
 
-    # Dedupe pending identical ref jobs
+    # Dedupe pending/claimed identical ref jobs
     if ref_type and ref_id:
         existing = (
             db.query(TahesabOutbox)
@@ -106,7 +106,7 @@ def enqueue_method(
                 TahesabOutbox.ref_type == ref_type,
                 TahesabOutbox.ref_id == ref_id,
                 TahesabOutbox.method == method,
-                TahesabOutbox.status == "pending",
+                TahesabOutbox.status.in_(("pending", "claimed")),
             )
             .first()
         )
@@ -424,6 +424,7 @@ def sync_user_to_tahesab(db: Session, user) -> int | None:
         db=db,
         ref_id=user.id,
     )
+    # Direct mode: if preferred code was rejected upstream, retry auto-code.
     if code is None and preferred_code != -1 and not is_bridge_mode():
         code = create_moshtari(
             name=(user.full_name or user.phone_number or f"کاربر {user.user_code}"),
@@ -434,6 +435,17 @@ def sync_user_to_tahesab(db: Session, user) -> int | None:
             db=db,
             ref_id=user.id,
         )
+
+    # Bridge (and queued direct): wait for outbox ack before trusting the code.
+    # Otherwise sanads can race ahead with a wrong/optimistic moshtari id.
+    if is_bridge_mode():
+        logger.info(
+            "[tahesab] queued DoNewMoshtari for user %s preferred=%s; sanads wait for ack",
+            user.user_code,
+            preferred_code,
+        )
+        return None
+
     if code is None:
         return None
 
@@ -460,6 +472,30 @@ def _order_total_toman(order) -> float:
     return float(order.value) * float(order.price_at_submit or 0)
 
 
+def _queue_pending_order_sanads(db: Session, user) -> None:
+    """After moshtari is confirmed, queue gold/money sanads for accepted orders."""
+    from app.models_db import Order, OrderStatusEnum
+
+    orders = (
+        db.query(Order)
+        .filter(
+            Order.user_id == user.id,
+            Order.status == OrderStatusEnum.accepted,
+            Order.tahesab_factor_code.is_(None),
+        )
+        .order_by(Order.created_at.asc())
+        .all()
+    )
+    for order in orders:
+        try:
+            sync_accepted_order_to_tahesab(db, order)
+        except Exception:
+            logger.exception(
+                "[tahesab] failed queuing sanad after moshtari for order %s",
+                getattr(order, "id", "?"),
+            )
+
+
 def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
     if not is_configured():
         return None
@@ -478,9 +514,16 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
 
     moshtari = getattr(user, "tahesab_moshtari_id", None)
     if moshtari is None:
-        moshtari = sync_user_to_tahesab(db, user)
+        # Queue DoNewMoshtari first; sanad is enqueued from apply_bridge_result.
+        sync_user_to_tahesab(db, user)
+        db.refresh(user)
+        moshtari = getattr(user, "tahesab_moshtari_id", None)
     if moshtari is None:
-        logger.error("[tahesab] cannot resolve moshtari for order %s", order.id)
+        logger.info(
+            "[tahesab] defer sanad for order %s until moshtari ack (user %s)",
+            order.id,
+            user.user_code,
+        )
         return None
 
     when = order.updated_at or order.created_at or datetime.utcnow()
@@ -539,11 +582,18 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
     if not ok:
         return None
 
-    order.tahesab_factor_code = str(ok)
-    db.add(order)
-    db.commit()
-    db.refresh(order)
-    logger.info("[tahesab] order %s → factor %s", order.id, ok)
+    # Do not set order.tahesab_factor_code until outbox ack (apply_bridge_result).
+    # That lets failed sanads retry and keeps moshtari→sanad ordering correct.
+    logger.info(
+        "[tahesab] queued sanad order=%s factor=%s moshtari=%s qty=%s mablagh=%s side=%s coin=%s",
+        order.id,
+        ok,
+        moshtari,
+        qty,
+        total,
+        order.side.value,
+        is_coin,
+    )
     return str(ok)
 
 
@@ -558,6 +608,8 @@ def apply_bridge_result(db: Session, job, result: dict[str, Any]) -> None:
             try:
                 user.tahesab_moshtari_id = int(ok)
                 db.add(user)
+                db.flush()
+                _queue_pending_order_sanads(db, user)
             except (TypeError, ValueError):
                 pass
     if job.ref_type == "order" and job.ref_id and ok is not None:
