@@ -10,7 +10,7 @@
   box-sizing: border-box;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--bg);
   flex-shrink: 0;
 }
 
@@ -48,18 +48,16 @@
   font-family: var(--font-display);
   font-size: 15px;
   font-weight: 600;
-  color: var(--gold-bright);
+  color: var(--amount-blue);
   font-variant-numeric: tabular-nums;
   line-height: 1.25;
   text-align: center;
 }
 
-.refresh-bar__balance-value.cash-status--debtor {
-  color: var(--buy-bright);
-}
-
-.refresh-bar__balance-value.cash-status--creditor {
-  color: var(--sell-bright);
+.refresh-bar__balance-value.cash-status--debtor,
+.refresh-bar__balance-value.cash-status--creditor,
+.refresh-bar__balance-value.cash-status--settled {
+  color: var(--amount-blue);
 }
 
 .refresh-bar__balance-unit {
@@ -93,8 +91,8 @@
   justify-content: center;
   border-radius: 50%;
   border: 1px solid var(--hairline);
-  background: var(--surface-raised);
-  color: var(--gold-bright);
+  background: var(--bg);
+  color: var(--amount-blue);
   font-size: 14px;
   cursor: pointer;
   transition: transform 400ms ease;

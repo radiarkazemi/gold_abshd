@@ -34,6 +34,7 @@
   --panel-sell-bg-2: #2c1c15;
   --admin-sidebar-bg: #161209;
   --panel-badge-neutral-bg: rgba(255, 255, 255, 0.07);
+  --amount-blue: #5b9cff;
 }
 
 :root[data-theme="light"] {
@@ -64,6 +65,7 @@
   --panel-sell-bg-2: #faeae2;
   --admin-sidebar-bg: #f2ead8;
   --panel-badge-neutral-bg: rgba(0, 0, 0, 0.055);
+  --amount-blue: #2f6fed;
 }
 
 * {
