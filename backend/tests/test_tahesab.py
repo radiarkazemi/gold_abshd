@@ -217,6 +217,7 @@ def test_sync_accepted_order_gold(mock_sync_user, mock_sanad):
         user_id="u1",
         side=SimpleNamespace(value="buy"),
         amount_type=SimpleNamespace(value="weight"),
+        goldbridge_item_id=1,
         value=2.0,
         description="",
         updated_at=datetime(2025, 10, 5, 12, 0, 0),
@@ -237,6 +238,8 @@ def test_sync_accepted_order_gold(mock_sync_user, mock_sanad):
     kwargs = mock_sanad.call_args.kwargs
     assert kwargs["buy_or_sale"] == 1
     assert kwargs["vazn"] == 2.0
+    assert kwargs["ayar"] == 750
+    assert kwargs["is_abshode"] == 1
     assert kwargs["moshtari_code"] == 1043
     assert kwargs["mablagh_kol"] == 2.0 * 6_800_000 * 10  # toman * scale
 
@@ -318,3 +321,67 @@ def test_catchup_syncs_unsynced_accepted(mock_sync):
     assert n == 1
     mock_sync.assert_called_once()
     db.commit.assert_called_once()
+
+
+@patch("app.services.tahesab.create_sanad_buy_sale_gold")
+@patch("app.services.tahesab.sync_user_to_tahesab")
+def test_sync_motaferaghe_sell_is_shop_buy_ayar_740(mock_sync_user, mock_sanad):
+    from app.gold_conversion import motaferaghe_vazn_mesghal17
+    from app.services.price_cards import SPECIAL_CARD_MOTAFEREGHE_ID
+
+    mock_sync_user.return_value = 1043
+    mock_sanad.return_value = "GAMOTAFERAGHEFACTOR0001"
+
+    user = SimpleNamespace(
+        id="u1",
+        user_code="1043",
+        tahesab_moshtari_id=1043,
+        full_name="رضا",
+        phone_number="0912",
+        national_id="1",
+        referrer=None,
+    )
+    order = SimpleNamespace(
+        id="cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee",
+        user_id="u1",
+        side=SimpleNamespace(value="sell"),
+        amount_type=SimpleNamespace(value="weight"),
+        value=10.0,
+        description="",
+        updated_at=datetime(2025, 10, 5, 12, 0, 0),
+        created_at=datetime(2025, 10, 5, 12, 0, 0),
+        mesghal17_price_at_submit=43_900_000,
+        price_at_submit=10_000_000,
+        goldbridge_item_id=SPECIAL_CARD_MOTAFEREGHE_ID,
+        tahesab_factor_code=None,
+    )
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = user
+
+    code = tahesab.sync_accepted_order_to_tahesab(db, order)
+    assert code == "GAMOTAFERAGHEFACTOR0001"
+    kwargs = mock_sanad.call_args.kwargs
+    assert kwargs["buy_or_sale"] == 0  # shop buys scrap from the customer
+    assert kwargs["ayar"] == 740
+    assert kwargs["is_abshode"] == 0  # خرید متفرقه بدون تسویه
+    assert kwargs["mazaneh_is_gram"] == 0
+    assert kwargs["vazn"] == motaferaghe_vazn_mesghal17(10.0)
+    assert "متفرقه" in kwargs["sharh"]
+    assert "740" in kwargs["sharh"]
+
+
+def test_motaferaghe_weight_converts_740_to_750_then_mesghal17():
+    from app.gold_conversion import (
+        MOTAFEREGHE_TO_GRAM18,
+        gram18_to_motaferaghe_mesghal17,
+        motaferaghe_to_gram18,
+        motaferaghe_vazn_mesghal17,
+        motaferaghe_weight_to_ayar750,
+    )
+
+    assert abs(motaferaghe_to_gram18(4.39) - 1.0) < 1e-9
+    assert abs(gram18_to_motaferaghe_mesghal17(4.39) - 1.0) < 1e-9
+    assert abs(motaferaghe_weight_to_ayar750(750.0) - 740.0) < 1e-9
+    expected = (10.0 * 740.0 / 750.0) / MOTAFEREGHE_TO_GRAM18
+    assert abs(motaferaghe_vazn_mesghal17(10.0) - expected) < 1e-9
+

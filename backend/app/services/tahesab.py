@@ -465,6 +465,25 @@ def _order_quantity(order) -> float:
     return float(order.value) / price if price else 0.0
 
 
+def _gold_sanad_specs(order) -> tuple[float, float, int]:
+    """vazn, ayar, is_abshode for DoNewSanadBuySaleGOLD.
+
+    آبشده (default): weight stays in app گرم ۱۸, ayar 750, is_abshode=1.
+    فروش متفرقه: shop buy of 740-ayar scrap. Tahesab form is
+    خرید متفرقه بدون تسویه (is_abshode=0, ayar=740). App weight is
+    grams; Tahesab vazn is مثقال۱۷ after 740→750 soothe:
+        مثقال۱۷ = (گرم × 740/750) / 4.39
+    Empty zaman_tasvie keeps the row بدون تسویه.
+    """
+    from app.gold_conversion import motaferaghe_vazn_mesghal17
+    from app.services.price_cards import is_motaferaghe_card
+
+    qty = _order_quantity(order)
+    if is_motaferaghe_card(getattr(order, "goldbridge_item_id", None)):
+        return motaferaghe_vazn_mesghal17(qty), 740.0, 0
+    return qty, 750.0, int(settings.TAHESAB_IS_ABSHODE)
+
+
 def _order_total_toman(order) -> float:
     if order.amount_type.value == "amount":
         return float(order.value)
@@ -564,17 +583,23 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
             ref_id=order.id,
         )
     else:
+        vazn, ayar, is_abshode = _gold_sanad_specs(order)
+        if is_abshode == 0:
+            sharh = (
+                f"اپ {side_fa} متفرقه عيار 740 "
+                f"کد مشتري {user.user_code} سفارش {order.id[:8]}"
+            )
         ok = create_sanad_buy_sale_gold(
             moshtari_code=int(moshtari),
             shamsi_year=j.year,
             shamsi_month=j.month,
             shamsi_day=j.day,
-            vazn=qty,
-            ayar=750,
+            vazn=vazn,
+            ayar=ayar,
             buy_or_sale=buy_or_sale,
             mazaneh=mazaneh,
             mazaneh_is_gram=0,
-            is_abshode=int(settings.TAHESAB_IS_ABSHODE),
+            is_abshode=is_abshode,
             mablagh_kol=total,
             sharh=sharh,
             factor_code=factor_code,
@@ -592,7 +617,7 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
         order.id,
         ok,
         moshtari,
-        qty,
+        qty if is_coin else vazn,
         total,
         order.side.value,
         is_coin,
