@@ -262,3 +262,15 @@ def test_disabled_skips_network():
     with patch("app.services.tahesab.httpx.Client") as mock_client_cls:
         assert tahesab.create_moshtari(name="a", tel="1", code_meli="2", db=MagicMock()) is None
         mock_client_cls.assert_not_called()
+
+
+@patch("app.services.tahesab.sync_accepted_order_to_tahesab")
+def test_catchup_syncs_unsynced_accepted(mock_sync):
+    tahesab.settings.TAHESAB_ENABLED = True
+    tahesab.settings.TAHESAB_TOKEN = "x"
+    order = SimpleNamespace(id="o1")
+    db = MagicMock()
+    db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [order]
+    n = tahesab.sync_unsynced_accepted_orders(db)
+    assert n == 1
+    mock_sync.assert_called_once()

@@ -821,17 +821,73 @@ def sync_accepted_order_isolated(order_id: str) -> None:
     from app.models_db import Order
 
     if not is_configured():
+        logger.warning("[tahesab] skip order %s — not configured", order_id)
         return
     db = SessionLocal()
     try:
         order = db.query(Order).filter(Order.id == order_id).first()
         if not order:
+            logger.warning("[tahesab] skip order %s — not found", order_id)
             return
+        logger.info(
+            "[tahesab] sync accepted order=%s status=%s factor=%s",
+            order.id,
+            getattr(order.status, "value", order.status),
+            order.tahesab_factor_code,
+        )
         sync_accepted_order_to_tahesab(db, order)
     except Exception:
         logger.exception("[tahesab] isolated order sync failed for %s", order_id)
     finally:
         db.close()
+
+
+def sync_unsynced_accepted_orders(db: Session, limit: int = 30) -> int:
+    """Catch-up: accepted app orders that never reached Tahesab outbox."""
+    from app.models_db import Order, OrderStatusEnum
+
+    if not is_configured():
+        return 0
+    orders = (
+        db.query(Order)
+        .filter(
+            Order.status == OrderStatusEnum.accepted,
+            Order.tahesab_factor_code.is_(None),
+            Order.user_id.isnot(None),
+        )
+        .order_by(Order.updated_at.asc())
+        .limit(limit)
+        .all()
+    )
+    n = 0
+    for order in orders:
+        try:
+            sync_accepted_order_to_tahesab(db, order)
+            n += 1
+        except Exception:
+            logger.exception("[tahesab] catch-up failed for order %s", order.id)
+    if n:
+        logger.info("[tahesab] catch-up queued/synced %s accepted orders", n)
+    return n
+
+
+async def catchup_worker_loop() -> None:
+    """Bridge + direct: retry accepted orders missing a Tahesab sanad."""
+    from app.db import SessionLocal
+
+    poll = 20.0
+    logger.info("[tahesab] catch-up worker started poll=%ss", poll)
+    while True:
+        try:
+            if is_configured():
+                db = SessionLocal()
+                try:
+                    sync_unsynced_accepted_orders(db)
+                finally:
+                    db.close()
+        except Exception:
+            logger.exception("[tahesab] catch-up worker tick failed")
+        await asyncio.sleep(poll)
 
 
 def normalize_dbname(name: str | None) -> str:

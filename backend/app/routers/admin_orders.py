@@ -2,6 +2,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect, Query, HTTPException
 from sqlalchemy.orm import Session
+import logging
 
 from app.db import get_db
 from app.ws_manager import manager
@@ -16,6 +17,8 @@ from app.services.orders import (
     order_to_admin_out,
 )
 from app.services import tahesab
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin/orders", tags=["admin-orders"])
 
@@ -54,6 +57,11 @@ async def decide_order(
 ):
     order = decide_order_db(db, order_id, decision.status)
     if decision.status == "accepted" and tahesab.is_configured():
+        logger.info("[tahesab] accept order=%s — queue moshtari/sanad now", order.id)
+        try:
+            tahesab.sync_accepted_order_to_tahesab(db, order)
+        except Exception:
+            logger.exception("[tahesab] inline accept sync failed for %s", order.id)
         background_tasks.add_task(tahesab.sync_accepted_order_isolated, order.id)
     await manager.broadcast_to_admins({"type": "order_updated", "order": order_to_dict(db, order)})
     return order_to_admin_out(db, order)
@@ -77,6 +85,11 @@ async def create_phone_order_endpoint(
     )
     # Phone orders are created already-accepted; sync sanad the same way.
     if order.status.value == "accepted" and tahesab.is_configured():
+        logger.info("[tahesab] phone order=%s — queue moshtari/sanad now", order.id)
+        try:
+            tahesab.sync_accepted_order_to_tahesab(db, order)
+        except Exception:
+            logger.exception("[tahesab] inline phone-order sync failed for %s", order.id)
         background_tasks.add_task(tahesab.sync_accepted_order_isolated, order.id)
     await manager.broadcast_to_admins({"type": "order_updated", "order": order_to_dict(db, order)})
     return order_to_admin_out(db, order)
