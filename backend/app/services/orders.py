@@ -47,7 +47,11 @@ from app.models_db import (
     TransactionReasonEnum,
 )
 from app.config import settings
-from app.gold_conversion import mesghal17_to_gram18, motaferaghe_to_gram18
+from app.gold_conversion import (
+    mesghal17_to_gram18,
+    motaferaghe_to_gram18,
+    motaferaghe_weight_to_ayar750,
+)
 from app.schemas.order import OrderOut
 from app.services.order_limits import get_effective_limits
 from app.services import price_cards
@@ -322,13 +326,18 @@ def get_user_balance(db: Session, user_id: str) -> dict:
         db.query(
             func.coalesce(func.sum(BalanceTransaction.gold_change), 0.0),
             func.coalesce(func.sum(BalanceTransaction.cash_change), 0.0),
+            func.max(BalanceTransaction.created_at),
         )
         .filter(BalanceTransaction.user_id == user_id)
         .filter(BalanceTransaction.goldbridge_item_id.is_(None))
         .first()
     )
-    gold_balance, cash_balance = result
-    return {"gold_balance": float(gold_balance), "cash_balance": float(cash_balance)}
+    gold_balance, cash_balance, updated_at = result
+    return {
+        "gold_balance": float(gold_balance),
+        "cash_balance": float(cash_balance),
+        "updated_at": updated_at,
+    }
 
 
 def get_user_coin_balances(db: Session, user_id: str) -> dict[int, float]:
@@ -449,7 +458,11 @@ def decide_order(db: Session, order_id: str, status: str) -> Order:
     if status == "accepted" and order.user_id:
         is_coin = order.amount_type.value == "count"
         quantity = order_quantity(order)
-        gold_change = quantity if order.side.value == "buy" else -quantity
+        gold_qty = quantity
+        if (not is_coin) and price_cards.is_motaferaghe_card(order.goldbridge_item_id):
+            # Physical متفرقه is عیار 740; مانده طلا is گرم ۱۸ / 750.
+            gold_qty = motaferaghe_weight_to_ayar750(quantity)
+        gold_change = gold_qty if order.side.value == "buy" else -gold_qty
 
         total_toman = order_total_toman(order)
         # buy: customer received it, now owes the shop -> negative

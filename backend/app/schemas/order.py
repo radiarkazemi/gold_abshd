@@ -69,8 +69,19 @@ class OrderDecisionIn(BaseModel):
 
 
 class BalanceOut(BaseModel):
-    gold_balance: float   # مثقال
+    gold_balance: float   # گرم ۱۸
     cash_balance: float   # تومان
+    # Last ledger change for this user (UTC). Drives «آخرین بروزرسانی حساب‌ها».
+    updated_at: Optional[datetime] = None
+
+    @field_serializer("updated_at")
+    def serialize_balance_updated_at(self, value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        text = value.isoformat()
+        if value.tzinfo is None and not text.endswith("Z") and "+" not in text[-6:]:
+            return f"{text}Z"
+        return text
 
 
 class CardCommissionOut(BaseModel):

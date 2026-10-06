@@ -2,16 +2,78 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
   max-width: 720px;
   margin: 0 0 10px;
-  padding: 6px 10px;
+  padding: 8px 10px;
   box-sizing: border-box;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
   background: var(--surface);
   flex-shrink: 0;
+}
+
+.refresh-bar__body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.refresh-bar__balances {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+.refresh-bar__balance {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.refresh-bar__balance-label {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+
+.refresh-bar__balance-value {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--gold-bright);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.refresh-bar__balance-value.cash-status--debtor {
+  color: var(--buy-bright);
+}
+
+.refresh-bar__balance-value.cash-status--creditor {
+  color: var(--sell-bright);
+}
+
+.refresh-bar__balance-unit {
+  font-family: var(--font-fa);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.refresh-bar__balance-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--hairline);
+  margin: 0 8px;
 }
 
 .refresh-bar__time {
@@ -48,8 +110,12 @@
 
 @media (max-width: 380px) {
   .refresh-bar {
-    padding: 5px 8px;
+    padding: 6px 8px;
     gap: 6px;
+  }
+
+  .refresh-bar__balance-value {
+    font-size: 13px;
   }
 
   .refresh-bar__time {

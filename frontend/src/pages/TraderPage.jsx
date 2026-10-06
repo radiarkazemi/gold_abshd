@@ -105,7 +105,7 @@ export default function TraderPage() {
       <div className={`trading-status-bar ${tradingOnline ? "is-online" : "is-offline"}`} />
 
       <main className="app__main app__main--with-tabbar">
-        <RefreshBar onRefresh={handleManualRefresh} />
+        <RefreshBar onRefresh={handleManualRefresh} refreshSignal={refreshKey} />
 
         {!tradingOnline && (
           <p className="trading-offline-note">
