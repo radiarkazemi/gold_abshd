@@ -968,11 +968,8 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
     total = _scale_amount(_order_total_toman(order))
     factor_code = _factor_code_for_order(order.id)
     is_coin = order.amount_type.value == "count"
-    side_fa = "خرید" if order.side.value == "buy" else "فروش"
-    sharh = (
-        f"اپ {side_fa} {'سکه' if is_coin else 'طلا'} "
-        f"کد مشتری {user.user_code} سفارش {order.id[:8]}"
-    )
+    # Short marker only — form fields already carry type / ayar / تسویه.
+    sharh = "اپ"
 
     if is_coin:
         mazaneh_mesghal = order.mesghal17_price_at_submit
@@ -1011,11 +1008,6 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
                 else:
                     mazaneh_mesghal = order.price_at_submit or 0
             mazaneh = _scale_amount(float(mazaneh_mesghal))
-        if is_abshode == 0:
-            sharh = (
-                f"اپ خريد متفرقه(بدون تسويه) عيار 740 "
-                f"کد مشتري {user.user_code} سفارش {order.id[:8]}"
-            )
         ok = create_sanad_buy_sale_gold(
             moshtari_code=int(moshtari),
             shamsi_year=j.year,

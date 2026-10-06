@@ -353,11 +353,11 @@ export function buildOrdersReceiptHtml(orders, { dateFrom, dateTo, priceLabelMod
   <p class="summary">
     مانده نهایی طلا: ${formatBedBes(goldBalance, { digits: 3 })}<br />
     مانده نهایی نقد: ${formatBedBes(cashBalance, { digits: 0 })}<br />
-    تعداد اسناد: ${fa(docs.length)} (شامل پرداخت پول به طرف حساب)
+    تعداد اسناد: ${fa(docs.length)}
   </p>
   <p class="legend">
     بد = بدهکار &nbsp;|&nbsp; بس = بستانکار &nbsp;|&nbsp;
-    بعد از خرید از مشتری، سند «پرداخت پول به طرف حساب» نیز ثبت می‌شود.
+    فروش متفرقه بدون تسویه است؛ پرداخت پول فقط پس از ثبت در ته‌حساب نمایش داده می‌شود.
   </p>
   <p class="footer">این گزارش در تاریخ ${formatDate(new Date().toISOString())} صادر شده است.</p>
   </div>

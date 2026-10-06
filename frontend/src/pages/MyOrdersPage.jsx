@@ -12,7 +12,7 @@ import { useTheme } from "../context/ThemeContext";
 import BottomTabBar from "../components/BottomTabBar";
 import JalaliDateInput from "../components/JalaliDateInput";
 import ReceiptPreviewModal from "../components/ReceiptPreviewModal";
-import { orderExplanationFull, orderSideShort, sortOrdersByTimeDesc } from "../utils/orderLabels";
+import { orderSideShort, sortOrdersByTimeDesc } from "../utils/orderLabels";
 
 const AMOUNT_LABEL = { weight: "گرم ۱۸", amount: "تومان" };
 const STATUS_LABEL = {
@@ -254,10 +254,6 @@ export default function MyOrdersPage() {
                       : fa(Math.round(order.value * order.price_at_submit))}{" "}
                     تومان
                   </span>
-                </div>
-                <div className="history-card__row">
-                  <span className="history-card__row-label">شرح ته‌حساب</span>
-                  <span className="history-card__row-value">{orderExplanationFull(order)}</span>
                 </div>
                 {order.description && (
                   <div className="history-card__row">

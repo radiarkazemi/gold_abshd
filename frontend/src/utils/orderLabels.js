@@ -48,27 +48,11 @@ export function orderLedgerGoldWeight(order) {
 }
 
 /**
- * Complete PDF / Tahesab-style explanation for the trade sanad.
+ * Short app شرح سند — no customer/order/ayar dump.
+ * Tahesab form fields already carry عیار / بدون تسویه.
  */
-export function orderExplanationFull(order) {
-  const kind = orderKindKey(order);
-  const code = order?.customer_code || order?.user_code || "";
-  const shortId = String(order?.id || "").slice(0, 8);
-  const codePart = code ? ` کد مشتری ${code}` : "";
-  const orderPart = shortId ? ` سفارش ${shortId}` : "";
-
-  if (kind === "motaferaghe") {
-    return `اپ خرید متفرقه(بدون تسویه) عیار 740${codePart}${orderPart}`;
-  }
-  if (kind === "kartkhan") {
-    return `اپ خرید نقد کارتخوان${codePart}${orderPart}`;
-  }
-  if (kind === "coin") {
-    const sideFa = order?.side === "buy" ? "خرید" : "فروش";
-    return `اپ ${sideFa} سکه${codePart}${orderPart}`;
-  }
-  const sideFa = order?.side === "buy" ? "خرید" : "فروش";
-  return `اپ ${sideFa} طلا آبشده عیار 750${codePart}${orderPart}`;
+export function orderExplanationFull(_order) {
+  return "اپ";
 }
 
 /** Tahesab doc type label (shop-centric, like the Windows books). */
@@ -81,13 +65,8 @@ export function orderTahesabDocType(order) {
   return order?.side === "buy" ? "فروش طلا" : "خرید طلا";
 }
 
-export function paymentExplanationFull(order) {
-  const code = order?.customer_code || order?.user_code || "";
-  const shortId = String(order?.id || "").slice(0, 8);
-  const codePart = code ? ` کد مشتری ${code}` : "";
-  const orderPart = shortId ? ` سفارش ${shortId}` : "";
-  const tag = orderKindTag(order);
-  return `اپ پرداخت پول به طرف حساب (${tag})${codePart}${orderPart}`;
+export function paymentExplanationFull(_order) {
+  return "اپ";
 }
 
 /**
@@ -110,8 +89,10 @@ export function formatBedBes(value, { digits = 0 } = {}) {
  *
  * Customer card signs (matching shop books):
  *   app buy  (فروش طلا):     gold +, cash −
- *   app sell (خرید متفرقه):  gold −, cash +
- *   پرداخت پول به طرف حساب: cash −  (settle what we owe after buying)
+ *   app sell (خرید متفرقه):  gold −, cash +  (بدون تسویه — no auto payment)
+ *
+ * پرداخت پول به طرف حساب is NOT invented here for متفرقه: that cash
+ * settlement only appears after it is entered in Tahesab.
  */
 export function buildCustomerLedgerDocs(orders, { priceLabelMode = "mesghal_and_gram18" } = {}) {
   const sorted = sortOrdersByTimeAsc(orders || []);
@@ -126,6 +107,7 @@ export function buildCustomerLedgerDocs(orders, { priceLabelMode = "mesghal_and_
       priceLabelMode === "gram18_only"
         ? order.price_at_submit
         : order.mesghal17_price_at_submit ?? order.price_at_submit;
+    const kind = orderKindKey(order);
 
     if (order.side === "buy") {
       // Shop sold to customer
@@ -151,7 +133,7 @@ export function buildCustomerLedgerDocs(orders, { priceLabelMode = "mesghal_and_
         status: order.status,
       });
     } else if (order.side === "sell") {
-      // Shop bought from customer
+      // Shop bought from customer — cash credit stays until real تسویه
       gold -= weight;
       cash += money;
       docs.push({
@@ -174,28 +156,32 @@ export function buildCustomerLedgerDocs(orders, { priceLabelMode = "mesghal_and_
         status: order.status,
       });
 
-      // Matching Tahesab "پرداخت پول به طرف حساب" after we buy from them
-      cash -= money;
-      const payAt = order.updated_at || order.created_at;
-      docs.push({
-        id: `${order.id}:pay`,
-        orderId: order.id,
-        created_at: payAt,
-        docType: "پرداخت پول به طرف حساب",
-        sideShort: `پرداخت (${orderKindTag(order)})`,
-        explanation: paymentExplanationFull(order),
-        weight: 0,
-        mazaneh: null,
-        money,
-        goldDebit: 0,
-        goldCredit: 0,
-        cashDebit: money,
-        cashCredit: 0,
-        goldBalance: gold,
-        cashBalance: cash,
-        kind: "payment",
-        status: order.status,
-      });
+      // متفرقه is بدون تسویه: do not invent پرداخت until Tahesab has it.
+      // Other app sells historically settled in the PDF; keep that only
+      // when it is not متفرقه.
+      if (kind !== "motaferaghe") {
+        cash -= money;
+        const payAt = order.updated_at || order.created_at;
+        docs.push({
+          id: `${order.id}:pay`,
+          orderId: order.id,
+          created_at: payAt,
+          docType: "پرداخت پول به طرف حساب",
+          sideShort: `پرداخت (${orderKindTag(order)})`,
+          explanation: paymentExplanationFull(order),
+          weight: 0,
+          mazaneh: null,
+          money,
+          goldDebit: 0,
+          goldCredit: 0,
+          cashDebit: money,
+          cashCredit: 0,
+          goldBalance: gold,
+          cashBalance: cash,
+          kind: "payment",
+          status: order.status,
+        });
+      }
     }
   }
 

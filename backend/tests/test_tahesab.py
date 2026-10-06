@@ -369,9 +369,7 @@ def test_sync_motaferaghe_sell_is_shop_buy_ayar_740(mock_sync_user, mock_sanad):
     assert kwargs["vazn"] == 2.0  # physical grams unchanged
     assert kwargs["mablagh_kol"] == 2.0 * 10_000_000 * 10  # وزن × قیمت گرم × scale
     assert kwargs["mazaneh"] == 43_900_000 * 10  # مثقال۱۷ = گرم × 4.39
-    assert "متفرقه" in kwargs["sharh"]
-    assert "بدون تسويه" in kwargs["sharh"] or "بدون تسویه" in kwargs["sharh"]
-    assert "740" in kwargs["sharh"]
+    assert kwargs["sharh"] == "اپ"
 
 
 @patch("app.services.tahesab.create_sanad_buy_sale_gold")
