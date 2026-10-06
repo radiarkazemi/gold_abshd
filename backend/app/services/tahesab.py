@@ -481,6 +481,7 @@ def _queue_pending_order_sanads(db: Session, user) -> None:
             Order.user_id == user.id,
             Order.status == OrderStatusEnum.accepted,
             Order.tahesab_factor_code.is_(None),
+            Order.tahesab_sync_needed.is_(True),
         )
         .order_by(Order.created_at.asc())
         .all()
