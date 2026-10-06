@@ -1,7 +1,9 @@
 import { MOTAFEREGHE_ITEM_ID, NAGHD_KARTKHAN_ITEM_ID } from "./priceCommission";
-import { orderTotalMoney } from "./orderCalc";
+import { orderGoldWeight, orderTotalMoney } from "./orderCalc";
 
 const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
+const MOTAFEREGHE_AYAR = 740;
+const ABSHODE_AYAR = 750;
 
 /** Card kind for special / default gold orders. */
 export function orderKindKey(order) {
@@ -34,8 +36,19 @@ export function orderSideShort(order) {
 }
 
 /**
- * Complete PDF / Tahesab-style explanation.
- * Matches the shop-centric sanad wording where relevant.
+ * Weight that hits ته حساب طلا (عیار ۷۵۰).
+ * متفرقه physical 740g is scaled by 740/750 like the shop books.
+ */
+export function orderLedgerGoldWeight(order) {
+  const w = Number(orderGoldWeight(order)) || 0;
+  if (orderKindKey(order) === "motaferaghe") {
+    return (w * MOTAFEREGHE_AYAR) / ABSHODE_AYAR;
+  }
+  return w;
+}
+
+/**
+ * Complete PDF / Tahesab-style explanation for the trade sanad.
  */
 export function orderExplanationFull(order) {
   const kind = orderKindKey(order);
@@ -45,7 +58,6 @@ export function orderExplanationFull(order) {
   const orderPart = shortId ? ` سفارش ${shortId}` : "";
 
   if (kind === "motaferaghe") {
-    // App sell → shop خرید متفرقه(بدون تسویه)
     return `اپ خرید متفرقه(بدون تسویه) عیار 740${codePart}${orderPart}`;
   }
   if (kind === "kartkhan") {
@@ -59,35 +71,135 @@ export function orderExplanationFull(order) {
   return `اپ ${sideFa} طلا آبشده عیار 750${codePart}${orderPart}`;
 }
 
+/** Tahesab doc type label (shop-centric, like the Windows books). */
+export function orderTahesabDocType(order) {
+  const kind = orderKindKey(order);
+  if (kind === "motaferaghe") return "خرید متفرقه";
+  if (kind === "kartkhan") return "فروش طلا (کارتخوان)";
+  if (kind === "coin") return order?.side === "buy" ? "فروش سکه" : "خرید سکه";
+  // App buy → shop sold gold; app sell → shop bought gold
+  return order?.side === "buy" ? "فروش طلا" : "خرید طلا";
+}
+
+export function paymentExplanationFull(order) {
+  const code = order?.customer_code || order?.user_code || "";
+  const shortId = String(order?.id || "").slice(0, 8);
+  const codePart = code ? ` کد مشتری ${code}` : "";
+  const orderPart = shortId ? ` سفارش ${shortId}` : "";
+  const tag = orderKindTag(order);
+  return `اپ پرداخت پول به طرف حساب (${tag})${codePart}${orderPart}`;
+}
+
 /**
- * Cash that entered Tahesab for this order (مبلغ کل سند).
- * buy  → shop receives from customer (دریافتی)
- * sell → shop pays customer (پرداختی) e.g. متفرقه
+ * Format a running balance with بد / بس (customer card convention):
+ * positive = بس (creditor), negative = بد (debtor).
  */
-export function orderTahesabCash(order) {
-  const money = Math.round(orderTotalMoney(order) || 0);
-  if (order?.side === "buy") {
-    return {
-      label: "مبلغ دریافتی از مشتری (سند ته‌حساب)",
-      shortLabel: "دریافتی از مشتری",
-      amount: money,
-      direction: "in",
-    };
+export function formatBedBes(value, { digits = 0 } = {}) {
+  const n = Number(value) || 0;
+  if (Math.abs(n) < 1e-9) return "۰ — تسویه";
+  const abs = Math.abs(n);
+  const amount =
+    digits > 0
+      ? abs.toLocaleString("fa-IR", { maximumFractionDigits: digits, minimumFractionDigits: 0 })
+      : Math.round(abs).toLocaleString("fa-IR");
+  return `${amount} ${n > 0 ? "بس" : "بد"}`;
+}
+
+/**
+ * Build Tahesab-style ledger docs for the PDF.
+ *
+ * Customer card signs (matching shop books):
+ *   app buy  (فروش طلا):     gold +, cash −
+ *   app sell (خرید متفرقه):  gold −, cash +
+ *   پرداخت پول به طرف حساب: cash −  (settle what we owe after buying)
+ */
+export function buildCustomerLedgerDocs(orders, { priceLabelMode = "mesghal_and_gram18" } = {}) {
+  const sorted = sortOrdersByTimeAsc(orders || []);
+  const docs = [];
+  let gold = 0;
+  let cash = 0;
+
+  for (const order of sorted) {
+    const weight = orderLedgerGoldWeight(order);
+    const money = Math.round(orderTotalMoney(order) || 0);
+    const mazaneh =
+      priceLabelMode === "gram18_only"
+        ? order.price_at_submit
+        : order.mesghal17_price_at_submit ?? order.price_at_submit;
+
+    if (order.side === "buy") {
+      // Shop sold to customer
+      gold += weight;
+      cash -= money;
+      docs.push({
+        id: `${order.id}:trade`,
+        orderId: order.id,
+        created_at: order.created_at,
+        docType: orderTahesabDocType(order),
+        sideShort: orderSideShort(order),
+        explanation: orderExplanationFull(order),
+        weight,
+        mazaneh,
+        money,
+        goldDebit: 0,
+        goldCredit: weight,
+        cashDebit: money,
+        cashCredit: 0,
+        goldBalance: gold,
+        cashBalance: cash,
+        kind: "trade",
+        status: order.status,
+      });
+    } else if (order.side === "sell") {
+      // Shop bought from customer
+      gold -= weight;
+      cash += money;
+      docs.push({
+        id: `${order.id}:trade`,
+        orderId: order.id,
+        created_at: order.created_at,
+        docType: orderTahesabDocType(order),
+        sideShort: orderSideShort(order),
+        explanation: orderExplanationFull(order),
+        weight,
+        mazaneh,
+        money,
+        goldDebit: weight,
+        goldCredit: 0,
+        cashDebit: 0,
+        cashCredit: money,
+        goldBalance: gold,
+        cashBalance: cash,
+        kind: "trade",
+        status: order.status,
+      });
+
+      // Matching Tahesab "پرداخت پول به طرف حساب" after we buy from them
+      cash -= money;
+      const payAt = order.updated_at || order.created_at;
+      docs.push({
+        id: `${order.id}:pay`,
+        orderId: order.id,
+        created_at: payAt,
+        docType: "پرداخت پول به طرف حساب",
+        sideShort: `پرداخت (${orderKindTag(order)})`,
+        explanation: paymentExplanationFull(order),
+        weight: 0,
+        mazaneh: null,
+        money,
+        goldDebit: 0,
+        goldCredit: 0,
+        cashDebit: money,
+        cashCredit: 0,
+        goldBalance: gold,
+        cashBalance: cash,
+        kind: "payment",
+        status: order.status,
+      });
+    }
   }
-  if (order?.side === "sell") {
-    return {
-      label: "مبلغ پرداختی به مشتری (سند ته‌حساب)",
-      shortLabel: "پرداختی به مشتری",
-      amount: money,
-      direction: "out",
-    };
-  }
-  return {
-    label: "مبلغ سند ته‌حساب",
-    shortLabel: "مبلغ سند",
-    amount: money,
-    direction: "none",
-  };
+
+  return { docs, goldBalance: gold, cashBalance: cash };
 }
 
 export function sortOrdersByTimeAsc(orders) {

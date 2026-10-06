@@ -1,21 +1,21 @@
 import { formatTehranDateTime, formatTehranMonthDayTime } from "./tehranTime";
 import {
+  buildCustomerLedgerDocs,
+  formatBedBes,
   orderExplanationFull,
+  orderLedgerGoldWeight,
   orderSideShort,
-  orderTahesabCash,
-  sortOrdersByTimeAsc,
+  orderTahesabDocType,
+  paymentExplanationFull,
 } from "./orderLabels";
+import { orderTotalMoney } from "./orderCalc";
 
 function fa(n, opts) {
   return Number(n).toLocaleString("fa-IR", opts);
 }
 
-function orderWeight(order) {
-  return order.amount_type === "weight" ? order.value : order.value / order.price_at_submit;
-}
-
 function orderMoney(order) {
-  return order.amount_type === "amount" ? order.value : order.value * order.price_at_submit;
+  return orderTotalMoney(order);
 }
 
 function formatDate(iso) {
@@ -104,10 +104,6 @@ function unitPriceForPrint(order, priceLabelMode = "mesghal_and_gram18") {
   };
 }
 
-/**
- * Print via a hidden iframe so closing the print dialog does not
- * dismiss the PWA / leave the user without an app window.
- */
 function printHtml(html) {
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
@@ -142,29 +138,51 @@ function printHtml(html) {
 }
 
 export function buildOrderReceiptHtml(order, { priceLabelMode = "mesghal_and_gram18" } = {}) {
-  const weight = orderWeight(order);
-  const money = orderMoney(order);
+  const { docs } = buildCustomerLedgerDocs([order], { priceLabelMode });
+  const trade = docs.find((d) => d.kind === "trade") || docs[0];
+  const payment = docs.find((d) => d.kind === "payment");
+  const weight = orderLedgerGoldWeight(order);
+  const money = Math.round(orderMoney(order));
   const unit = unitPriceForPrint(order, priceLabelMode);
-  const cash = orderTahesabCash(order);
   const sideLabel = orderSideShort(order);
-  const explanation = orderExplanationFull(order);
 
   const rows = [
     ["نوع سفارش", sideLabel],
-    ["شرح سند ته‌حساب", explanation],
+    ["نوع سند ته‌حساب", orderTahesabDocType(order)],
+    ["شرح سند ته‌حساب", orderExplanationFull(order)],
     ["وضعیت", STATUS_LABEL[order.status] || order.status],
-    ["وزن طلا", `${fa(weight, { maximumFractionDigits: 3 })} گرم`],
+    ["وزن (عیار ۷۵۰)", `${fa(weight, { maximumFractionDigits: 3 })} گرم`],
     ...(unit.value != null
       ? [[unit.label, `${fa(Math.round(unit.value))} تومان`]]
       : []),
-    ["مبلغ کل سفارش", `${fa(Math.round(money))} تومان`],
-    [cash.label, `${fa(cash.amount)} تومان`],
+    ["مبلغ سند", `${fa(money)} تومان`],
+    [
+      "ته حساب طلا بعد از سند",
+      trade ? formatBedBes(trade.goldBalance, { digits: 3 }) : "—",
+    ],
+    [
+      "ته حساب نقد بعد از سند",
+      trade ? formatBedBes(trade.cashBalance, { digits: 0 }) : "—",
+    ],
+  ];
+
+  if (payment) {
+    rows.push(
+      ["سند تسویه", "پرداخت پول به طرف حساب"],
+      ["شرح پرداخت", paymentExplanationFull(order)],
+      ["مبلغ پرداخت", `${fa(payment.money)} تومان`],
+      ["ته حساب طلا بعد از پرداخت", formatBedBes(payment.goldBalance, { digits: 3 })],
+      ["ته حساب نقد بعد از پرداخت", formatBedBes(payment.cashBalance, { digits: 0 })]
+    );
+  }
+
+  rows.push(
     ...(order.customer_name ? [["مشتری", `${order.customer_name} #${order.customer_code}`]] : []),
     ["شماره سفارش", order.id],
     ["تاریخ و ساعت", formatDate(order.created_at)],
     ...(order.is_manual ? [["نوع ثبت", "دستی (حواله تلفنی)"]] : []),
-    ...(order.description ? [["توضیحات کاربر", order.description]] : []),
-  ];
+    ...(order.description ? [["توضیحات کاربر", order.description]] : [])
+  );
 
   const rowsHtml = rows
     .map(([label, value]) => `<tr><td class="label">${label}</td><td class="value">${value}</td></tr>`)
@@ -191,22 +209,9 @@ export function buildOrderReceiptHtml(order, { priceLabelMode = "mesghal_and_gra
     max-width: 100%;
     overflow-x: hidden;
   }
-  h1 {
-    font-size: clamp(16px, 4.2vw, 20px);
-    text-align: center;
-    margin: 0 0 4px;
-  }
-  .sub {
-    text-align: center;
-    color: #666;
-    font-size: clamp(11px, 3vw, 12px);
-    margin-bottom: clamp(16px, 4vw, 28px);
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-  }
+  h1 { font-size: clamp(16px, 4.2vw, 20px); text-align: center; margin: 0 0 4px; }
+  .sub { text-align: center; color: #666; font-size: clamp(11px, 3vw, 12px); margin-bottom: clamp(16px, 4vw, 28px); }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
   td {
     padding: clamp(8px, 2.2vw, 12px) clamp(4px, 1.5vw, 8px);
     border-bottom: 1px solid #ddd;
@@ -215,14 +220,9 @@ export function buildOrderReceiptHtml(order, { priceLabelMode = "mesghal_and_gra
     overflow-wrap: anywhere;
     vertical-align: top;
   }
-  td.label { color: #666; width: 38%; }
-  td.value { font-weight: 600; width: 62%; }
-  .footer {
-    margin-top: clamp(18px, 4vw, 30px);
-    text-align: center;
-    font-size: clamp(10px, 2.8vw, 11px);
-    color: #999;
-  }
+  td.label { color: #666; width: 40%; }
+  td.value { font-weight: 600; width: 60%; }
+  .footer { margin-top: clamp(18px, 4vw, 30px); text-align: center; font-size: clamp(10px, 2.8vw, 11px); color: #999; }
   ${watermarkCss()}
   @media print {
     body { padding: 8mm; }
@@ -243,58 +243,30 @@ export function buildOrderReceiptHtml(order, { priceLabelMode = "mesghal_and_gra
 }
 
 export function buildOrdersReceiptHtml(orders, { dateFrom, dateTo, priceLabelMode = "mesghal_and_gram18" } = {}) {
-  const unitLabel = priceLabelMode === "gram18_only" ? "مظنه (گرم۱۸)" : "مظنه (مثقال۱۷)";
-  const sorted = sortOrdersByTimeAsc(orders);
+  const unitLabel = priceLabelMode === "gram18_only" ? "مظنه" : "مظنه ۱۷";
+  const { docs, goldBalance, cashBalance } = buildCustomerLedgerDocs(orders, { priceLabelMode });
 
-  const rowsHtml = sorted
-    .map((order) => {
-      const weight = orderWeight(order);
-      const money = orderMoney(order);
-      const unit = unitPriceForPrint(order, priceLabelMode);
-      const cash = orderTahesabCash(order);
-      const sideLabel = orderSideShort(order);
-      const explanation = orderExplanationFull(order);
-      return `<tr>
-        <td class="time" dir="ltr">${formatStamp(order.created_at)}</td>
-        <td>${sideLabel}</td>
-        <td class="explain">${explanation}</td>
-        <td>${STATUS_LABEL[order.status] || order.status}</td>
-        <td>${fa(weight, { maximumFractionDigits: 3 })}</td>
-        <td>${unit.value != null ? fa(Math.round(unit.value)) : "—"}</td>
-        <td>${fa(Math.round(money))}</td>
-        <td>${fa(cash.amount)}<div class="cash-dir">${cash.shortLabel}</div></td>
+  const rowsHtml = docs
+    .map((doc, idx) => {
+      const isPay = doc.kind === "payment";
+      return `<tr class="${isPay ? "row-pay" : "row-trade"}">
+        <td class="num">${fa(idx + 1)}</td>
+        <td class="time" dir="ltr">${formatStamp(doc.created_at)}</td>
+        <td>${doc.docType}</td>
+        <td class="explain">${doc.explanation}</td>
+        <td>${doc.weight ? fa(doc.weight, { maximumFractionDigits: 3 }) : "—"}</td>
+        <td>${doc.mazaneh != null ? fa(Math.round(doc.mazaneh)) : "—"}</td>
+        <td>${doc.money ? fa(doc.money) : "—"}</td>
+        <td class="bal">${formatBedBes(doc.goldBalance, { digits: 3 })}</td>
+        <td class="bal">${formatBedBes(doc.cashBalance, { digits: 0 })}</td>
       </tr>`;
     })
     .join("");
 
   const rangeLabel =
     dateFrom || dateTo
-      ? `از ${dateFrom ? formatDate(dateFrom) : "ابتدا"} تا ${dateTo ? formatDate(dateTo) : "امروز"}`
+      ? `از ${dateFrom || "ابتدا"} تا ${dateTo || "امروز"}`
       : "همه سفارش‌ها";
-
-  const totals = sorted.reduce((acc, order) => {
-    const weight = orderWeight(order);
-    const money = orderMoney(order);
-    if (order.side === "buy") {
-      acc.gold += weight;
-      acc.cashIn += money;
-      acc.cash -= money;
-    } else if (order.side === "sell") {
-      acc.gold -= weight;
-      acc.cashOut += money;
-      acc.cash += money;
-    }
-    return acc;
-  }, { gold: 0, cash: 0, cashIn: 0, cashOut: 0 });
-
-  const goldSummary =
-    totals.gold > 0 ? `${fa(totals.gold, { maximumFractionDigits: 3 })} گرم بستانکار`
-    : totals.gold < 0 ? `${fa(Math.abs(totals.gold), { maximumFractionDigits: 3 })} گرم بدهکار`
-    : "۰ گرم — تسویه";
-  const cashSummary =
-    totals.cash > 0 ? `${fa(Math.round(totals.cash))} تومان بستانکار`
-    : totals.cash < 0 ? `${fa(Math.abs(Math.round(totals.cash)))} تومان بدهکار`
-    : "۰ تومان — تسویه";
 
   return `
 <!DOCTYPE html>
@@ -320,35 +292,38 @@ export function buildOrdersReceiptHtml(orders, { dateFrom, dateTo, priceLabelMod
   h1 { font-size: clamp(16px, 4.2vw, 20px); text-align: center; margin: 0 0 4px; }
   .sub { text-align: center; color: #666; font-size: clamp(11px, 3vw, 12px); margin-bottom: clamp(16px, 4vw, 28px); }
   .table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  table { width: 100%; min-width: 720px; border-collapse: collapse; }
+  table { width: 100%; min-width: 780px; border-collapse: collapse; }
   th, td {
-    padding: clamp(6px, 1.6vw, 8px) clamp(3px, 1vw, 5px);
+    padding: clamp(5px, 1.4vw, 7px) clamp(2px, 0.9vw, 4px);
     border-bottom: 1px solid #ddd;
-    font-size: clamp(9px, 2.3vw, 11px);
+    font-size: clamp(8.5px, 2.2vw, 10.5px);
     text-align: center;
     word-break: break-word;
     vertical-align: top;
   }
   th { color: #666; font-weight: 600; background: #f7f2e4; }
-  td.time { white-space: nowrap; font-variant-numeric: tabular-nums; }
-  td.explain { text-align: right; font-size: clamp(8.5px, 2.1vw, 10.5px); font-weight: 500; color: #333; }
-  .cash-dir { font-size: 9px; font-weight: 500; color: #777; margin-top: 2px; }
+  td.time, td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  td.explain { text-align: right; font-size: clamp(8px, 2vw, 10px); font-weight: 500; color: #333; }
+  td.bal { font-weight: 700; white-space: nowrap; }
+  tr.row-pay { background: #f3f8ff; }
+  tr.row-pay td.explain { color: #1a4a7a; }
   .summary {
     margin-top: clamp(14px, 3vw, 20px);
     text-align: right;
     font-size: clamp(11px, 3vw, 13px);
     font-weight: 700;
-    line-height: 1.7;
+    line-height: 1.8;
   }
+  .legend { font-size: 11px; font-weight: 500; color: #666; margin-top: 8px; }
   .footer { margin-top: clamp(18px, 4vw, 30px); text-align: center; font-size: clamp(10px, 2.8vw, 11px); color: #999; }
   ${watermarkCss()}
   @media print {
-    body { padding: 6mm; }
+    body { padding: 5mm; }
     .table-wrap { overflow: visible; }
-    table { min-width: 0; font-size: 9px; }
-    th, td { font-size: 9px; }
-    td.explain { font-size: 8.5px; }
-    @page { margin: 8mm; size: auto; }
+    table { min-width: 0; }
+    th, td { font-size: 8.5px; }
+    td.explain { font-size: 8px; }
+    @page { margin: 7mm; size: auto; }
   }
 </style>
 </head>
@@ -356,29 +331,33 @@ export function buildOrdersReceiptHtml(orders, { dateFrom, dateTo, priceLabelMod
   ${watermarkHtml()}
   <div class="report-body">
   <h1>آبشده قصر طلا</h1>
-  <p class="sub">گزارش سفارش‌ها (به‌ترتیب زمان) - ${rangeLabel}</p>
+  <p class="sub">گزارش اسناد ته‌حساب (به‌ترتیب زمان) - ${rangeLabel}</p>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
+          <th>#</th>
           <th>زمان</th>
-          <th>نوع</th>
-          <th>شرح سند ته‌حساب</th>
-          <th>وضعیت</th>
+          <th>نوع سند</th>
+          <th>شرح سند</th>
           <th>وزن</th>
           <th>${unitLabel}</th>
-          <th>مبلغ کل</th>
-          <th>مبلغ سند ته‌حساب</th>
+          <th>مبلغ سند</th>
+          <th>ته حساب طلا</th>
+          <th>ته حساب نقد</th>
         </tr>
       </thead>
       <tbody>${rowsHtml}</tbody>
     </table>
   </div>
   <p class="summary">
-    مجموع طلا: ${goldSummary}<br />
-    مجموع نقدی خالص: ${cashSummary}<br />
-    دریافتی از مشتری: ${fa(Math.round(totals.cashIn))} تومان — پرداختی به مشتری: ${fa(Math.round(totals.cashOut))} تومان<br />
-    تعداد سفارش‌ها: ${fa(sorted.length)}
+    مانده نهایی طلا: ${formatBedBes(goldBalance, { digits: 3 })}<br />
+    مانده نهایی نقد: ${formatBedBes(cashBalance, { digits: 0 })}<br />
+    تعداد اسناد: ${fa(docs.length)} (شامل پرداخت پول به طرف حساب)
+  </p>
+  <p class="legend">
+    بد = بدهکار &nbsp;|&nbsp; بس = بستانکار &nbsp;|&nbsp;
+    بعد از خرید از مشتری، سند «پرداخت پول به طرف حساب» نیز ثبت می‌شود.
   </p>
   <p class="footer">این گزارش در تاریخ ${formatDate(new Date().toISOString())} صادر شده است.</p>
   </div>
