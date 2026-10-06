@@ -851,14 +851,14 @@ def _gold_sanad_specs(order) -> tuple[float, float, int, int]:
 
     فروش متفرقه: shop buy of 740-ayar scrap. Tahesab form is
     خرید متفرقه(بدون تسویه): is_abshode=0, ayar=740, empty zaman_tasvie.
-    Vazn stays the physical grams (do not ÷4.39). The 4.39 conversion
-    belongs on the price: mazaneh_is_gram=1 and mazaneh = گرم price.
+    Vazn stays the physical grams. مبلغ کل stays گرم × قیمت گرم.
+    مظنه is مثقال ۱۷ (gram price × 4.39) with mazaneh_is_gram=0.
     """
     from app.services.price_cards import is_motaferaghe_card
 
     qty = _order_quantity(order)
     if is_motaferaghe_card(getattr(order, "goldbridge_item_id", None)):
-        return qty, 740.0, 0, 1
+        return qty, 740.0, 0, 0
     return qty, 750.0, int(settings.TAHESAB_IS_ABSHODE), 0
 
 
@@ -967,7 +967,14 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
         else:
             mazaneh_mesghal = order.mesghal17_price_at_submit
             if mazaneh_mesghal is None:
-                mazaneh_mesghal = order.price_at_submit or 0
+                from app.gold_conversion import MOTAFEREGHE_TO_GRAM18
+                from app.services.price_cards import is_motaferaghe_card
+
+                # متفرقه stores price_at_submit as گرم; مظنه needs مثقال۱۷.
+                if is_motaferaghe_card(getattr(order, "goldbridge_item_id", None)):
+                    mazaneh_mesghal = float(order.price_at_submit or 0) * MOTAFEREGHE_TO_GRAM18
+                else:
+                    mazaneh_mesghal = order.price_at_submit or 0
             mazaneh = _scale_amount(float(mazaneh_mesghal))
         if is_abshode == 0:
             sharh = (

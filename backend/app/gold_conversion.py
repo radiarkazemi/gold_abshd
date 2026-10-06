@@ -12,9 +12,9 @@ is tracked as عیار 750 (گرم ۱۸), so a 740 weight is scaled by 740/750
 before it is added to مانده طلا.
 
 Tahesab خرید متفرقه(بدون تسویه) takes the physical weight in grams
-and the price per gram (MazanehIsMesghalOrGeram=1). The ÷4.39
-conversion is applied to the مثقال price, not to the weight:
-    مظنه گرم = مثقال۱۷ / 4.39
+and مظنه as مثقال ۱۷ (MazanehIsMesghalOrGeram=0). مبلغ کل stays
+گرم × قیمت گرم; مظنه is the same unit price × 4.39:
+    مظنه مثقال۱۷ = قیمت گرم × 4.39
 """
 
 # Keep in sync with frontend/src/utils/priceCommission.js
