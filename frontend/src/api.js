@@ -394,8 +394,9 @@ export async function fetchMyTransactions() {
   return res.json();
 }
 
-export async function fetchMyBalance() {
-  const res = await fetch(`${API_BASE}/api/my/balance`, {
+export async function fetchMyBalance({ refresh = false } = {}) {
+  const qs = refresh ? "?refresh=1" : "";
+  const res = await fetch(`${API_BASE}/api/my/balance${qs}`, {
     headers: { ...authHeaders() },
   });
   if (!res.ok) throw new Error("Failed to fetch balance");

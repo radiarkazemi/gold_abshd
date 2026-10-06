@@ -38,10 +38,9 @@ _PERSIAN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "012
 MANDE_METHOD = "getmandehesabbycode"
 MANDE_BATCH_SIZE = 80
 AGENT_ONLINE_GAP_SECONDS = 30 * 60
+MANDE_STALE_SECONDS = 5 * 60
 SETTING_AGENT_LAST_SEEN = "tahesab_agent_last_seen"
 SETTING_MANDE_REFRESH_DAY = "tahesab_mande_refresh_day"
-# While this equals today's Tehran date, skip مانده pulls so a one-shot
-# remaining wipe is not overwritten by stale Tahesab books.
 SETTING_MANDE_HOLD_DAY = "tahesab_mande_hold_day"
 TEHRAN_TZ = ZoneInfo("Asia/Tehran")
 
@@ -252,11 +251,16 @@ def mande_refresh_is_held(db: Session) -> bool:
 
 
 def hold_mande_refresh_today(db: Session) -> None:
-    """Block مانده pulls for the rest of the Tehran day (remaining reset)."""
+    """Legacy one-shot hold. Remaining now refreshes from Tahesab again."""
     today = _tehran_today_iso()
     _set_app_setting(db, SETTING_MANDE_HOLD_DAY, today)
     _set_app_setting(db, SETTING_MANDE_REFRESH_DAY, today)
     _set_app_setting(db, SETTING_AGENT_LAST_SEEN, datetime.utcnow().isoformat())
+
+
+def clear_mande_hold(db: Session) -> None:
+    """Allow مانده pulls after a remaining wipe."""
+    _set_app_setting(db, SETTING_MANDE_HOLD_DAY, "")
 
 
 def cancel_pending_mande_jobs(db: Session) -> int:
@@ -301,8 +305,6 @@ def cancel_pending_mande_jobs(db: Session) -> int:
 def enqueue_mande_for_user(db: Session, user, *, ref_suffix: str | None = None) -> str | None:
     if not is_configured():
         return None
-    if mande_refresh_is_held(db):
-        return None
     moshtari = getattr(user, "tahesab_moshtari_id", None)
     if moshtari is None:
         return None
@@ -323,8 +325,6 @@ def enqueue_mande_for_all_users(db: Session) -> int:
     from app.models_db import User
 
     if not is_configured():
-        return 0
-    if mande_refresh_is_held(db):
         return 0
     users = (
         db.query(User)
@@ -362,14 +362,33 @@ def enqueue_mande_for_all_users(db: Session) -> int:
     return queued
 
 
+def request_mande_refresh(db: Session, user, *, force: bool = False) -> str | None:
+    """Queue a Tahesab مانده pull for this app user.
+
+    force=True: user opened the app or tapped refresh.
+    force=False: only if the last pull is older than 5 minutes.
+    """
+    if not is_configured():
+        return None
+    if getattr(user, "tahesab_moshtari_id", None) is None:
+        return None
+    if not force:
+        at = getattr(user, "tahesab_balance_at", None)
+        if at is not None:
+            try:
+                age = (datetime.utcnow() - at).total_seconds()
+            except TypeError:
+                age = MANDE_STALE_SECONDS
+            if age < MANDE_STALE_SECONDS:
+                return None
+    return enqueue_mande_for_user(db, user)
+
+
 def maybe_enqueue_online_mande_refresh(db: Session) -> int:
     """Pull all user remainings on first Tehran-day poll or after a 30min agent gap."""
     if not is_configured():
         return 0
     now = datetime.utcnow()
-    if mande_refresh_is_held(db):
-        _set_app_setting(db, SETTING_AGENT_LAST_SEEN, now.isoformat())
-        return 0
     last_seen_raw = _get_app_setting(db, SETTING_AGENT_LAST_SEEN)
     last_day = _get_app_setting(db, SETTING_MANDE_REFRESH_DAY)
     today = _tehran_today_iso()
@@ -1411,7 +1430,7 @@ def reset_all_app_remainings(db: Session) -> dict[str, int]:
     Tahesab assets are wiped separately on the shop PC. This:
       - writes Tahesab cache to 0 so the remaining card shows empty
       - offsets the app gold/cash ledger so the fallback is also 0
-      - cancels pending مانده jobs and holds further pulls for today
+      - cancels pending مانده jobs so a fresh Tahesab pull can follow
     Coin (سکه) ledgers are left unchanged.
     """
     from sqlalchemy import func
@@ -1463,7 +1482,7 @@ def reset_all_app_remainings(db: Session) -> dict[str, int]:
             n_offsets += 1
 
     cancelled = cancel_pending_mande_jobs(db)
-    hold_mande_refresh_today(db)
+    clear_mande_hold(db)
     db.flush()
     logger.info(
         "[tahesab] remaining reset users=%s ledger_offsets=%s mande_cancelled=%s",
@@ -1618,9 +1637,15 @@ def _cli(argv: list[str] | None = None) -> int:
             db.commit()
             print(stats)
             return 0
+        if cmd == "release-mande-hold":
+            clear_mande_hold(db)
+            queued = enqueue_mande_for_all_users(db)
+            db.commit()
+            print({"hold_cleared": True, "mande_jobs": queued})
+            return 0
         print(
             "usage: python -m app.services.tahesab "
-            "{reset-remainings|sync-users|reset-and-sync}",
+            "{reset-remainings|sync-users|reset-and-sync|release-mande-hold}",
             file=sys.stderr,
         )
         return 2

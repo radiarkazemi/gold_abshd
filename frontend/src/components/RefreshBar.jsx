@@ -7,25 +7,34 @@ export default function RefreshBar({ onRefresh, refreshSignal }) {
   const [balance, setBalance] = useState(null);
   const [spinning, setSpinning] = useState(false);
 
-  function loadBalance() {
-    return fetchMyBalance().then(setBalance).catch(() => {});
+  function loadBalance(refresh = false) {
+    return fetchMyBalance({ refresh }).then(setBalance).catch(() => {});
   }
 
   useEffect(() => {
-    loadBalance();
-    const interval = setInterval(loadBalance, 6000);
-    return () => clearInterval(interval);
+    loadBalance(true);
+    const interval = setInterval(() => loadBalance(false), 6000);
+    function onVis() {
+      if (document.visibilityState === "visible") loadBalance(true);
+    }
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   useEffect(() => {
     if (refreshSignal === undefined) return;
-    loadBalance();
+    loadBalance(true);
   }, [refreshSignal]);
 
   async function handleClick() {
     setSpinning(true);
     try {
-      await Promise.all([onRefresh?.(), loadBalance()]);
+      await Promise.all([onRefresh?.(), loadBalance(true)]);
+      await new Promise((r) => setTimeout(r, 2500));
+      await loadBalance(false);
     } finally {
       setTimeout(() => setSpinning(false), 400);
     }

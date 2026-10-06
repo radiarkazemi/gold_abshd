@@ -25,17 +25,22 @@ export default function BalancePage() {
   const [balance, setBalance] = useState(null);
   const [transactions, setTransactions] = useState(null);
 
-  function reload() {
-    fetchMyBalance().then(setBalance).catch(console.error);
+  function reload(refresh = false) {
+    fetchMyBalance({ refresh }).then(setBalance).catch(console.error);
     fetchMyTransactions().then(setTransactions).catch(console.error);
   }
 
   useEffect(() => {
-    reload();
-    // Poll every 6s so this screen reflects new admin decisions/adjustments
-    // without the user needing to manually refresh.
-    const interval = setInterval(reload, 6000);
-    return () => clearInterval(interval);
+    reload(true);
+    const interval = setInterval(() => reload(false), 6000);
+    function onVis() {
+      if (document.visibilityState === "visible") reload(true);
+    }
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   return (

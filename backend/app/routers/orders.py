@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -21,6 +21,7 @@ from app.services.trading_status import is_trading_online
 from app.services import price_cards
 from app.services.kyc import require_kyc_approved
 from app.services import admin_push
+from app.services import tahesab
 
 router = APIRouter(tags=["orders"])
 
@@ -186,7 +187,13 @@ async def retry_my_order_at_new_price(
 async def my_balance(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    refresh: bool = Query(False, description="Force a Tahesab مانده pull"),
 ):
+    # Queue getmandehesabbycode so the remaining card tracks Tahesab.
+    # refresh=1: app enter / refresh button. Otherwise only if older than 5 min.
+    queued = tahesab.request_mande_refresh(db, current_user, force=refresh)
+    if queued:
+        db.commit()
     return get_user_balance(db, current_user.id)
 
 

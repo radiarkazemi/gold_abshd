@@ -614,32 +614,37 @@ def test_enqueue_mande_for_user_uses_code(mock_enqueue):
     assert kwargs["ref_id"] == "u1:order-1"
 
 
-@patch("app.services.tahesab.mande_refresh_is_held", return_value=True)
-@patch("app.services.tahesab.enqueue_method")
-def test_enqueue_mande_skipped_when_held(mock_enqueue, _held):
-    user = SimpleNamespace(id="u1", tahesab_moshtari_id=1043)
-    assert tahesab.enqueue_mande_for_user(MagicMock(), user) is None
-    mock_enqueue.assert_not_called()
+@patch("app.services.tahesab.enqueue_mande_for_user", return_value="job-mande")
+def test_request_mande_skips_when_fresh(mock_enq):
+    user = SimpleNamespace(
+        id="u1",
+        tahesab_moshtari_id=1043,
+        tahesab_balance_at=datetime.utcnow(),
+    )
+    assert tahesab.request_mande_refresh(MagicMock(), user, force=False) is None
+    mock_enq.assert_not_called()
 
 
-@patch("app.services.tahesab.enqueue_mande_for_all_users", return_value=3)
-def test_maybe_enqueue_skips_when_held(_enq):
-    today = tahesab._tehran_today_iso()
+@patch("app.services.tahesab.enqueue_mande_for_user", return_value="job-mande")
+def test_request_mande_force_enqueues_even_if_fresh(mock_enq):
+    user = SimpleNamespace(
+        id="u1",
+        tahesab_moshtari_id=1043,
+        tahesab_balance_at=datetime.utcnow(),
+    )
+    assert tahesab.request_mande_refresh(MagicMock(), user, force=True) == "job-mande"
+    mock_enq.assert_called_once()
 
-    def get_s(_db, key):
-        if key == tahesab.SETTING_MANDE_HOLD_DAY:
-            return today
-        return None
 
-    db = MagicMock()
-    with patch("app.services.tahesab._get_app_setting", side_effect=get_s), patch(
-        "app.services.tahesab._set_app_setting"
-    ) as set_s:
-        n = tahesab.maybe_enqueue_online_mande_refresh(db)
-    assert n == 0
-    _enq.assert_not_called()
-    keys = [c.args[1] for c in set_s.call_args_list]
-    assert tahesab.SETTING_AGENT_LAST_SEEN in keys
+@patch("app.services.tahesab.enqueue_mande_for_user", return_value="job-mande")
+def test_request_mande_enqueues_when_stale(mock_enq):
+    user = SimpleNamespace(
+        id="u1",
+        tahesab_moshtari_id=1043,
+        tahesab_balance_at=datetime.utcnow() - timedelta(minutes=6),
+    )
+    assert tahesab.request_mande_refresh(MagicMock(), user, force=False) == "job-mande"
+    mock_enq.assert_called_once()
 
 
 @patch("app.services.tahesab.create_moshtari")
@@ -767,7 +772,7 @@ def test_catchup_skips_users_with_pending_moshtari_job(mock_sync):
     db.commit.assert_not_called()
 
 
-@patch("app.services.tahesab.hold_mande_refresh_today")
+@patch("app.services.tahesab.clear_mande_hold")
 @patch("app.services.tahesab.cancel_pending_mande_jobs", return_value=2)
 def test_reset_all_app_remainings_zeros_cache_and_ledger(mock_cancel, mock_hold):
     user = SimpleNamespace(

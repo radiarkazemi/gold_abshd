@@ -12,17 +12,24 @@ export default function BalanceStrip({ refreshSignal }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    function load() {
-      fetchMyBalance().then(setBalance).catch(() => {});
+    function load(refresh = false) {
+      fetchMyBalance({ refresh }).then(setBalance).catch(() => {});
     }
-    load();
-    const interval = setInterval(load, 6000);
-    return () => clearInterval(interval);
+    load(true);
+    const interval = setInterval(() => load(false), 6000);
+    function onVis() {
+      if (document.visibilityState === "visible") load(true);
+    }
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   useEffect(() => {
     if (refreshSignal === undefined) return;
-    fetchMyBalance().then(setBalance).catch(() => {});
+    fetchMyBalance({ refresh: true }).then(setBalance).catch(() => {});
   }, [refreshSignal]);
 
   const cashStatus = balance ? formatCashStatus(balance.cash_balance) : null;
