@@ -134,11 +134,15 @@ def enqueue_method(
 def _persian_for_tahesab(text: Any) -> Any:
     """
     Access/Windows-1256 has no Iranian Yeh (U+06CC) or Keheh (U+06A9).
-    Map them to Arabic Yeh/Kaf so names round-trip in Tahesab UI.
+    Map them to Arabic Yeh/Kaf; strip ZWNJ used in فارسی typography.
     """
     if not isinstance(text, str):
         return text
-    return text.replace("\u06cc", "\u064a").replace("\u06a9", "\u0643")
+    return (
+        text.replace("\u200c", "")  # ZWNJ
+        .replace("\u06cc", "\u064a")
+        .replace("\u06a9", "\u0643")
+    )
 
 
 def _encode_tahesab_body(body: dict[str, Any]) -> bytes:
@@ -146,7 +150,8 @@ def _encode_tahesab_body(body: dict[str, Any]) -> bytes:
         method: [_persian_for_tahesab(p) for p in params]
         for method, params in body.items()
     }
-    return json.dumps(mapped, ensure_ascii=False).encode("cp1256", errors="replace")
+    # ASCII JSON with \\uXXXX escapes — encoding-proof for Windows locale APIs.
+    return json.dumps(mapped, ensure_ascii=True, separators=(",", ":")).encode("ascii")
 
 
 def call_method_direct(method: str, params: list[Any]) -> dict[str, Any] | None:
@@ -168,7 +173,7 @@ def call_method_direct(method: str, params: list[Any]) -> dict[str, Any] | None:
             payload = _encode_tahesab_body(body)
             headers = {
                 **_headers(),
-                "Content-Type": "application/json; charset=windows-1256",
+                "Content-Type": "application/json; charset=utf-8",
             }
             resp = client.post(url, headers=headers, content=payload)
     except Exception as exc:

@@ -68,7 +68,7 @@ def bridge_next(db: Session = Depends(get_db), _auth=Depends(_require_bridge)):
     body = {job.method: mapped}
     # Pre-built JSON so Windows PowerShell 5.1 never ConvertTo-Json a Hashtable
     # (that serializes .NET Keys/Values instead of {"Method":[...]}).
-    body_json = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
+    body_json = json.dumps(body, ensure_ascii=True, separators=(",", ":"))
     return {
         "job": {
             "id": job.id,
@@ -148,7 +148,13 @@ $Headers = @{{ "X-Bridge-Token" = $BridgeToken; "Accept" = "application/json" }}
 
 Write-Host "Fetching Tahesab config from VPS..."
 try {{
-  $cfg = Invoke-RestMethod -Uri "$BridgeBase/api/tahesab-bridge/config" -Headers $Headers -TimeoutSec 30 -UseBasicParsing
+  # PS 5.1 often mis-decodes UTF-8 JSON as Latin-1 — force UTF-8 via WebClient.
+  $wc = New-Object System.Net.WebClient
+  $wc.Headers["X-Bridge-Token"] = $BridgeToken
+  $wc.Headers["Accept"] = "application/json"
+  $wc.Encoding = [System.Text.Encoding]::UTF8
+  $cfg = ($wc.DownloadString("$BridgeBase/api/tahesab-bridge/config")) | ConvertFrom-Json
+  $wc.Dispose()
 }} catch {{
   Write-Host "ERROR: cannot reach bridge config: $_"
   exit 1
@@ -201,21 +207,56 @@ Write-Host "############################################" -ForegroundColor Yello
 Write-Host "  TARGET: $TargetLabel  (TEST books only)" -ForegroundColor Yellow
 Write-Host "  DBName header: $DbName" -ForegroundColor Yellow
 Write-Host "  Do NOT enable API on MAIN Tahesab" -ForegroundColor Yellow
-Write-Host "  Encoding: Windows-1256 (Persian / Iran)" -ForegroundColor Yellow
+Write-Host "  Body: ASCII JSON with \\uXXXX Persian escapes" -ForegroundColor Yellow
 Write-Host "############################################" -ForegroundColor Yellow
 Write-Host ""
 
-function Get-Windows1256 {{
+function Get-BridgeJson([string]$Url) {{
+  $wc = New-Object System.Net.WebClient
   try {{
-    return [System.Text.Encoding]::GetEncoding(1256)
-  }} catch {{
-    return [System.Text.Encoding]::GetEncoding("windows-1256")
+    $wc.Headers["X-Bridge-Token"] = $BridgeToken
+    $wc.Headers["Accept"] = "application/json"
+    $wc.Encoding = [System.Text.Encoding]::UTF8
+    return $wc.DownloadString($Url)
+  }} finally {{
+    $wc.Dispose()
+  }}
+}}
+
+function Send-TahesabJson([string]$Json) {{
+  # Wire format must be ASCII JSON like {{"DoNewMoshtari":["\\u0631\\u0636\\u0627",...]}}.
+  # Tahesab's JSON parser expands \\uXXXX using the Iran/Windows locale into Access.
+  # Never send raw UTF-8 Persian bytes (logs as \\u00d9\\u0085... and UI shows Ø±Ø¶Ø§).
+  if ([string]::IsNullOrWhiteSpace($Json)) {{ throw "empty Tahesab JSON body" }}
+  if ($Json -match 'isfixedsize|syncroot|"keys"') {{
+    throw "refusing to send Hashtable dump instead of JSON: $Json"
+  }}
+  if ($Json -match '\\\\u00d[89]') {{
+    throw "refusing double-encoded UTF-8 mojibake body: $Json"
+  }}
+  $bytes = [System.Text.Encoding]::ASCII.GetBytes($Json)
+  $hex = ($bytes[0..([Math]::Min(24, $bytes.Length-1))] | ForEach-Object {{ $_.ToString('X2') }}) -join ' '
+  Write-Host ("  POST ascii-json len=" + $bytes.Length + " head=" + $Json.Substring(0, [Math]::Min(90, $Json.Length)))
+  Write-Host ("  HEX " + $hex)
+
+  $wc = New-Object System.Net.WebClient
+  try {{
+    $wc.Headers["Authorization"] = "Bearer $TahesabToken"
+    $wc.Headers["DBName"] = $DbName
+    $wc.Headers["Content-Type"] = "application/json; charset=utf-8"
+    $respBytes = $wc.UploadData($TahesabUrl, "POST", $bytes)
+    $respText = [System.Text.Encoding]::UTF8.GetString($respBytes)
+    if ([string]::IsNullOrWhiteSpace($respText)) {{ return @{{ OK = $true }} }}
+    return ($respText | ConvertFrom-Json)
+  }} finally {{
+    $wc.Dispose()
   }}
 }}
 
 function ConvertTo-TahesabText([string]$Text) {{
   if ([string]::IsNullOrEmpty($Text)) {{ return $Text }}
-  return (($Text -replace [char]0x06CC, [char]0x064A) -replace [char]0x06A9, [char]0x0643)
+  $t = $Text -replace [char]0x200C, ''
+  return (($t -replace [char]0x06CC, [char]0x064A) -replace [char]0x06A9, [char]0x0643)
 }}
 
 function ConvertTo-JsonValue($Value) {{
@@ -227,17 +268,21 @@ function ConvertTo-JsonValue($Value) {{
     return ([string]$Value)
   }}
   $s = ConvertTo-TahesabText ([string]$Value)
-  $escaped = New-Object System.Text.StringBuilder
+  $sb = New-Object System.Text.StringBuilder
+  [void]$sb.Append('"')
   foreach ($ch in $s.ToCharArray()) {{
     $c = [int][char]$ch
-    if ($ch -eq '"') {{ [void]$escaped.Append('\"') }}
-    elseif ($ch -eq '\\') {{ [void]$escaped.Append('\\\\\\\\') }}
-    elseif ($c -eq 10) {{ [void]$escaped.Append('\n') }}
-    elseif ($c -eq 13) {{ [void]$escaped.Append('\r') }}
-    elseif ($c -eq 9) {{ [void]$escaped.Append('\t') }}
-    else {{ [void]$escaped.Append($ch) }}
+    if ($ch -eq '"') {{ [void]$sb.Append('\\\"') }}
+    elseif ($ch -eq '\\') {{ [void]$sb.Append('\\\\') }}
+    elseif ($c -lt 32 -or $c -gt 126) {{
+      [void]$sb.Append('\\u')
+      [void]$sb.AppendFormat('{{0:x4}}', $c)
+    }} else {{
+      [void]$sb.Append($ch)
+    }}
   }}
-  return ('"' + $escaped.ToString() + '"')
+  [void]$sb.Append('"')
+  return $sb.ToString()
 }}
 
 function Build-TahesabJson([string]$Method, $Params) {{
@@ -246,22 +291,6 @@ function Build-TahesabJson([string]$Method, $Params) {{
     [void]$parts.Add((ConvertTo-JsonValue $p))
   }}
   return ('{{"' + $Method + '":[' + ($parts -join ',') + ']}}')
-}}
-
-function Send-TahesabJson([string]$Json) {{
-  # Windows PowerShell ConvertTo-Json on Hashtable dumps Keys/Values — never use it.
-  # POST a real {{"Method":[...]}} body encoded as Windows-1256 (Iran Access).
-  if ([string]::IsNullOrWhiteSpace($Json)) {{ throw "empty Tahesab JSON body" }}
-  if ($Json -match 'isfixedsize|syncroot|"keys"') {{
-    throw "refusing to send Hashtable dump instead of JSON: $Json"
-  }}
-  $enc = Get-Windows1256
-  $bytes = $enc.GetBytes((ConvertTo-TahesabText $Json))
-  Write-Host ("  POST " + $Json.Substring(0, [Math]::Min(80, $Json.Length)))
-  return Invoke-RestMethod -Uri $TahesabUrl -Method POST -Headers $ThHeaders `
-    -Body $bytes `
-    -ContentType "application/json; charset=windows-1256" `
-    -TimeoutSec 60 -UseBasicParsing
 }}
 
 function Send-Tahesab([string]$Method, $Params) {{
@@ -354,7 +383,7 @@ Write-Host "Bridge OK. Tahesab=$TahesabUrl DB=$DbName — polling every ${{Poll}
 
 while ($true) {{
   try {{
-    $next = Invoke-RestMethod -Uri "$BridgeBase/api/tahesab-bridge/next" -Headers $Headers -TimeoutSec 30 -UseBasicParsing
+    $next = (Get-BridgeJson "$BridgeBase/api/tahesab-bridge/next") | ConvertFrom-Json
     if ($null -eq $next.job) {{
       Start-Sleep -Seconds $Poll
       continue
@@ -368,10 +397,15 @@ while ($true) {{
     $jsonBody = $null
     if ($job.body_json) {{
       $jsonBody = [string]$job.body_json
+      # If PowerShell expanded \\uXXXX into real Persian, rebuild as ASCII escapes.
+      if ($jsonBody -match '[^\x00-\x7F]') {{
+        Write-Host "  body_json had non-ASCII — rebuilding with \\uXXXX escapes"
+        $jsonBody = Build-TahesabJson $methodName $job.params
+      }}
     }} else {{
       $jsonBody = Build-TahesabJson $methodName $job.params
     }}
-    Write-Host ("  JSON: " + $jsonBody.Substring(0, [Math]::Min(100, $jsonBody.Length)))
+    Write-Host ("  JSON: " + $jsonBody.Substring(0, [Math]::Min(120, $jsonBody.Length)))
 
     $parsed = $null
     $err = ""
