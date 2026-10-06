@@ -50,8 +50,10 @@ export function orderLedgerGoldWeight(order) {
 /**
  * Short app شرح سند — no customer/order/ayar dump.
  * Tahesab form fields already carry عیار / بدون تسویه.
+ * نقد کارتخوان has no native Tahesab type → label it in شرح.
  */
-export function orderExplanationFull(_order) {
+export function orderExplanationFull(order) {
+  if (orderKindKey(order) === "kartkhan") return "نقد کارتخوان";
   return "اپ";
 }
 

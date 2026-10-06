@@ -382,10 +382,14 @@ def parse_asnad_rows(payload: Any) -> list[dict[str, Any]]:
         is_abshode = bool(raw.get("IsAbshode") or raw.get("IsAbshodeh"))
         api_user = str(_nullish(raw.get("User")) or "")
         # App-written sanads: keep شرح short. Shop-entered docs keep Tahesab Sharh1.
+        # نقد کارتخوان has no dedicated Tahesab doc type — preserve that label in شرح.
         if api_user.upper() == "API":
-            explanation = "اپ"
+            explanation = _app_sanad_explanation(sharh)
         else:
             explanation = str(sharh) if sharh else ""
+        mazaneh_val = (
+            _unscale_amount(_to_float(mazaneh_raw)) if mazaneh_raw is not None else None
+        )
         rows.append(
             {
                 "id": str(raw.get("ID") or key),
@@ -400,7 +404,7 @@ def parse_asnad_rows(payload: Any) -> list[dict[str, Any]]:
                 "lab_name": str(lab) if lab else "",
                 "ang": str(ang) if ang else "",
                 "is_abshode": is_abshode,
-                "mazaneh": _to_float(mazaneh_raw) if mazaneh_raw is not None else None,
+                "mazaneh": mazaneh_val,
                 "money": money,
                 "gold_balance": gold_bal,
                 "cash_balance": cash_bal,
@@ -737,6 +741,23 @@ def _factor_code_for_order(order_id: str) -> str:
     if len(code) < 20:
         code = code.ljust(20, "0")
     return code[:40]
+
+
+def _app_sanad_explanation(sharh: Any) -> str:
+    """Short شرح for app-written sanads when reading DoListAsnad back."""
+    text = str(sharh).strip() if sharh else ""
+    if "نقد کارتخوان" in text:
+        return "نقد کارتخوان"
+    return "اپ"
+
+
+def _order_sharh(order) -> str:
+    """شرح written into Tahesab. نقد کارتخوان has no native doc type."""
+    from app.services.price_cards import is_naghd_kartkhan_card
+
+    if is_naghd_kartkhan_card(getattr(order, "goldbridge_item_id", None)):
+        return "نقد کارتخوان"
+    return "اپ"
 
 
 def enqueue_method(
@@ -1239,8 +1260,8 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
     total = _scale_amount(_order_total_toman(order))
     factor_code = _factor_code_for_order(order.id)
     is_coin = order.amount_type.value == "count"
-    # Short marker only — form fields already carry type / ayar / تسویه.
-    sharh = "اپ"
+    # Short marker — نقد کارتخوان has no Tahesab doc type, so label it in شرح.
+    sharh = _order_sharh(order)
 
     if is_coin:
         mazaneh_mesghal = order.mesghal17_price_at_submit
@@ -1278,6 +1299,8 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
                     mazaneh_mesghal = float(order.price_at_submit or 0) * MOTAFEREGHE_TO_GRAM18
                 else:
                     mazaneh_mesghal = order.price_at_submit or 0
+            # نقد کارتخوان: mesghal17_price_at_submit is already final
+            # (id:1 + کارمزد + ۱۰۰٬۰۰۰) — that value is what goes in مظنه.
             mazaneh = _scale_amount(float(mazaneh_mesghal))
         ok = create_sanad_buy_sale_gold(
             moshtari_code=int(moshtari),

@@ -374,6 +374,80 @@ def test_sync_motaferaghe_sell_is_shop_buy_ayar_740(mock_sync_user, mock_sanad):
 
 @patch("app.services.tahesab.create_sanad_buy_sale_gold")
 @patch("app.services.tahesab.sync_user_to_tahesab")
+def test_sync_naghd_kartkhan_sharh_and_final_mazaneh(mock_sync_user, mock_sanad):
+    """نقد کارتخوان has no Tahesab doc type — شرح + final مظنه."""
+    from app.services.price_cards import (
+        NAGHD_KARTKHAN_MARKUP_TOMAN,
+        SPECIAL_CARD_NAGHD_KARTKHAN_ID,
+    )
+
+    mock_sync_user.return_value = 1043
+    mock_sanad.return_value = "GAKARTKHANFACTOR0000001"
+    final_mesghal = 30_000_000 + 50_000 + NAGHD_KARTKHAN_MARKUP_TOMAN  # raw+comm+100k
+
+    user = SimpleNamespace(
+        id="u1",
+        user_code="1043",
+        tahesab_moshtari_id=1043,
+        full_name="ساسی",
+        phone_number="0912",
+        national_id="1",
+        referrer=None,
+    )
+    order = SimpleNamespace(
+        id="eeeeeeee-bbbb-cccc-dddd-eeeeeeeeeeee",
+        user_id="u1",
+        side=SimpleNamespace(value="buy"),
+        amount_type=SimpleNamespace(value="weight"),
+        value=1.5,
+        description="",
+        updated_at=datetime(2025, 10, 5, 12, 0, 0),
+        created_at=datetime(2025, 10, 5, 12, 0, 0),
+        mesghal17_price_at_submit=final_mesghal,
+        price_at_submit=final_mesghal / 4.3318,  # gram18 approx
+        goldbridge_item_id=SPECIAL_CARD_NAGHD_KARTKHAN_ID,
+        tahesab_factor_code=None,
+    )
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = user
+
+    code = tahesab.sync_accepted_order_to_tahesab(db, order)
+    assert code == "GAKARTKHANFACTOR0000001"
+    kwargs = mock_sanad.call_args.kwargs
+    assert kwargs["sharh"] == "نقد کارتخوان"
+    assert kwargs["buy_or_sale"] == 1  # shop sells to customer
+    assert kwargs["mazaneh"] == final_mesghal * 10
+    assert kwargs["mazaneh_is_gram"] == 0
+    assert kwargs["is_abshode"] == 1
+
+
+def test_parse_asnad_rows_preserves_naghd_kartkhan_sharh():
+    payload = {
+        "41": {
+            "ID": 41,
+            "Factor_Code": "GAKART001",
+            "NO": "فروش طلا",
+            "ZamanSabt": "1405/07/14 20:00:00",
+            "Vazn": 1.5,
+            "Mazaneh": 3015000000,  # final مثقال × scale 10
+            "Mali": -104000000,
+            "TahesabVazni": 1.5,
+            "TahesabMali": -104000000,
+            "Sharh1": "نقد کارتخوان",
+            "User": "API",
+            "IsAbshode": True,
+            "Ayar": 750,
+        },
+    }
+    rows = tahesab.parse_asnad_rows(payload)
+    assert len(rows) == 1
+    assert rows[0]["explanation"] == "نقد کارتخوان"
+    assert rows[0]["mazaneh"] == 301_500_000.0
+    assert rows[0]["doc_type"] == "فروش طلا"
+
+
+@patch("app.services.tahesab.create_sanad_buy_sale_gold")
+@patch("app.services.tahesab.sync_user_to_tahesab")
 def test_sync_motaferaghe_mazaneh_from_gram_when_mesghal_missing(mock_sync_user, mock_sanad):
     from app.services.price_cards import SPECIAL_CARD_MOTAFEREGHE_ID
 
@@ -894,9 +968,12 @@ def test_parse_asnad_rows_running_balance_and_short_app_sharh():
     assert rows[0]["doc_type"] == "فروش طلا"
     assert rows[0]["explanation"] == "اپ"
     assert rows[0]["money"] == -53409668.0  # unscaled /10
+    assert rows[0]["mazaneh"] == 115680000.0  # unscaled /10
     assert rows[1]["doc_type"] == "ورود متفرقه"
     assert rows[1]["weight"] == 24.33
     assert rows[1]["cash_balance"] == 638037758.0
+    assert rows[1]["mazaneh"] is None
+    assert rows[1]["explanation"] == ""
 
 
 def test_parse_asnad_rows_abshode_lab_and_ang():

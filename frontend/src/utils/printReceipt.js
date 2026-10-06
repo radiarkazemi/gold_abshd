@@ -413,6 +413,7 @@ export function buildOrdersReceiptHtml(
   <p class="legend">
     بد = بدهکار &nbsp;|&nbsp; بس = بستانکار &nbsp;|&nbsp;
     منبع گزارش: جزئیات اسناد ته‌حساب — برای آبشده/متفرقه: وزن، وزن ۷۵۰، عیار، آزمایشگاه، انگ.
+    نقد کارتخوان در شرح سند و مظنه (قیمت نهایی) مشخص می‌شود.
   </p>
   <p class="footer">این گزارش در تاریخ ${formatDate(new Date().toISOString())} صادر شده است.</p>
   </div>
