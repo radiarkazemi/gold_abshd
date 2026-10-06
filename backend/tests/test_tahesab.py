@@ -53,6 +53,19 @@ def test_direct_target_rejects_loopback():
     assert tahesab.is_direct_target_ready() is True
 
 
+def test_db_guard_allows_test_blocks_main():
+    tahesab.settings.TAHESAB_DBNAME = "DB"
+    tahesab.settings.TAHESAB_ALLOWED_DBNAMES = "db"
+    tahesab.settings.TAHESAB_BLOCKED_DBNAMES = "TahesabDB"
+    ok, _ = tahesab.assert_target_db_allowed("db")
+    assert ok is True
+    ok, reason = tahesab.assert_target_db_allowed("TahesabDB")
+    assert ok is False
+    assert "blocked" in reason.lower() or "BLOCKED" in reason or "blocked" in reason
+    ok, reason = tahesab.assert_target_db_allowed("OtherDB")
+    assert ok is False
+
+
 def test_factor_code_length_and_prefix():
     code = tahesab._factor_code_for_order("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
     assert code.startswith("GA")

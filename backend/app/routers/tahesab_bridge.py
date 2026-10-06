@@ -146,6 +146,12 @@ $TahesabUrl = [string]$cfg.tahesab_base_url
 $TahesabToken = [string]$cfg.tahesab_token
 $DbName = [string]$cfg.tahesab_dbname
 $VerifySsl = [bool]$cfg.tahesab_verify_ssl
+$TargetLabel = [string]$cfg.target_label
+if (-not $TargetLabel) {{ $TargetLabel = "تست" }}
+$Allowed = @()
+if ($cfg.allowed_dbnames) {{ $Allowed = @($cfg.allowed_dbnames | ForEach-Object {{ "$_".ToLower() }}) }}
+$Blocked = @()
+if ($cfg.blocked_dbnames) {{ $Blocked = @($cfg.blocked_dbnames | ForEach-Object {{ "$_".ToLower() }}) }}
 $Poll = [int]$cfg.poll_seconds
 if ($Poll -lt 1) {{ $Poll = 2 }}
 
@@ -176,6 +182,14 @@ $ThHeaders = @{{
   "Content-Type" = "application/json; charset=utf-8"
   "Accept" = "application/json"
 }}
+
+Write-Host ""
+Write-Host "############################################" -ForegroundColor Yellow
+Write-Host "  هدف همگام‌سازی: $TargetLabel" -ForegroundColor Yellow
+Write-Host "  DBName header: $DbName" -ForegroundColor Yellow
+Write-Host "  فقط ته حساب تست — روی ته حساب اصلی API روشن نکنید" -ForegroundColor Yellow
+Write-Host "############################################" -ForegroundColor Yellow
+Write-Host ""
 
 function Send-Tahesab([object]$BodyObj) {{
   $json = $BodyObj | ConvertTo-Json -Compress -Depth 20
@@ -229,6 +243,29 @@ function Resolve-DuplicateMoshtari($Params, [string]$ErrText) {{
     }}
   }}
   return $null
+}}
+
+# Safety: confirm the live API opened the TEST database, not main books.
+try {{
+  $health = Send-Tahesab (@{{ CheckHealth = @() }})
+  $liveDb = [string]$health.DBName
+  if (-not $liveDb) {{ $liveDb = [string]$health.dbname }}
+  $liveDbNorm = $liveDb.ToLower()
+  Write-Host ("CheckHealth: Api=" + [string]$health.Api_Status + " DBType=" + [string]$health.DBType + " DBName=" + $liveDb)
+  if ($Blocked -contains $liveDbNorm) {{
+    Write-Host "STOP: DBName=$liveDb is BLOCKED (main/production). Nothing will be written." -ForegroundColor Red
+    exit 2
+  }}
+  if ($Allowed.Count -gt 0 -and -not ($Allowed -contains $liveDbNorm)) {{
+    Write-Host ("STOP: DBName=$liveDb is not in allow-list [" + ($Allowed -join ", ") + "].") -ForegroundColor Red
+    Write-Host "Open the TEST Tahesab API (not main) and/or fix GOLDAPP_TAHESAB_ALLOWED_DBNAMES." -ForegroundColor Red
+    exit 2
+  }}
+  Write-Host "DB guard OK — writing only to target '$TargetLabel' (DBName=$liveDb)." -ForegroundColor Green
+}} catch {{
+  Write-Host "ERROR: CheckHealth failed. Is the TEST Tahesab API open on $TahesabUrl ?" -ForegroundColor Red
+  Write-Host "$_"
+  exit 1
 }}
 
 Write-Host "Bridge OK. Tahesab=$TahesabUrl DB=$DbName — polling every ${{Poll}}s. Ctrl+C to stop."
@@ -331,12 +368,15 @@ title همگام‌سازی ته‌حساب - قصر طلا
 cd /d "%~dp0"
 
 echo ============================================
-echo   قصر طلا - همگام‌سازی ته‌حساب (Agent)
+echo   قصر طلا - همگام‌سازی ته‌حساب ^(فقط تست^)
 echo ============================================
 echo.
+echo مهم: فقط روی ته حساب تست اجرا شود.
+echo        روی ته حساب اصلی هرگز API را روشن نکنید.
+echo.
 echo قبل از اجرا:
-echo   1^) برنامه ته حساب باز باشد
-echo   2^) افزونه API روشن باشد ^(پورت 8081^)
+echo   1^) ته حساب تست باز باشد ^(نه اصلی^)
+echo   2^) افزونه API روی تست روشن باشد ^(پورت 8081^)
 echo.
 echo این پنجره را باز بگذارید. برای توقف: Ctrl+C
 echo.

@@ -663,6 +663,17 @@ def process_outbox_batch(db: Session, limit: int = 20) -> dict[str, int]:
         counts["skipped"] = 1
         return counts
 
+    # Refuse to push if the live API opened the wrong (main) database.
+    health = call_method_direct("CheckHealth", [])
+    if not health:
+        counts["skipped"] = 1
+        return counts
+    ok, reason = assert_target_db_allowed(str(health.get("DBName") or health.get("dbname") or ""))
+    if not ok:
+        logger.error("[tahesab] DB guard blocked outbox drain: %s", reason)
+        counts["skipped"] = 1
+        return counts
+
     jobs = (
         db.query(TahesabOutbox)
         .filter(TahesabOutbox.status == "pending")
@@ -742,12 +753,52 @@ def sync_accepted_order_isolated(order_id: str) -> None:
         db.close()
 
 
+def normalize_dbname(name: str | None) -> str:
+    return (name or "").strip().lower()
+
+
+def assert_target_db_allowed(health_dbname: str | None) -> tuple[bool, str]:
+    """
+    Guard: only write to the configured TEST database.
+    Uses CheckHealth's DBName (what Tahesab actually opened).
+    """
+    got = normalize_dbname(health_dbname)
+    if not got:
+        return False, "CheckHealth returned empty DBName"
+
+    if got in settings.TAHESAB_BLOCKED_DBNAMES_SET:
+        return False, (
+            f"DBName={health_dbname!r} is blocked (main/production). "
+            f"Refusing to write. Use the TEST Tahesab API only."
+        )
+
+    allowed = settings.TAHESAB_ALLOWED_DBNAMES_SET
+    if allowed and got not in allowed:
+        return False, (
+            f"DBName={health_dbname!r} is not in allow-list "
+            f"{sorted(allowed)}. Refusing to write to protect main books."
+        )
+
+    # Header DBName should also look like a test target when allow-list is set.
+    header = normalize_dbname(settings.TAHESAB_DBNAME)
+    if allowed and header and header not in allowed:
+        return False, (
+            f"Configured GOLDAPP_TAHESAB_DBNAME={settings.TAHESAB_DBNAME!r} "
+            f"is not in allow-list {sorted(allowed)}."
+        )
+
+    return True, f"OK target={settings.TAHESAB_TARGET_LABEL} db={health_dbname}"
+
+
 def bridge_agent_config() -> dict[str, Any]:
     """Config the Windows agent needs (no bridge secret)."""
     return {
-        "tahesab_base_url": settings.TAHESAB_BASE_URL,
+        "tahesab_base_url": settings.TAHESAB_BASE_URL or "https://127.0.0.1:8081",
         "tahesab_token": settings.TAHESAB_TOKEN,
         "tahesab_dbname": settings.TAHESAB_DBNAME,
         "tahesab_verify_ssl": settings.TAHESAB_VERIFY_SSL,
         "poll_seconds": 2,
+        "target_label": settings.TAHESAB_TARGET_LABEL,
+        "allowed_dbnames": sorted(settings.TAHESAB_ALLOWED_DBNAMES_SET),
+        "blocked_dbnames": sorted(settings.TAHESAB_BLOCKED_DBNAMES_SET),
     }

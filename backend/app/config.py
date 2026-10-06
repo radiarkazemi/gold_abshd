@@ -169,8 +169,20 @@ class Settings:
     # Do NOT use 127.0.0.1 here when the app runs on the VPS.
     TAHESAB_BASE_URL: str = os.getenv("GOLDAPP_TAHESAB_BASE_URL", "").rstrip("/")
     TAHESAB_TOKEN: str = os.getenv("GOLDAPP_TAHESAB_TOKEN", "")
-    # Access folder name (DB) or SQL Server db name (TahesabDB).
+    # DBName header: Access folder (DB / DB1) or SQL Server db (TahesabDB / TahesabDB1).
+    # Point this at the TEST environment only — never the main shop books.
     TAHESAB_DBNAME: str = os.getenv("GOLDAPP_TAHESAB_DBNAME", "DB")
+    # Human label shown in the Windows agent banner (e.g. تست).
+    TAHESAB_TARGET_LABEL: str = os.getenv("GOLDAPP_TAHESAB_TARGET_LABEL", "تست")
+    # If set (comma-separated), CheckHealth DBName must match one of these
+    # (case-insensitive) or the agent/worker refuses to write.
+    # Example for Access test folder: "db,DB1"
+    TAHESAB_ALLOWED_DBNAMES: str = os.getenv("GOLDAPP_TAHESAB_ALLOWED_DBNAMES", "db")
+    # Always refuse these CheckHealth DBName values (main / production books).
+    TAHESAB_BLOCKED_DBNAMES: str = os.getenv(
+        "GOLDAPP_TAHESAB_BLOCKED_DBNAMES",
+        "TahesabDB,tahesabdb",
+    )
     TAHESAB_TIMEOUT: float = float(os.getenv("GOLDAPP_TAHESAB_TIMEOUT", "20"))
     # Local/self-signed certs are common; set true once a real cert is active.
     TAHESAB_VERIFY_SSL: bool = os.getenv("GOLDAPP_TAHESAB_VERIFY_SSL", "false").lower() == "true"
@@ -185,6 +197,14 @@ class Settings:
     TAHESAB_BRIDGE_TOKEN: str = os.getenv("GOLDAPP_TAHESAB_BRIDGE_TOKEN", "")
     # How often the VPS retries pending outbox jobs against BASE_URL.
     TAHESAB_OUTBOX_POLL_SECONDS: float = float(os.getenv("GOLDAPP_TAHESAB_OUTBOX_POLL_SECONDS", "15"))
+
+    @property
+    def TAHESAB_ALLOWED_DBNAMES_SET(self) -> set[str]:
+        return {x.strip().lower() for x in self.TAHESAB_ALLOWED_DBNAMES.split(",") if x.strip()}
+
+    @property
+    def TAHESAB_BLOCKED_DBNAMES_SET(self) -> set[str]:
+        return {x.strip().lower() for x in self.TAHESAB_BLOCKED_DBNAMES.split(",") if x.strip()}
 
     # Receipt uploads (proof of bank transfer / حواله for cash orders)
     UPLOAD_DIR: str = os.getenv("GOLDAPP_UPLOAD_DIR", "uploads/receipts")
