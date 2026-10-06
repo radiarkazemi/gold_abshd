@@ -64,14 +64,20 @@ def bridge_next(db: Session = Depends(get_db), _auth=Depends(_require_bridge)):
         params = json.loads(job.params_json or "[]")
     except json.JSONDecodeError:
         params = []
+    mapped = [tahesab._persian_for_tahesab(p) for p in params]
+    body = {job.method: mapped}
+    # Pre-built JSON so Windows PowerShell 5.1 never ConvertTo-Json a Hashtable
+    # (that serializes .NET Keys/Values instead of {"Method":[...]}).
+    body_json = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
     return {
         "job": {
             "id": job.id,
             "method": job.method,
-            "params": params,
+            "params": mapped,
             "ref_type": job.ref_type,
             "ref_id": job.ref_id,
-            "body": {job.method: params},
+            "body": body,
+            "body_json": body_json,
         }
     }
 
@@ -208,40 +214,72 @@ function Get-Windows1256 {{
 }}
 
 function ConvertTo-TahesabText([string]$Text) {{
-  # Access/Windows-1256 has no Iranian Yeh/Keheh (ی/ک). Map to Arabic ي/ك.
   if ([string]::IsNullOrEmpty($Text)) {{ return $Text }}
   return (($Text -replace [char]0x06CC, [char]0x064A) -replace [char]0x06A9, [char]0x0643)
 }}
 
-function Convert-ParamsForTahesab($Params) {{
-  if ($null -eq $Params) {{ return @() }}
-  $out = @()
-  foreach ($p in @($Params)) {{
-    if ($p -is [string]) {{ $out += (ConvertTo-TahesabText $p) }}
-    else {{ $out += $p }}
+function ConvertTo-JsonValue($Value) {{
+  if ($null -eq $Value) {{ return "null" }}
+  if ($Value -is [bool]) {{
+    if ($Value) {{ return "true" }} else {{ return "false" }}
   }}
-  return $out
+  if ($Value -is [int] -or $Value -is [long] -or $Value -is [double] -or $Value -is [decimal]) {{
+    return ([string]$Value)
+  }}
+  $s = ConvertTo-TahesabText ([string]$Value)
+  $escaped = New-Object System.Text.StringBuilder
+  foreach ($ch in $s.ToCharArray()) {{
+    $c = [int][char]$ch
+    if ($ch -eq '"') {{ [void]$escaped.Append('\"') }}
+    elseif ($ch -eq '\\') {{ [void]$escaped.Append('\\\\\\\\') }}
+    elseif ($c -eq 10) {{ [void]$escaped.Append('\n') }}
+    elseif ($c -eq 13) {{ [void]$escaped.Append('\r') }}
+    elseif ($c -eq 9) {{ [void]$escaped.Append('\t') }}
+    else {{ [void]$escaped.Append($ch) }}
+  }}
+  return ('"' + $escaped.ToString() + '"')
 }}
 
-function Send-Tahesab([object]$BodyObj) {{
-  # Tahesab Access API expects ANSI/Windows-1256 Persian, not UTF-8.
-  $enc = Get-Windows1256
-  $fixed = @{{}}
-  foreach ($prop in $BodyObj.PSObject.Properties) {{
-    $fixed[$prop.Name] = @(Convert-ParamsForTahesab $prop.Value)
+function Build-TahesabJson([string]$Method, $Params) {{
+  $parts = New-Object System.Collections.Generic.List[string]
+  foreach ($p in @($Params)) {{
+    [void]$parts.Add((ConvertTo-JsonValue $p))
   }}
-  $json = $fixed | ConvertTo-Json -Compress -Depth 20
-  $bytes = $enc.GetBytes($json)
+  return ('{{"' + $Method + '":[' + ($parts -join ',') + ']}}')
+}}
+
+function Send-TahesabJson([string]$Json) {{
+  # Windows PowerShell ConvertTo-Json on Hashtable dumps Keys/Values — never use it.
+  # POST a real {{"Method":[...]}} body encoded as Windows-1256 (Iran Access).
+  if ([string]::IsNullOrWhiteSpace($Json)) {{ throw "empty Tahesab JSON body" }}
+  if ($Json -match 'isfixedsize|syncroot|"keys"') {{
+    throw "refusing to send Hashtable dump instead of JSON: $Json"
+  }}
+  $enc = Get-Windows1256
+  $bytes = $enc.GetBytes((ConvertTo-TahesabText $Json))
+  Write-Host ("  POST " + $Json.Substring(0, [Math]::Min(80, $Json.Length)))
   return Invoke-RestMethod -Uri $TahesabUrl -Method POST -Headers $ThHeaders `
     -Body $bytes `
     -ContentType "application/json; charset=windows-1256" `
     -TimeoutSec 60 -UseBasicParsing
 }}
 
+function Send-Tahesab([string]$Method, $Params) {{
+  return Send-TahesabJson (Build-TahesabJson $Method $Params)
+}}
+
 function Ack-Bridge([string]$Id, [bool]$Ok, $Result, [string]$ErrorText, [bool]$Permanent) {{
-  $ackObj = @{{ id = $Id; ok = $Ok; permanent = $Permanent }}
-  if ($null -ne $Result) {{ $ackObj.result = $Result }}
-  if ($ErrorText) {{ $ackObj.error = $ErrorText }}
+  $ackObj = [pscustomobject]@{{
+    id = $Id
+    ok = $Ok
+    permanent = $Permanent
+  }}
+  if ($null -ne $Result) {{
+    $ackObj | Add-Member -NotePropertyName result -NotePropertyValue $Result
+  }}
+  if ($ErrorText) {{
+    $ackObj | Add-Member -NotePropertyName error -NotePropertyValue $ErrorText
+  }}
   $ackJson = $ackObj | ConvertTo-Json -Compress -Depth 20
   Invoke-RestMethod -Uri "$BridgeBase/api/tahesab-bridge/ack" -Method POST -Headers $Headers `
     -Body ([System.Text.Encoding]::UTF8.GetBytes($ackJson)) `
@@ -262,9 +300,9 @@ function Resolve-DuplicateMoshtari($Params, [string]$ErrText) {{
     try {{
       $asNum = [int64]0
       if ([int64]::TryParse($c, [ref]$asNum)) {{
-        $list = Send-Tahesab (@{{ DoListMoshtari = @($asNum) }})
+        $list = Send-Tahesab "DoListMoshtari" @($asNum)
       }} else {{
-        $list = Send-Tahesab (@{{ DoListMoshtari = @($c) }})
+        $list = Send-Tahesab "DoListMoshtari" @($c)
       }}
       if ($null -eq $list) {{ continue }}
       foreach ($prop in $list.PSObject.Properties) {{
@@ -286,7 +324,12 @@ function Resolve-DuplicateMoshtari($Params, [string]$ErrText) {{
 
 # Safety: confirm the live API opened the TEST database, not main books.
 try {{
-  $health = Send-Tahesab (@{{ CheckHealth = @() }})
+  $health = $null
+  try {{
+    $health = Invoke-RestMethod -Uri ($TahesabUrl.TrimEnd('/') + "/CheckHealth") -Method GET -Headers $ThHeaders -TimeoutSec 20 -UseBasicParsing
+  }} catch {{
+    $health = Send-Tahesab "CheckHealth" @()
+  }}
   $liveDb = [string]$health.DBName
   if (-not $liveDb) {{ $liveDb = [string]$health.dbname }}
   $liveDbNorm = $liveDb.ToLower()
@@ -322,16 +365,18 @@ while ($true) {{
     $stamp = Get-Date -Format "HH:mm:ss"
     Write-Host "[$stamp] $methodName id=$jobId"
 
-    if ($null -ne $job.body) {{
-      $bodyObj = $job.body
+    $jsonBody = $null
+    if ($job.body_json) {{
+      $jsonBody = [string]$job.body_json
     }} else {{
-      $bodyObj = @{{ $methodName = @($job.params) }}
+      $jsonBody = Build-TahesabJson $methodName $job.params
     }}
+    Write-Host ("  JSON: " + $jsonBody.Substring(0, [Math]::Min(100, $jsonBody.Length)))
 
     $parsed = $null
     $err = ""
     try {{
-      $parsed = Send-Tahesab $bodyObj
+      $parsed = Send-TahesabJson $jsonBody
     }} catch {{
       $err = "$_"
       try {{
