@@ -842,18 +842,26 @@ def sync_accepted_order_isolated(order_id: str) -> None:
         db.close()
 
 
-def sync_unsynced_accepted_orders(db: Session, limit: int = 30) -> int:
-    """Catch-up: accepted app orders that never reached Tahesab outbox."""
+def sync_unsynced_accepted_orders(db: Session, limit: int = 30, max_age_hours: float = 6.0) -> int:
+    """Catch-up: recent accepted orders that never reached Tahesab outbox.
+
+    Only looks at orders accepted in the last `max_age_hours` so we never
+    replay the shop's full historical book onto the TEST Tahesab DB.
+    """
+    from datetime import timedelta
+
     from app.models_db import Order, OrderStatusEnum
 
     if not is_configured():
         return 0
+    cutoff = datetime.utcnow() - timedelta(hours=max_age_hours)
     orders = (
         db.query(Order)
         .filter(
             Order.status == OrderStatusEnum.accepted,
             Order.tahesab_factor_code.is_(None),
             Order.user_id.isnot(None),
+            Order.updated_at >= cutoff,
         )
         .order_by(Order.updated_at.asc())
         .limit(limit)
