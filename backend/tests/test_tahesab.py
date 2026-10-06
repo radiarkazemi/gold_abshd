@@ -1,5 +1,5 @@
 """Unit tests for Tahesab client (mocked httpx — no live Windows API)."""
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -384,4 +384,205 @@ def test_motaferaghe_weight_converts_740_to_750_then_mesghal17():
     assert abs(motaferaghe_weight_to_ayar750(750.0) - 740.0) < 1e-9
     expected = (10.0 * 740.0 / 750.0) / MOTAFEREGHE_TO_GRAM18
     assert abs(motaferaghe_vazn_mesghal17(10.0) - expected) < 1e-9
+
+
+def test_mesghal17_weight_to_gram18():
+    from app.gold_conversion import MESGHAL17_TO_GRAM18, mesghal17_weight_to_gram18
+
+    assert abs(mesghal17_weight_to_gram18(1.0) - MESGHAL17_TO_GRAM18) < 1e-9
+    assert abs(mesghal17_weight_to_gram18(2.0) - 2.0 * MESGHAL17_TO_GRAM18) < 1e-9
+
+
+def test_parse_mande_rows_from_docs_shape():
+    rows = tahesab.parse_mande_rows(
+        {
+            "MandeHesab": [
+                {"Code": "1043", "MandeyeVazni": 2.5, "MandeyeMali": 1_500_000},
+                {"Code": 88, "MandeyeVazni": "-1.0", "MandeyeMali": "-20000"},
+            ]
+        }
+    )
+    assert rows == [
+        {"code": 1043, "vazni": 2.5, "mali": 1_500_000.0},
+        {"code": 88, "vazni": -1.0, "mali": -20_000.0},
+    ]
+
+
+def test_parse_mande_rows_persian_digits():
+    rows = tahesab.parse_mande_rows(
+        {"mandehesab": [{"Code": "۱۰۴۳", "MandeyeVazni": "1.5", "MandeyeMali": "0"}]}
+    )
+    # Arabic decimal ٫ may not parse; at least Code maps.
+    assert rows[0]["code"] == 1043
+
+
+def test_apply_mande_rows_converts_mesghal_and_unscales_cash():
+    from app.gold_conversion import mesghal17_weight_to_gram18
+
+    user = SimpleNamespace(
+        id="u1",
+        user_code="1043",
+        tahesab_moshtari_id=1043,
+        tahesab_gold_balance=None,
+        tahesab_cash_balance=None,
+        tahesab_balance_at=None,
+    )
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = user
+    n = tahesab.apply_mande_rows(
+        db, [{"code": 1043, "vazni": 2.0, "mali": 250_000}]
+    )
+    assert n == 1
+    assert abs(user.tahesab_gold_balance - mesghal17_weight_to_gram18(2.0)) < 1e-9
+    assert user.tahesab_cash_balance == 25_000.0  # / TAHESAB_AMOUNT_SCALE=10
+    assert user.tahesab_balance_at is not None
+
+
+@patch("app.services.tahesab.enqueue_mande_for_user")
+def test_apply_bridge_result_order_queues_mande(mock_mande):
+    user = SimpleNamespace(id="u1", tahesab_moshtari_id=1043)
+    order = SimpleNamespace(
+        id="o1",
+        user_id="u1",
+        tahesab_factor_code=None,
+        tahesab_sync_needed=True,
+    )
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.side_effect = [order, user]
+    job = SimpleNamespace(method="DoNewSanadBuySaleGOLD", ref_type="order", ref_id="o1")
+    tahesab.apply_bridge_result(db, job, {"OK": "GAFACTOR"})
+    assert order.tahesab_factor_code == "GAFACTOR"
+    mock_mande.assert_called_once()
+    assert mock_mande.call_args.kwargs["ref_suffix"] == "o1"
+
+
+def test_apply_bridge_result_mande_updates_user():
+    user = SimpleNamespace(
+        id="u1",
+        user_code="1043",
+        tahesab_moshtari_id=1043,
+        tahesab_gold_balance=None,
+        tahesab_cash_balance=None,
+        tahesab_balance_at=None,
+    )
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = user
+    job = SimpleNamespace(method="getmandehesabbycode", ref_type="mande-day", ref_id="2026-10-06:0")
+    tahesab.apply_bridge_result(
+        db,
+        job,
+        {"MandeHesab": [{"Code": 1043, "MandeyeVazni": 1, "MandeyeMali": 10000}]},
+    )
+    assert user.tahesab_gold_balance is not None
+    assert user.tahesab_cash_balance == 1000.0
+
+
+@patch("app.services.tahesab.call_method_direct")
+def test_process_outbox_mande_without_ok_is_success(mock_direct):
+    mock_direct.return_value = {
+        "MandeHesab": [{"Code": 1, "MandeyeVazni": 0, "MandeyeMali": 0}]
+    }
+    db = MagicMock()
+    job = SimpleNamespace(
+        id="j1",
+        method="getmandehesabbycode",
+        params_json='["1"]',
+        ref_type="mande",
+        ref_id="u1",
+        attempts=0,
+        status="pending",
+        last_error=None,
+        result_json=None,
+    )
+    with patch("app.services.tahesab.apply_bridge_result") as apply:
+        status = tahesab.process_outbox_job(db, job)
+    assert status == "done"
+    apply.assert_called_once()
+
+
+@patch("app.services.tahesab.enqueue_mande_for_all_users", return_value=3)
+def test_maybe_enqueue_on_first_online(mock_enq):
+    db = MagicMock()
+    with patch("app.services.tahesab._get_app_setting", return_value=None), patch(
+        "app.services.tahesab._set_app_setting"
+    ) as set_s:
+        n = tahesab.maybe_enqueue_online_mande_refresh(db)
+    assert n == 3
+    mock_enq.assert_called_once()
+    keys = [c.args[1] for c in set_s.call_args_list]
+    assert tahesab.SETTING_MANDE_REFRESH_DAY in keys
+    assert tahesab.SETTING_AGENT_LAST_SEEN in keys
+
+
+@patch("app.services.tahesab.enqueue_mande_for_all_users", return_value=1)
+def test_maybe_enqueue_after_agent_gap(mock_enq):
+    now = datetime.utcnow()
+    last = (now - timedelta(minutes=31)).isoformat()
+    today = tahesab._tehran_today_iso()
+
+    def get_s(_db, key):
+        if key == tahesab.SETTING_AGENT_LAST_SEEN:
+            return last
+        return today
+
+    db = MagicMock()
+    with patch("app.services.tahesab._get_app_setting", side_effect=get_s), patch(
+        "app.services.tahesab._set_app_setting"
+    ):
+        n = tahesab.maybe_enqueue_online_mande_refresh(db)
+    assert n == 1
+    mock_enq.assert_called_once()
+
+
+@patch("app.services.tahesab.enqueue_mande_for_all_users", return_value=1)
+def test_maybe_enqueue_skips_same_day_recent_poll(mock_enq):
+    now = datetime.utcnow()
+    last = (now - timedelta(seconds=10)).isoformat()
+    today = tahesab._tehran_today_iso()
+
+    def get_s(_db, key):
+        if key == tahesab.SETTING_AGENT_LAST_SEEN:
+            return last
+        return today
+
+    db = MagicMock()
+    with patch("app.services.tahesab._get_app_setting", side_effect=get_s), patch(
+        "app.services.tahesab._set_app_setting"
+    ):
+        n = tahesab.maybe_enqueue_online_mande_refresh(db)
+    assert n == 0
+    mock_enq.assert_not_called()
+
+
+@patch("app.services.tahesab.enqueue_mande_for_all_users", return_value=2)
+def test_maybe_enqueue_on_new_tehran_day(mock_enq):
+    now = datetime.utcnow()
+    last = (now - timedelta(seconds=5)).isoformat()
+
+    def get_s(_db, key):
+        if key == tahesab.SETTING_AGENT_LAST_SEEN:
+            return last
+        return "2020-01-01"
+
+    db = MagicMock()
+    with patch("app.services.tahesab._get_app_setting", side_effect=get_s), patch(
+        "app.services.tahesab._set_app_setting"
+    ):
+        n = tahesab.maybe_enqueue_online_mande_refresh(db)
+    assert n == 2
+    mock_enq.assert_called_once()
+
+
+@patch("app.services.tahesab.enqueue_method", return_value="job-mande")
+def test_enqueue_mande_for_user_uses_code(mock_enqueue):
+    db = MagicMock()
+    user = SimpleNamespace(id="u1", tahesab_moshtari_id=1043)
+    oid = tahesab.enqueue_mande_for_user(db, user, ref_suffix="order-1")
+    assert oid == "job-mande"
+    mock_enqueue.assert_called_once()
+    args, kwargs = mock_enqueue.call_args
+    assert args[1] == "getmandehesabbycode"
+    assert args[2] == ["1043"]
+    assert kwargs["ref_type"] == "mande"
+    assert kwargs["ref_id"] == "u1:order-1"
 

@@ -99,6 +99,9 @@ def _patch_users_table():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer VARCHAR",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS max_devices INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS tahesab_moshtari_id INTEGER",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS tahesab_gold_balance FLOAT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS tahesab_cash_balance FLOAT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS tahesab_balance_at TIMESTAMP",
     ]
     with engine.connect() as conn:
         for stmt in statements:

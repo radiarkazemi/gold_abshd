@@ -43,3 +43,8 @@ def motaferaghe_weight_to_ayar750(weight_740: float) -> float:
 def motaferaghe_vazn_mesghal17(gram_weight_740: float) -> float:
     """App گرم of 740 متفرقه → Tahesab مثقال۱۷ after 740→750 soothe."""
     return gram18_to_motaferaghe_mesghal17(motaferaghe_weight_to_ayar750(gram_weight_740))
+
+
+def mesghal17_weight_to_gram18(mesghal_weight: float) -> float:
+    """Tahesab مانده وزنی (مثقال) → app گرم ۱۸. Inverse of the price divisor."""
+    return float(mesghal_weight) * MESGHAL17_TO_GRAM18

@@ -19,9 +19,10 @@ import asyncio
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 import httpx
 import jdatetime
@@ -32,6 +33,14 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 _PERSIAN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+
+# Docs: {"getmandehesabbycode":["1","2"]} → {MandeHesab:[{Code, MandeyeVazni, MandeyeMali, ...}]}
+MANDE_METHOD = "getmandehesabbycode"
+MANDE_BATCH_SIZE = 80
+AGENT_ONLINE_GAP_SECONDS = 30 * 60
+SETTING_AGENT_LAST_SEEN = "tahesab_agent_last_seen"
+SETTING_MANDE_REFRESH_DAY = "tahesab_mande_refresh_day"
+TEHRAN_TZ = ZoneInfo("Asia/Tehran")
 
 
 def _to_jalali(dt: datetime) -> jdatetime.date:
@@ -71,6 +80,235 @@ def _headers() -> dict[str, str]:
 
 def _scale_amount(toman: float) -> float:
     return float(toman) * float(settings.TAHESAB_AMOUNT_SCALE)
+
+
+def _unscale_amount(mali: float) -> float:
+    """Tahesab MandeyeMali (rial-scale) → app تومان."""
+    scale = float(settings.TAHESAB_AMOUNT_SCALE or 1) or 1.0
+    return float(mali) / scale
+
+
+def _to_float(value: Any) -> float:
+    if value is None or value == "":
+        return 0.0
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = (
+        str(value)
+        .translate(_PERSIAN_DIGITS)
+        .replace(",", "")
+        .replace(" ", "")
+        .replace("\u200c", "")
+        .strip()
+    )
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
+
+
+def _tehran_today_iso() -> str:
+    return datetime.now(TEHRAN_TZ).date().isoformat()
+
+
+def _get_app_setting(db: Session, key: str) -> str | None:
+    from app.models_db import AppSetting
+
+    row = db.query(AppSetting).filter(AppSetting.key == key).first()
+    return row.value if row else None
+
+
+def _set_app_setting(db: Session, key: str, value: str) -> None:
+    from app.models_db import AppSetting
+
+    now = datetime.utcnow()
+    row = db.query(AppSetting).filter(AppSetting.key == key).first()
+    if row:
+        row.value = value
+        row.updated_at = now
+        db.add(row)
+    else:
+        db.add(AppSetting(key=key, value=value, updated_at=now))
+    db.flush()
+
+
+def parse_mande_rows(payload: Any) -> list[dict[str, Any]]:
+    """Normalize getmandehesabbycode JSON into [{code, vazni, mali}, ...]."""
+    rows: list[Any] = []
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        found = False
+        for key, val in payload.items():
+            if str(key).lower().replace("_", "") in {"mandehesab"}:
+                found = True
+                if isinstance(val, list):
+                    rows = val
+                elif isinstance(val, dict):
+                    rows = [val]
+                break
+        if not found:
+            lowered = {str(k).lower(): k for k in payload}
+            if "code" in lowered or "mandeyevazni" in lowered or "mandeyemali" in lowered:
+                rows = [payload]
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        code_raw = row.get("Code", row.get("code"))
+        if code_raw is None:
+            continue
+        try:
+            code = int(str(code_raw).translate(_PERSIAN_DIGITS).strip())
+        except (TypeError, ValueError):
+            continue
+        vazni = _to_float(
+            row.get("MandeyeVazni", row.get("mandeyevazni", row.get("Mandeye_Vazni")))
+        )
+        mali = _to_float(
+            row.get("MandeyeMali", row.get("mandeyemali", row.get("Mandeye_Mali")))
+        )
+        out.append({"code": code, "vazni": vazni, "mali": mali})
+    return out
+
+
+def payload_is_mande_success(data: Any) -> bool:
+    if not isinstance(data, dict):
+        return False
+    for key in data:
+        if str(key).lower().replace("_", "") == "mandehesab":
+            return True
+    return (data.get("method") or "").lower() == MANDE_METHOD
+
+
+def apply_mande_rows(db: Session, rows: list[dict[str, Any]]) -> int:
+    """Write MandeyeVazni/MandeyeMali onto matching User rows."""
+    from app.gold_conversion import mesghal17_weight_to_gram18
+    from app.models_db import User
+
+    now = datetime.utcnow()
+    applied = 0
+    for row in rows:
+        user = (
+            db.query(User)
+            .filter(User.tahesab_moshtari_id == int(row["code"]))
+            .first()
+        )
+        if not user:
+            logger.info("[tahesab] mande skip unknown moshtari %s", row["code"])
+            continue
+        user.tahesab_gold_balance = mesghal17_weight_to_gram18(row["vazni"])
+        user.tahesab_cash_balance = _unscale_amount(row["mali"])
+        user.tahesab_balance_at = now
+        db.add(user)
+        applied += 1
+        logger.info(
+            "[tahesab] mande user=%s moshtari=%s gold_g18=%.4f cash_toman=%.0f",
+            user.user_code,
+            row["code"],
+            user.tahesab_gold_balance,
+            user.tahesab_cash_balance,
+        )
+    return applied
+
+
+def enqueue_mande_for_user(db: Session, user, *, ref_suffix: str | None = None) -> str | None:
+    if not is_configured():
+        return None
+    moshtari = getattr(user, "tahesab_moshtari_id", None)
+    if moshtari is None:
+        return None
+    ref_id = str(user.id)
+    if ref_suffix:
+        ref_id = f"{user.id}:{ref_suffix}"
+    return enqueue_method(
+        db,
+        MANDE_METHOD,
+        [str(int(moshtari))],
+        ref_type="mande",
+        ref_id=ref_id,
+    )
+
+
+def enqueue_mande_for_all_users(db: Session) -> int:
+    """Queue getmandehesabbycode for every user that already has a moshtari code."""
+    from app.models_db import User
+
+    if not is_configured():
+        return 0
+    users = (
+        db.query(User)
+        .filter(User.tahesab_moshtari_id.isnot(None))
+        .order_by(User.tahesab_moshtari_id.asc())
+        .all()
+    )
+    codes = []
+    seen: set[str] = set()
+    for user in users:
+        try:
+            code = str(int(user.tahesab_moshtari_id))
+        except (TypeError, ValueError):
+            continue
+        if code in seen:
+            continue
+        seen.add(code)
+        codes.append(code)
+    if not codes:
+        return 0
+    day = _tehran_today_iso()
+    queued = 0
+    for i in range(0, len(codes), MANDE_BATCH_SIZE):
+        chunk = codes[i : i + MANDE_BATCH_SIZE]
+        oid = enqueue_method(
+            db,
+            MANDE_METHOD,
+            chunk,
+            ref_type="mande-day",
+            ref_id=f"{day}:{i // MANDE_BATCH_SIZE}",
+        )
+        if oid:
+            queued += 1
+    logger.info("[tahesab] queued mande refresh jobs=%s users=%s", queued, len(codes))
+    return queued
+
+
+def maybe_enqueue_online_mande_refresh(db: Session) -> int:
+    """Pull all user remainings on first Tehran-day poll or after a 30min agent gap."""
+    if not is_configured():
+        return 0
+    now = datetime.utcnow()
+    last_seen_raw = _get_app_setting(db, SETTING_AGENT_LAST_SEEN)
+    last_day = _get_app_setting(db, SETTING_MANDE_REFRESH_DAY)
+    today = _tehran_today_iso()
+
+    last_seen_dt: datetime | None = None
+    if last_seen_raw:
+        try:
+            last_seen_dt = datetime.fromisoformat(last_seen_raw)
+        except ValueError:
+            last_seen_dt = None
+
+    gap = last_seen_dt is None or (now - last_seen_dt).total_seconds() >= AGENT_ONLINE_GAP_SECONDS
+    new_day = last_day != today
+    queued = 0
+    if gap or new_day:
+        queued = enqueue_mande_for_all_users(db)
+        _set_app_setting(db, SETTING_MANDE_REFRESH_DAY, today)
+        logger.info(
+            "[tahesab] online/daily mande refresh jobs=%s gap=%s new_day=%s",
+            queued,
+            gap,
+            new_day,
+        )
+
+    stale_seen = last_seen_dt is None or (now - last_seen_dt).total_seconds() >= 60
+    if stale_seen or queued:
+        _set_app_setting(db, SETTING_AGENT_LAST_SEEN, now.isoformat())
+    return queued
 
 
 def _digits(value: str | None) -> str:
@@ -629,6 +867,11 @@ def apply_bridge_result(db: Session, job, result: dict[str, Any]) -> None:
     """Apply successful response onto User / Order rows."""
     from app.models_db import Order, User
 
+    method = (getattr(job, "method", None) or "").lower()
+    if method == MANDE_METHOD or job.ref_type in ("mande", "mande-day"):
+        apply_mande_rows(db, parse_mande_rows(result or {}))
+        return
+
     ok = result.get("OK")
     if job.ref_type == "user" and job.ref_id and ok is not None:
         user = db.query(User).filter(User.id == job.ref_id).first()
@@ -638,6 +881,7 @@ def apply_bridge_result(db: Session, job, result: dict[str, Any]) -> None:
                 db.add(user)
                 db.flush()
                 _queue_pending_order_sanads(db, user)
+                enqueue_mande_for_user(db, user)
             except (TypeError, ValueError):
                 pass
     if job.ref_type == "order" and job.ref_id and ok is not None:
@@ -646,6 +890,11 @@ def apply_bridge_result(db: Session, job, result: dict[str, Any]) -> None:
             order.tahesab_factor_code = str(ok)
             order.tahesab_sync_needed = False
             db.add(order)
+            user_id = getattr(order, "user_id", None)
+            if user_id:
+                user = db.query(User).filter(User.id == user_id).first()
+                if user:
+                    enqueue_mande_for_user(db, user, ref_suffix=str(order.id))
 
 
 def _error_text(data: dict[str, Any] | None) -> str:
@@ -758,8 +1007,14 @@ def process_outbox_job(db: Session, job) -> str:
         db.commit()
         return job.status
 
-    # Success shapes: {"OK": ...} or CheckHealth {"Api_Status": "OK"}
-    if "OK" not in data and "Api_Status" not in data:
+    # Success shapes: {"OK": ...}, CheckHealth {"Api_Status": "OK"},
+    # or getmandehesabbycode {"MandeHesab": [...]}.
+    if (
+        "OK" not in data
+        and "Api_Status" not in data
+        and not payload_is_mande_success(data)
+        and (job.method or "").lower() != MANDE_METHOD
+    ):
         job.last_error = f"unexpected response: {str(data)[:500]}"
         job.status = "pending"
         db.add(job)
@@ -789,6 +1044,8 @@ def process_outbox_batch(db: Session, limit: int = 20) -> dict[str, int]:
     if not is_direct_target_ready():
         counts["skipped"] = 1
         return counts
+
+    maybe_enqueue_online_mande_refresh(db)
 
     # Refuse to push if the live API opened the wrong (main) database.
     health = call_method_direct("CheckHealth", [])

@@ -319,9 +319,33 @@ def create_phone_order(
     return decide_order(db, order.id, "accepted")
 
 
+def prefer_tahesab_balance(user, gold: float, cash: float, updated_at=None) -> dict:
+    """Use Tahesab مانده when it has been pulled; otherwise the ledger sum."""
+    if user is not None and getattr(user, "tahesab_balance_at", None) is not None:
+        return {
+            "gold_balance": float(user.tahesab_gold_balance or 0.0),
+            "cash_balance": float(user.tahesab_cash_balance or 0.0),
+            "updated_at": user.tahesab_balance_at,
+        }
+    return {
+        "gold_balance": float(gold or 0.0),
+        "cash_balance": float(cash or 0.0),
+        "updated_at": updated_at,
+    }
+
+
 def get_user_balance(db: Session, user_id: str) -> dict:
-    """گرم۱۸ gold + cash only - excludes coin-ledger transactions
-    entirely (see get_user_coin_balances for those)."""
+    """گرم۱۸ gold + cash.
+
+    When Tahesab has been pulled for this user, that مانده is the source
+    of truth (shop books). Otherwise fall back to the app ledger sum.
+    """
+    from app.models_db import User
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is not None and getattr(user, "tahesab_balance_at", None) is not None:
+        return prefer_tahesab_balance(user, 0.0, 0.0)
+
     result = (
         db.query(
             func.coalesce(func.sum(BalanceTransaction.gold_change), 0.0),
@@ -333,11 +357,7 @@ def get_user_balance(db: Session, user_id: str) -> dict:
         .first()
     )
     gold_balance, cash_balance, updated_at = result
-    return {
-        "gold_balance": float(gold_balance),
-        "cash_balance": float(cash_balance),
-        "updated_at": updated_at,
-    }
+    return prefer_tahesab_balance(user, gold_balance, cash_balance, updated_at)
 
 
 def get_user_coin_balances(db: Session, user_id: str) -> dict[int, float]:
@@ -624,8 +644,7 @@ def list_users_with_balance(db: Session, search: str | None = None) -> list[dict
             "is_blocked": user.is_blocked,
             "is_trading_banned": user.is_trading_banned,
             "created_at": user.created_at,
-            "gold_balance": float(gold),
-            "cash_balance": float(cash),
+            **{k: v for k, v in prefer_tahesab_balance(user, gold, cash).items() if k != "updated_at"},
             "role": user.role,
             "is_online": user.is_online,
             "registration_status": reg_key.status.value if reg_key else None,

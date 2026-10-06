@@ -60,6 +60,8 @@ def bridge_next(db: Session = Depends(get_db), _auth=Depends(_require_bridge)):
 
     now = datetime.utcnow()
     stale_before = now - timedelta(seconds=20)
+    tahesab.maybe_enqueue_online_mande_refresh(db)
+    db.commit()
     job = (
         db.query(TahesabOutbox)
         .filter(

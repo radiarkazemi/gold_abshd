@@ -71,7 +71,7 @@ class OrderDecisionIn(BaseModel):
 class BalanceOut(BaseModel):
     gold_balance: float   # گرم ۱۸
     cash_balance: float   # تومان
-    # Last ledger change for this user (UTC). Drives «آخرین بروزرسانی حساب‌ها».
+    # Last Tahesab مانده pull (or ledger change if never pulled). UTC.
     updated_at: Optional[datetime] = None
 
     @field_serializer("updated_at")
