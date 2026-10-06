@@ -213,8 +213,13 @@ async def my_ledger(
     """Customer PDF source: cached Tahesab اسناد; optional soft DoListAsnad pull."""
     queued = False
     if refresh:
-        # Soft only — post-sanad path uses force=True internally so trades stay fresh.
-        queued = tahesab.request_asnad_refresh(db, current_user, force=False)
+        # Soft view refresh (2m) — post-sanad still force=True so trades stay current.
+        queued = tahesab.request_asnad_refresh(
+            db,
+            current_user,
+            force=False,
+            max_age=tahesab.ASNAD_VIEW_STALE_SECONDS,
+        )
         if queued:
             db.commit()
             db.refresh(current_user)

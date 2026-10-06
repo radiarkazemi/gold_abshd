@@ -9,7 +9,6 @@ import {
   orderTahesabDocType,
   paymentExplanationFull,
 } from "./orderLabels";
-import { tehranDayKey } from "./tehranTime";
 import { orderTotalMoney } from "./orderCalc";
 
 function fa(n, opts) {
@@ -257,26 +256,11 @@ export function buildOrdersReceiptHtml(
   const unitLabel = priceLabelMode === "gram18_only" ? "مظنه" : "مظنه ۱۷";
   // Explicit ledgerDocs (even empty) means: use Tahesab only, never invent from app orders.
   const useLedger = preferLedger || ledgerDocs !== undefined;
-  let { docs, goldBalance, cashBalance } = useLedger
+  const { docs, goldBalance, cashBalance } = useLedger
     ? normalizeTahesabLedgerDocs(Array.isArray(ledgerDocs) ? ledgerDocs : [])
     : buildCustomerLedgerDocs(orders, { priceLabelMode });
 
-  if (useLedger && (dateFrom || dateTo)) {
-    const filtered = docs.filter((doc) => {
-      const day = tehranDayKey(doc.created_at);
-      if (!day) return true;
-      if (dateFrom && day < dateFrom) return false;
-      if (dateTo && day > dateTo) return false;
-      return true;
-    });
-    // Never blank a Tahesab ledger PDF because of a date mismatch — keep all docs.
-    if (filtered.length) {
-      docs = filtered;
-      const last = docs[docs.length - 1];
-      goldBalance = last ? last.goldBalance : 0;
-      cashBalance = last ? last.cashBalance : 0;
-    }
-  }
+  // Ledger PDF = full جزئیات اسناد from Tahesab (column set only). Never date-filter rows.
 
   const rowsHtml = docs
     .map((doc, idx) => {
@@ -298,10 +282,7 @@ export function buildOrdersReceiptHtml(
     })
     .join("");
 
-  const rangeLabel =
-    dateFrom || dateTo
-      ? `از ${dateFrom || "ابتدا"} تا ${dateTo || "امروز"}`
-      : "اسناد ته‌حساب";
+  const rangeLabel = "جزئیات اسناد ته‌حساب";
 
   return `
 <!DOCTYPE html>

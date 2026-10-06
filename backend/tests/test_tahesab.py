@@ -922,8 +922,8 @@ def test_parse_asnad_rows_unwraps_list_envelope():
 @patch("app.services.tahesab.is_configured", return_value=True)
 @patch("app.services.tahesab.enqueue_method", return_value="job-asnad")
 @patch("app.services.tahesab.asnad_job_pending", return_value=False)
-@patch("app.services.tahesab.books_reset_at", return_value=datetime(2026, 10, 6, 12, 0, 0))
-def test_request_asnad_soft_skips_fresh_cache(mock_reset, mock_pending, mock_enq, mock_cfg):
+@patch("app.services.tahesab.release_stale_asnad_jobs", return_value=0)
+def test_request_asnad_soft_skips_fresh_cache(mock_release, mock_pending, mock_enq, mock_cfg):
     user = SimpleNamespace(
         id="u1",
         tahesab_moshtari_id=1002,
@@ -937,8 +937,8 @@ def test_request_asnad_soft_skips_fresh_cache(mock_reset, mock_pending, mock_enq
 @patch("app.services.tahesab.is_configured", return_value=True)
 @patch("app.services.tahesab.enqueue_method", return_value="job-asnad")
 @patch("app.services.tahesab.asnad_job_pending", return_value=False)
-@patch("app.services.tahesab.books_reset_at", return_value=datetime(2026, 10, 6, 12, 0, 0))
-def test_request_asnad_soft_queues_when_empty(mock_reset, mock_pending, mock_enq, mock_cfg):
+@patch("app.services.tahesab.release_stale_asnad_jobs", return_value=0)
+def test_request_asnad_soft_queues_when_empty(mock_release, mock_pending, mock_enq, mock_cfg):
     user = SimpleNamespace(
         id="u1",
         tahesab_moshtari_id=1002,
@@ -947,12 +947,20 @@ def test_request_asnad_soft_queues_when_empty(mock_reset, mock_pending, mock_enq
     )
     assert tahesab.request_asnad_refresh(MagicMock(), user, force=False) is True
     mock_enq.assert_called_once()
+    args = mock_enq.call_args
+    params = args[0][2]
+    assert params[0] == -1
+    assert params[1] == 1002
+    assert params[2] == "1400-01-01"
+    assert params[4] == ""
+    assert params[5] == 0
 
 
 @patch("app.services.tahesab.is_configured", return_value=True)
 @patch("app.services.tahesab.enqueue_method", return_value="job-asnad")
 @patch("app.services.tahesab.asnad_job_pending", return_value=True)
-def test_request_asnad_dedupes_inflight(mock_pending, mock_enq, mock_cfg):
+@patch("app.services.tahesab.release_stale_asnad_jobs", return_value=0)
+def test_request_asnad_dedupes_inflight(mock_release, mock_pending, mock_enq, mock_cfg):
     user = SimpleNamespace(
         id="u1",
         tahesab_moshtari_id=1002,
@@ -966,8 +974,8 @@ def test_request_asnad_dedupes_inflight(mock_pending, mock_enq, mock_cfg):
 @patch("app.services.tahesab.is_configured", return_value=True)
 @patch("app.services.tahesab.enqueue_method", return_value="job-asnad")
 @patch("app.services.tahesab.asnad_job_pending", return_value=False)
-@patch("app.services.tahesab.books_reset_at", return_value=datetime(2026, 10, 6, 12, 0, 0))
-def test_request_asnad_force_queues_even_if_fresh(mock_reset, mock_pending, mock_enq, mock_cfg):
+@patch("app.services.tahesab.release_stale_asnad_jobs", return_value=0)
+def test_request_asnad_force_queues_even_if_fresh(mock_release, mock_pending, mock_enq, mock_cfg):
     user = SimpleNamespace(
         id="u1",
         tahesab_moshtari_id=1002,
@@ -975,6 +983,29 @@ def test_request_asnad_force_queues_even_if_fresh(mock_reset, mock_pending, mock
         tahesab_asnad_json='[{"id":"1","doc_type":"ورود متفرقه"}]',
     )
     assert tahesab.request_asnad_refresh(MagicMock(), user, force=True) is True
+    mock_enq.assert_called_once()
+
+
+@patch("app.services.tahesab.is_configured", return_value=True)
+@patch("app.services.tahesab.enqueue_method", return_value="job-asnad")
+@patch("app.services.tahesab.asnad_job_pending", return_value=False)
+@patch("app.services.tahesab.release_stale_asnad_jobs", return_value=0)
+def test_request_asnad_view_stale_shorter_max_age(mock_release, mock_pending, mock_enq, mock_cfg):
+    user = SimpleNamespace(
+        id="u1",
+        tahesab_moshtari_id=1002,
+        tahesab_asnad_at=datetime.utcnow() - timedelta(minutes=3),
+        tahesab_asnad_json='[{"id":"1","doc_type":"طلب"}]',
+    )
+    # Default 15m stale → skip
+    assert tahesab.request_asnad_refresh(MagicMock(), user, force=False) is False
+    # View stale 2m → queue so latest جزئیات اسناد appear
+    assert (
+        tahesab.request_asnad_refresh(
+            MagicMock(), user, force=False, max_age=tahesab.ASNAD_VIEW_STALE_SECONDS
+        )
+        is True
+    )
     mock_enq.assert_called_once()
 
 

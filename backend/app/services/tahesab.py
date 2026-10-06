@@ -41,6 +41,10 @@ ASNAD_METHOD = "DoListAsnad"
 MANDE_BATCH_SIZE = 80
 AGENT_ONLINE_GAP_SECONDS = 30 * 60
 ASNAD_STALE_SECONDS = 15 * 60
+# Softer age when the customer opens the report (shop may add docs in Tahesab).
+ASNAD_VIEW_STALE_SECONDS = 2 * 60
+# Cancel bridge asnad jobs stuck pending/claimed so the UI cannot hang forever.
+ASNAD_JOB_STALE_SECONDS = 3 * 60
 MANDE_STALE_SECONDS = 5 * 60
 SETTING_AGENT_LAST_SEEN = "tahesab_agent_last_seen"
 SETTING_MANDE_REFRESH_DAY = "tahesab_mande_refresh_day"
@@ -464,8 +468,42 @@ def asnad_job_pending(db: Session, user) -> bool:
     )
 
 
-def request_asnad_refresh(db: Session, user, *, force: bool = False) -> bool:
-    """Queue DoListAsnad for this user (Count_Last=-1 → row-by-row مانده).
+def release_stale_asnad_jobs(
+    db: Session, *, user=None, max_age: int = ASNAD_JOB_STALE_SECONDS
+) -> int:
+    """Cancel DoListAsnad jobs stuck pending/claimed so pulls can resume."""
+    from app.models_db import TahesabOutbox
+
+    cutoff = datetime.utcnow() - timedelta(seconds=max_age)
+    q = db.query(TahesabOutbox).filter(
+        TahesabOutbox.method == ASNAD_METHOD,
+        TahesabOutbox.status.in_(("pending", "claimed")),
+        TahesabOutbox.updated_at < cutoff,
+    )
+    if user is not None and getattr(user, "id", None):
+        q = q.filter(
+            TahesabOutbox.ref_type == "asnad",
+            TahesabOutbox.ref_id == str(user.id),
+        )
+    n = 0
+    now = datetime.utcnow()
+    for job in q.all():
+        job.status = "cancelled"
+        job.last_error = (job.last_error or "")[:180] + " | stale-asnad-timeout"
+        job.updated_at = now
+        db.add(job)
+        n += 1
+    return n
+
+
+def request_asnad_refresh(
+    db: Session,
+    user,
+    *,
+    force: bool = False,
+    max_age: int | None = None,
+) -> bool:
+    """Queue DoListAsnad for this user (full جزئیات اسناد, running مانده).
 
     Returns True when a pull is in flight (newly queued or already pending).
     Soft mode (force=False) skips enqueue when cache is fresh and non-empty.
@@ -477,22 +515,25 @@ def request_asnad_refresh(db: Session, user, *, force: bool = False) -> bool:
     if moshtari is None:
         return False
 
+    release_stale_asnad_jobs(db, user=user)
+
     # One in-flight ledger pull per user — never pile up DoListAsnad.
     if asnad_job_pending(db, user):
         return True
 
     rows = get_cached_asnad_rows(user)
+    stale_after = ASNAD_STALE_SECONDS if max_age is None else max_age
     if not force:
         at = getattr(user, "tahesab_asnad_at", None)
         if at is not None and rows:
             age = (datetime.utcnow() - at).total_seconds()
-            if age < ASNAD_STALE_SECONDS:
+            if age < stale_after:
                 return False
 
-    cutoff = books_reset_at(db) or datetime.utcnow()
-    az = _shamsi_day_str(cutoff)
-    # Pad end date so same-day Tehran edge cases still return rows.
-    ta = _shamsi_day_str(datetime.now(TEHRAN_TZ) + timedelta(days=1))
+    # Full جزئیات اسناد for this customer — do not date-filter rows.
+    # Wide window avoids empty Az/Ta hangs with Count_Last=-1 on some agents.
+    az = "1400-01-01"
+    ta = _shamsi_day_str(datetime.now(TEHRAN_TZ) + timedelta(days=400))
     # Count_Last=-1 builds TahesabVazni/TahesabMali per row; metal 0 = طلا.
     params = [-1, int(moshtari), az, ta, "", 0]
     enqueue_method(

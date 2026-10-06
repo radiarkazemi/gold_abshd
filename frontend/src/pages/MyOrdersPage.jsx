@@ -80,22 +80,27 @@ export default function MyOrdersPage() {
       .finally(() => setLoading(false));
   }
 
-  async function reloadLedger({ refresh = false, waitForFresh = false } = {}) {
-    setLedgerLoading(true);
+  async function reloadLedger({
+    refresh = false,
+    waitForFresh = false,
+    silent = false,
+  } = {}) {
+    if (!silent) setLedgerLoading(true);
     try {
       let data = await fetchMyLedger({ refresh });
       const beforeAt = data?.updated_at || ledgerUpdatedAt;
       const cached = data.docs || [];
-      // Only block the UI when we have nothing to show yet.
+      // Only block briefly when we have nothing to show; never hang on a stuck bridge job.
       const shouldWait =
         waitForFresh && data?.pending_refresh && cached.length === 0;
       if (shouldWait) {
-        for (let i = 0; i < 12; i += 1) {
-          await new Promise((r) => setTimeout(r, 2500));
+        for (let i = 0; i < 4; i += 1) {
+          await new Promise((r) => setTimeout(r, 2000));
           data = await fetchMyLedger({ refresh: false });
-          const at = data?.updated_at;
           if ((data.docs || []).length > 0) break;
+          const at = data?.updated_at;
           if (at && at !== beforeAt) break;
+          if (!data?.pending_refresh) break;
         }
       }
       const docs = data.docs || [];
@@ -106,21 +111,20 @@ export default function MyOrdersPage() {
       console.error(e);
       return ledgerDocs;
     } finally {
-      setLedgerLoading(false);
+      if (!silent) setLedgerLoading(false);
     }
   }
 
   useEffect(() => {
     reload();
-    // Soft refresh if stale; do not wait unless cache is empty.
+    // Soft refresh if view-stale; wait only when cache is empty (capped).
     reloadLedger({ refresh: true, waitForFresh: true });
     fetchOrderLimits()
       .then((limits) => setPriceLabelMode(limits.price_label_mode || "mesghal_and_gram18"))
       .catch(() => {});
     const interval = setInterval(reload, 6000);
-    // Re-read cache periodically; soft-refresh only when backend marks stale.
     const ledgerInterval = setInterval(
-      () => reloadLedger({ refresh: true, waitForFresh: false }),
+      () => reloadLedger({ refresh: true, waitForFresh: false, silent: true }),
       15 * 60 * 1000
     );
     return () => {
@@ -251,16 +255,14 @@ export default function MyOrdersPage() {
               if (!docs.length) {
                 docs = await reloadLedger({ refresh: true, waitForFresh: true });
               } else {
-                // Background soft-refresh — does not enqueue if cache is fresh.
-                reloadLedger({ refresh: true, waitForFresh: false });
+                // Soft view-refresh in background (2m stale) — no UI hang.
+                reloadLedger({ refresh: true, waitForFresh: false, silent: true });
               }
               if (!docs.length) {
                 alert("هنوز اسناد ته‌حساب دریافت نشده. چند ثانیه بعد دوباره تلاش کنید.");
                 return;
               }
               downloadOrdersReceipt([], {
-                dateFrom,
-                dateTo,
                 priceLabelMode,
                 ledgerDocs: docs,
                 preferLedger: true,
@@ -280,15 +282,13 @@ export default function MyOrdersPage() {
               if (!docs.length) {
                 docs = await reloadLedger({ refresh: true, waitForFresh: true });
               } else {
-                reloadLedger({ refresh: true, waitForFresh: false });
+                reloadLedger({ refresh: true, waitForFresh: false, silent: true });
               }
               if (!docs.length) {
                 alert("هنوز اسناد ته‌حساب دریافت نشده. چند ثانیه بعد دوباره تلاش کنید.");
                 return;
               }
               const html = buildOrdersReceiptHtml([], {
-                dateFrom,
-                dateTo,
                 priceLabelMode,
                 ledgerDocs: docs,
                 preferLedger: true,
@@ -298,8 +298,6 @@ export default function MyOrdersPage() {
                 html,
                 onDownload: () =>
                   downloadOrdersReceipt([], {
-                    dateFrom,
-                    dateTo,
                     priceLabelMode,
                     ledgerDocs: docs,
                     preferLedger: true,

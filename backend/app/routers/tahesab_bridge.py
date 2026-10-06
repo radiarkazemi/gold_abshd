@@ -76,6 +76,8 @@ def bridge_next(db: Session = Depends(get_db), _auth=Depends(_require_bridge)):
 
     now = datetime.utcnow()
     stale_before = now - timedelta(seconds=20)
+    # Drop asnad jobs the agent abandoned so PDF refresh cannot stick forever.
+    tahesab.release_stale_asnad_jobs(db)
     ready = or_(
         TahesabOutbox.status == "pending",
         and_(
