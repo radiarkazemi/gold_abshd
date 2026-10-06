@@ -1363,9 +1363,10 @@ def sync_accepted_order_isolated(order_id: str) -> None:
 def sync_unsynced_users_to_tahesab(db: Session, limit: int = 100) -> int:
     """Queue/link DoNewMoshtari for every app user missing a moshtari id.
 
-    Does not create app users from Tahesab.
+    Does not create app users from Tahesab. Skips users that already have
+    a pending/claimed DoNewMoshtari outbox job.
     """
-    from app.models_db import User
+    from app.models_db import TahesabOutbox, User
 
     if not is_configured():
         return 0
@@ -1378,6 +1379,18 @@ def sync_unsynced_users_to_tahesab(db: Session, limit: int = 100) -> int:
     )
     n = 0
     for user in users:
+        pending = (
+            db.query(TahesabOutbox)
+            .filter(
+                TahesabOutbox.ref_type == "user",
+                TahesabOutbox.ref_id == user.id,
+                TahesabOutbox.method == "DoNewMoshtari",
+                TahesabOutbox.status.in_(("pending", "claimed")),
+            )
+            .first()
+        )
+        if pending:
+            continue
         try:
             sync_user_to_tahesab(db, user)
             n += 1

@@ -723,13 +723,48 @@ def test_resolve_duplicate_prefers_phone_then_code():
 def test_catchup_syncs_unsynced_users(mock_sync):
     user = SimpleNamespace(id="u1", user_code="1001")
     db = MagicMock()
-    db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [
+    user_q = MagicMock()
+    user_q.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [
         user
     ]
+    outbox_q = MagicMock()
+    outbox_q.filter.return_value.first.return_value = None
+
+    def query_side(model):
+        name = getattr(model, "__name__", "")
+        if name == "TahesabOutbox":
+            return outbox_q
+        return user_q
+
+    db.query.side_effect = query_side
     n = tahesab.sync_unsynced_users_to_tahesab(db)
     assert n == 1
     mock_sync.assert_called_once()
     db.commit.assert_called_once()
+
+
+@patch("app.services.tahesab.sync_user_to_tahesab")
+def test_catchup_skips_users_with_pending_moshtari_job(mock_sync):
+    user = SimpleNamespace(id="u1", user_code="1001")
+    db = MagicMock()
+    user_q = MagicMock()
+    user_q.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [
+        user
+    ]
+    outbox_q = MagicMock()
+    outbox_q.filter.return_value.first.return_value = SimpleNamespace(id="job1")
+
+    def query_side(model):
+        name = getattr(model, "__name__", "")
+        if name == "TahesabOutbox":
+            return outbox_q
+        return user_q
+
+    db.query.side_effect = query_side
+    n = tahesab.sync_unsynced_users_to_tahesab(db)
+    assert n == 0
+    mock_sync.assert_not_called()
+    db.commit.assert_not_called()
 
 
 @patch("app.services.tahesab.hold_mande_refresh_today")
