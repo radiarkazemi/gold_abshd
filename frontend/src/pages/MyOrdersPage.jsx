@@ -12,8 +12,8 @@ import { useTheme } from "../context/ThemeContext";
 import BottomTabBar from "../components/BottomTabBar";
 import JalaliDateInput from "../components/JalaliDateInput";
 import ReceiptPreviewModal from "../components/ReceiptPreviewModal";
+import { orderExplanationFull, orderSideShort, sortOrdersByTimeDesc } from "../utils/orderLabels";
 
-const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
 const AMOUNT_LABEL = { weight: "گرم ۱۸", amount: "تومان" };
 const STATUS_LABEL = {
   pending: "در انتظار",
@@ -91,9 +91,11 @@ export default function MyOrdersPage() {
     return true;
   });
 
+  const visibleSorted = useMemo(() => sortOrdersByTimeDesc(visible), [visible]);
+
   const pdfOrders = useMemo(
-    () => visible.filter((o) => o.status === "accepted"),
-    [visible]
+    () => visibleSorted.filter((o) => o.status === "accepted"),
+    [visibleSorted]
   );
 
   function applyToday() {
@@ -216,15 +218,15 @@ export default function MyOrdersPage() {
 
       {loading ? (
         <p className="myorders__empty">در حال بارگذاری…</p>
-      ) : visible.length === 0 ? (
+      ) : visibleSorted.length === 0 ? (
         <p className="myorders__empty">سفارشی برای نمایش نیست.</p>
       ) : (
         <div className="myorders__list">
-          {visible.map((order) => (
+          {visibleSorted.map((order) => (
             <div key={order.id} className={`history-card history-card--${order.side}`}>
               <div className="history-card__top">
                 <span className={`order-card__badge order-card__badge--${order.side}`}>
-                  {SIDE_LABEL[order.side]}
+                  {orderSideShort(order)}
                 </span>
                 {order.is_manual && <span className="manual-order-tag">دستی</span>}
                 <span className={`history-card__status history-card__status--${order.status}`}>
@@ -252,6 +254,10 @@ export default function MyOrdersPage() {
                       : fa(Math.round(order.value * order.price_at_submit))}{" "}
                     تومان
                   </span>
+                </div>
+                <div className="history-card__row">
+                  <span className="history-card__row-label">شرح ته‌حساب</span>
+                  <span className="history-card__row-value">{orderExplanationFull(order)}</span>
                 </div>
                 {order.description && (
                   <div className="history-card__row">

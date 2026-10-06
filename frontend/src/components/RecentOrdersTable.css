@@ -98,7 +98,7 @@
 
 .recent-orders__row {
   display: grid;
-  grid-template-columns: 0.9fr 1.2fr 1.5fr 1.1fr;
+  grid-template-columns: 1.35fr 1.1fr 1.35fr 1.05fr;
   align-items: center;
   gap: 4px;
   padding: 9px 10px;
@@ -119,6 +119,13 @@
 
 .recent-orders__side {
   font-weight: 700;
+  line-height: 1.25;
+}
+
+.recent-orders__kind {
+  font-weight: 600;
+  font-size: 0.85em;
+  opacity: 0.85;
 }
 
 .recent-orders__side--buy {
