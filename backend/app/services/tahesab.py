@@ -528,7 +528,10 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
 
     when = order.updated_at or order.created_at or datetime.utcnow()
     j = _to_jalali(when)
-    buy_or_sale = 0 if order.side.value == "buy" else 1
+    # Tahesab Buy_or_Sale is shop-centric: 0 = shop buys FROM customer
+    # (app sell), 1 = shop sells TO customer (app buy). Sending the app
+    # side raw swapped بدهکار/بستانکار on the customer card.
+    buy_or_sale = 1 if order.side.value == "buy" else 0
     qty = _order_quantity(order)
     total = _scale_amount(_order_total_toman(order))
     mazaneh_mesghal = order.mesghal17_price_at_submit
@@ -700,6 +703,23 @@ def process_outbox_job(db: Session, job) -> str:
                 db.commit()
                 logger.info("[tahesab] linked duplicate phone → moshtari %s", linked)
                 return "done"
+
+        # Already posted — treat duplicate Factor_Code as success, do not retry.
+        if "Factor_Code" in err or "کد فاکتور" in err:
+            factor = None
+            if job.method == "DoNewSanadBuySaleGOLD" and len(params) > 17:
+                factor = str(params[17])
+            elif job.method == "DoNewSanadBuySaleSEKEH" and len(params) > 15:
+                factor = str(params[15])
+            result = {"OK": factor or "duplicate", "linked": True, "note": err}
+            job.status = "done"
+            job.result_json = json.dumps(result, ensure_ascii=False)
+            job.last_error = None
+            apply_bridge_result(db, job, result)
+            db.add(job)
+            db.commit()
+            logger.info("[tahesab] Factor_Code already exists → %s", factor)
+            return "done"
 
         job.last_error = err[:2000]
         # Permanent business errors stop retrying; transient keep pending.

@@ -154,6 +154,29 @@ def test_process_outbox_links_duplicate_phone(mock_direct):
     assert apply.call_args[0][2]["OK"] == 88
 
 
+@patch("app.services.tahesab.call_method_direct")
+def test_process_outbox_duplicate_factor_is_success(mock_direct):
+    mock_direct.return_value = {"ERROR": "کد فاکتور ارسالی شما (Factor_Code) تکراری می باشد."}
+    params = [1, 1002, -1, 1, 1405, 7, 14, 15.0, 750.0, 0, "", 1, 1.0, 0, 1, 1.0, "sharh", "GAFACTOR15"]
+    db = MagicMock()
+    job = SimpleNamespace(
+        id="j1",
+        method="DoNewSanadBuySaleGOLD",
+        params_json=__import__("json").dumps(params),
+        ref_type="order",
+        ref_id="o1",
+        attempts=0,
+        status="pending",
+        last_error=None,
+        result_json=None,
+    )
+    with patch("app.services.tahesab.apply_bridge_result") as apply:
+        status = tahesab.process_outbox_job(db, job)
+    assert status == "done"
+    apply.assert_called_once()
+    assert apply.call_args[0][2]["OK"] == "GAFACTOR15"
+
+
 @patch("app.services.tahesab.call_method_direct", return_value=None)
 def test_process_outbox_keeps_pending_when_offline(_mock):
     db = MagicMock()
@@ -212,7 +235,7 @@ def test_sync_accepted_order_gold(mock_sync_user, mock_sanad):
     # Factor is persisted only after outbox ack — not optimistically.
     assert order.tahesab_factor_code is None
     kwargs = mock_sanad.call_args.kwargs
-    assert kwargs["buy_or_sale"] == 0
+    assert kwargs["buy_or_sale"] == 1
     assert kwargs["vazn"] == 2.0
     assert kwargs["moshtari_code"] == 1043
     assert kwargs["mablagh_kol"] == 2.0 * 6_800_000 * 10  # toman * scale

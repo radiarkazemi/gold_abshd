@@ -499,7 +499,7 @@ while ($true) {{
       $errText = $err
     }}
 
-    if ($errText -and $methodName -eq "DoNewMoshtari" -and ($errText -match "تلفن تکراری|شماره.*تکراری|duplicate")) {{
+    if ($errText -and $methodName -eq "DoNewMoshtari" -and ($errText -match "تلفن تکراری|شماره.*تکراری|duplicate|kept alive|closed by the server")) {{
       $linked = Resolve-DuplicateMoshtari $job.params $errText
       if ($null -ne $linked) {{
         Ack-Bridge $jobId $true $linked "" $false
@@ -509,6 +509,16 @@ while ($true) {{
       Ack-Bridge $jobId $false $null $errText $true
       Write-Host "  FAIL permanent: $errText"
       Start-Sleep -Seconds 2
+      continue
+    }}
+
+    if ($errText -and $methodName -match "DoNewSanad" -and ($errText -match "Factor_Code|کد فاکتور")) {{
+      $factor = $null
+      if ($job.params -and @($job.params).Count -ge 18) {{ $factor = [string]$job.params[17] }}
+      elseif ($job.params -and @($job.params).Count -ge 16) {{ $factor = [string]$job.params[15] }}
+      if (-not $factor) {{ $factor = "duplicate" }}
+      Ack-Bridge $jobId $true (@{{ OK = $factor; linked = $true; note = $errText }}) "" $false
+      Write-Host "  OK (factor already exists): $factor"
       continue
     }}
 
