@@ -42,6 +42,7 @@ MANDE_STALE_SECONDS = 5 * 60
 SETTING_AGENT_LAST_SEEN = "tahesab_agent_last_seen"
 SETTING_MANDE_REFRESH_DAY = "tahesab_mande_refresh_day"
 SETTING_MANDE_HOLD_DAY = "tahesab_mande_hold_day"
+SETTING_BOOKS_RESET_AT = "tahesab_books_reset_at"
 TEHRAN_TZ = ZoneInfo("Asia/Tehran")
 
 
@@ -261,6 +262,40 @@ def hold_mande_refresh_today(db: Session) -> None:
 def clear_mande_hold(db: Session) -> None:
     """Allow مانده pulls after a remaining wipe."""
     _set_app_setting(db, SETTING_MANDE_HOLD_DAY, "")
+
+
+def parse_setting_datetime(raw: str | None) -> datetime | None:
+    if not raw or not str(raw).strip():
+        return None
+    text = str(raw).strip().replace("Z", "+00:00")
+    try:
+        value = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if value.tzinfo is not None:
+        return value.replace(tzinfo=None)
+    return value
+
+
+def books_reset_at(db: Session) -> datetime | None:
+    """UTC cutoff after the last remaining wipe. Customer PDF/history hide older rows."""
+    return parse_setting_datetime(_get_app_setting(db, SETTING_BOOKS_RESET_AT))
+
+
+def set_books_reset_at(db: Session, when: datetime | None = None) -> datetime:
+    when = when or datetime.utcnow()
+    if when.tzinfo is not None:
+        when = when.replace(tzinfo=None)
+    _set_app_setting(db, SETTING_BOOKS_RESET_AT, when.isoformat())
+    return when
+
+
+def filter_since_books_reset(db: Session, query, column):
+    """Keep rows created strictly after the remaining wipe."""
+    cutoff = books_reset_at(db)
+    if cutoff is None:
+        return query
+    return query.filter(column > cutoff)
 
 
 def cancel_pending_mande_jobs(db: Session) -> int:
@@ -1490,6 +1525,7 @@ def reset_all_app_remainings(db: Session) -> dict[str, int]:
 
     cancelled = cancel_pending_mande_jobs(db)
     clear_mande_hold(db)
+    set_books_reset_at(db, now)
     db.flush()
     logger.info(
         "[tahesab] remaining reset users=%s ledger_offsets=%s mande_cancelled=%s",
@@ -1650,9 +1686,23 @@ def _cli(argv: list[str] | None = None) -> int:
             db.commit()
             print({"hold_cleared": True, "mande_jobs": queued})
             return 0
+        if cmd == "set-books-reset":
+            raw = args[1] if len(args) > 1 else ""
+            when = parse_setting_datetime(raw) if raw else datetime.utcnow()
+            if raw and when is None:
+                print({"error": f"invalid datetime: {raw}"}, file=sys.stderr)
+                return 2
+            set_books_reset_at(db, when)
+            queued = enqueue_mande_for_all_users(db)
+            db.commit()
+            print({
+                "books_reset_at": books_reset_at(db).isoformat() if books_reset_at(db) else None,
+                "mande_jobs": queued,
+            })
+            return 0
         print(
             "usage: python -m app.services.tahesab "
-            "{reset-remainings|sync-users|reset-and-sync|release-mande-hold}",
+            "{reset-remainings|sync-users|reset-and-sync|release-mande-hold|set-books-reset}",
             file=sys.stderr,
         )
         return 2

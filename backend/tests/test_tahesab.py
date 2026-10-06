@@ -831,10 +831,12 @@ def test_reset_all_app_remainings_zeros_cache_and_ledger(mock_cancel, mock_hold)
         q = MagicMock()
         if calls["n"] == 1:
             q.all.return_value = [user]
-        else:
+        elif calls["n"] == 2:
             q.filter.return_value.group_by.return_value.all.return_value = [
                 ("u1", -1.444, 419_476_551.3)
             ]
+        else:
+            q.filter.return_value.first.return_value = None
         return q
 
     db.query.side_effect = query_side
@@ -847,9 +849,49 @@ def test_reset_all_app_remainings_zeros_cache_and_ledger(mock_cancel, mock_hold)
     assert user.tahesab_balance_at is not None
     mock_cancel.assert_called_once()
     mock_hold.assert_called_once()
-    offset = db.add.call_args_list[-1][0][0]
+    offset = [
+        call[0][0]
+        for call in db.add.call_args_list
+        if getattr(call[0][0], "gold_change", None) is not None
+    ][-1]
     assert offset.gold_change == 1.444
     assert offset.cash_change == -419_476_551.3
+
+
+def test_books_reset_at_parses_iso():
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        value="2026-10-06T13:43:43.478599"
+    )
+    assert tahesab.books_reset_at(db) == datetime(2026, 10, 6, 13, 43, 43, 478599)
+
+
+def test_filter_since_books_reset_hides_older_rows():
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        value="2026-10-06T13:43:43"
+    )
+    query = MagicMock()
+    filtered = MagicMock()
+    query.filter.return_value = filtered
+
+    class _Col:
+        def __gt__(self, other):
+            self.other = other
+            return True
+
+    column = _Col()
+    assert tahesab.filter_since_books_reset(db, query, column) is filtered
+    query.filter.assert_called_once()
+    assert column.other == datetime(2026, 10, 6, 13, 43, 43)
+
+
+def test_filter_since_books_reset_noop_without_cutoff():
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = None
+    query = MagicMock()
+    assert tahesab.filter_since_books_reset(db, query, object()) is query
+    query.filter.assert_not_called()
 
 
 def test_apply_mande_does_not_create_app_users():

@@ -374,11 +374,17 @@ def get_user_coin_balances(db: Session, user_id: str) -> dict[int, float]:
     return {item_id: float(count) for item_id, count in rows}
 
 
-def get_user_transactions(db: Session, user_id: str, limit: int = 20) -> list[BalanceTransaction]:
+def get_user_transactions(
+    db: Session,
+    user_id: str,
+    limit: int = 20,
+    since: datetime | None = None,
+) -> list[BalanceTransaction]:
+    query = db.query(BalanceTransaction).filter(BalanceTransaction.user_id == user_id)
+    if since is not None:
+        query = query.filter(BalanceTransaction.created_at > since)
     return (
-        db.query(BalanceTransaction)
-        .filter(BalanceTransaction.user_id == user_id)
-        .order_by(BalanceTransaction.created_at.desc())
+        query.order_by(BalanceTransaction.created_at.desc())
         .limit(limit)
         .all()
     )

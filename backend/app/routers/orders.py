@@ -98,8 +98,11 @@ async def my_orders(
     db: Session = Depends(get_db),
 ):
     orders = (
-        db.query(Order)
-        .filter(Order.user_id == current_user.id)
+        tahesab.filter_since_books_reset(
+            db,
+            db.query(Order).filter(Order.user_id == current_user.id),
+            Order.created_at,
+        )
         .order_by(Order.created_at.desc())
         .all()
     )
@@ -117,7 +120,8 @@ async def my_order_detail(
         .filter(Order.id == order_id, Order.user_id == current_user.id)
         .first()
     )
-    if not order:
+    cutoff = tahesab.books_reset_at(db)
+    if not order or (cutoff is not None and order.created_at <= cutoff):
         raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
     return order_to_customer_out(order)
 
@@ -202,4 +206,6 @@ async def my_transactions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return get_user_transactions_db(db, current_user.id)
+    return get_user_transactions_db(
+        db, current_user.id, since=tahesab.books_reset_at(db)
+    )
