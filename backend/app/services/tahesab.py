@@ -40,7 +40,7 @@ MANDE_METHOD = "getmandehesabbycode"
 ASNAD_METHOD = "DoListAsnad"
 MANDE_BATCH_SIZE = 80
 AGENT_ONLINE_GAP_SECONDS = 30 * 60
-ASNAD_STALE_SECONDS = 5 * 60
+ASNAD_STALE_SECONDS = 15 * 60
 MANDE_STALE_SECONDS = 5 * 60
 SETTING_AGENT_LAST_SEEN = "tahesab_agent_last_seen"
 SETTING_MANDE_REFRESH_DAY = "tahesab_mande_refresh_day"
@@ -444,16 +444,47 @@ def get_cached_asnad_rows(user) -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
+def asnad_job_pending(db: Session, user) -> bool:
+    """True when a DoListAsnad pull is already queued/in-flight for this user."""
+    from app.models_db import TahesabOutbox
+
+    uid = getattr(user, "id", None)
+    if not uid:
+        return False
+    return (
+        db.query(TahesabOutbox.id)
+        .filter(
+            TahesabOutbox.method == ASNAD_METHOD,
+            TahesabOutbox.ref_type == "asnad",
+            TahesabOutbox.ref_id == str(uid),
+            TahesabOutbox.status.in_(("pending", "claimed")),
+        )
+        .first()
+        is not None
+    )
+
+
 def request_asnad_refresh(db: Session, user, *, force: bool = False) -> bool:
-    """Queue DoListAsnad for this user (Count_Last=-1 → row-by-row مانده)."""
+    """Queue DoListAsnad for this user (Count_Last=-1 → row-by-row مانده).
+
+    Returns True when a pull is in flight (newly queued or already pending).
+    Soft mode (force=False) skips enqueue when cache is fresh and non-empty.
+    force=True is for post-sanad / internal paths only — not the customer API.
+    """
     if not is_configured():
         return False
     moshtari = getattr(user, "tahesab_moshtari_id", None)
     if moshtari is None:
         return False
+
+    # One in-flight ledger pull per user — never pile up DoListAsnad.
+    if asnad_job_pending(db, user):
+        return True
+
+    rows = get_cached_asnad_rows(user)
     if not force:
         at = getattr(user, "tahesab_asnad_at", None)
-        if at is not None:
+        if at is not None and rows:
             age = (datetime.utcnow() - at).total_seconds()
             if age < ASNAD_STALE_SECONDS:
                 return False

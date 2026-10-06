@@ -919,6 +919,65 @@ def test_parse_asnad_rows_unwraps_list_envelope():
     assert rows[0]["doc_type"] == "ورود متفرقه"
 
 
+@patch("app.services.tahesab.is_configured", return_value=True)
+@patch("app.services.tahesab.enqueue_method", return_value="job-asnad")
+@patch("app.services.tahesab.asnad_job_pending", return_value=False)
+@patch("app.services.tahesab.books_reset_at", return_value=datetime(2026, 10, 6, 12, 0, 0))
+def test_request_asnad_soft_skips_fresh_cache(mock_reset, mock_pending, mock_enq, mock_cfg):
+    user = SimpleNamespace(
+        id="u1",
+        tahesab_moshtari_id=1002,
+        tahesab_asnad_at=datetime.utcnow(),
+        tahesab_asnad_json='[{"id":"1","doc_type":"ورود متفرقه"}]',
+    )
+    assert tahesab.request_asnad_refresh(MagicMock(), user, force=False) is False
+    mock_enq.assert_not_called()
+
+
+@patch("app.services.tahesab.is_configured", return_value=True)
+@patch("app.services.tahesab.enqueue_method", return_value="job-asnad")
+@patch("app.services.tahesab.asnad_job_pending", return_value=False)
+@patch("app.services.tahesab.books_reset_at", return_value=datetime(2026, 10, 6, 12, 0, 0))
+def test_request_asnad_soft_queues_when_empty(mock_reset, mock_pending, mock_enq, mock_cfg):
+    user = SimpleNamespace(
+        id="u1",
+        tahesab_moshtari_id=1002,
+        tahesab_asnad_at=datetime.utcnow(),
+        tahesab_asnad_json="[]",
+    )
+    assert tahesab.request_asnad_refresh(MagicMock(), user, force=False) is True
+    mock_enq.assert_called_once()
+
+
+@patch("app.services.tahesab.is_configured", return_value=True)
+@patch("app.services.tahesab.enqueue_method", return_value="job-asnad")
+@patch("app.services.tahesab.asnad_job_pending", return_value=True)
+def test_request_asnad_dedupes_inflight(mock_pending, mock_enq, mock_cfg):
+    user = SimpleNamespace(
+        id="u1",
+        tahesab_moshtari_id=1002,
+        tahesab_asnad_at=None,
+        tahesab_asnad_json=None,
+    )
+    assert tahesab.request_asnad_refresh(MagicMock(), user, force=True) is True
+    mock_enq.assert_not_called()
+
+
+@patch("app.services.tahesab.is_configured", return_value=True)
+@patch("app.services.tahesab.enqueue_method", return_value="job-asnad")
+@patch("app.services.tahesab.asnad_job_pending", return_value=False)
+@patch("app.services.tahesab.books_reset_at", return_value=datetime(2026, 10, 6, 12, 0, 0))
+def test_request_asnad_force_queues_even_if_fresh(mock_reset, mock_pending, mock_enq, mock_cfg):
+    user = SimpleNamespace(
+        id="u1",
+        tahesab_moshtari_id=1002,
+        tahesab_asnad_at=datetime.utcnow(),
+        tahesab_asnad_json='[{"id":"1","doc_type":"ورود متفرقه"}]',
+    )
+    assert tahesab.request_asnad_refresh(MagicMock(), user, force=True) is True
+    mock_enq.assert_called_once()
+
+
 def test_books_reset_at_parses_iso():
     db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(

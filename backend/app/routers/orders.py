@@ -205,13 +205,21 @@ async def my_balance(
 async def my_ledger(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    refresh: bool = Query(False, description="Force a Tahesab DoListAsnad pull"),
+    refresh: bool = Query(
+        False,
+        description="Soft-refresh from Tahesab when cache is stale/empty (never force)",
+    ),
 ):
-    """Customer PDF source: real Tahesab اسناد (ورود متفرقه، پرداخت، طلب، …)."""
-    queued = tahesab.request_asnad_refresh(db, current_user, force=refresh)
-    if queued:
-        db.commit()
-        db.refresh(current_user)
+    """Customer PDF source: cached Tahesab اسناد; optional soft DoListAsnad pull."""
+    queued = False
+    if refresh:
+        # Soft only — post-sanad path uses force=True internally so trades stay fresh.
+        queued = tahesab.request_asnad_refresh(db, current_user, force=False)
+        if queued:
+            db.commit()
+            db.refresh(current_user)
+    else:
+        queued = tahesab.asnad_job_pending(db, current_user)
     payload = tahesab.user_ledger_payload(db, current_user)
     payload["pending_refresh"] = bool(queued)
     return LedgerOut(

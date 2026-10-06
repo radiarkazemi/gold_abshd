@@ -85,12 +85,16 @@ export default function MyOrdersPage() {
     try {
       let data = await fetchMyLedger({ refresh });
       const beforeAt = data?.updated_at || ledgerUpdatedAt;
-      // Wait until DoListAsnad ack updates the cache (not just until old cache exists).
-      if (refresh && waitForFresh && data?.pending_refresh) {
+      const cached = data.docs || [];
+      // Only block the UI when we have nothing to show yet.
+      const shouldWait =
+        waitForFresh && data?.pending_refresh && cached.length === 0;
+      if (shouldWait) {
         for (let i = 0; i < 12; i += 1) {
           await new Promise((r) => setTimeout(r, 2500));
           data = await fetchMyLedger({ refresh: false });
           const at = data?.updated_at;
+          if ((data.docs || []).length > 0) break;
           if (at && at !== beforeAt) break;
         }
       }
@@ -108,12 +112,17 @@ export default function MyOrdersPage() {
 
   useEffect(() => {
     reload();
+    // Soft refresh if stale; do not wait unless cache is empty.
     reloadLedger({ refresh: true, waitForFresh: true });
     fetchOrderLimits()
       .then((limits) => setPriceLabelMode(limits.price_label_mode || "mesghal_and_gram18"))
       .catch(() => {});
     const interval = setInterval(reload, 6000);
-    const ledgerInterval = setInterval(() => reloadLedger({ refresh: true }), 5 * 60 * 1000);
+    // Re-read cache periodically; soft-refresh only when backend marks stale.
+    const ledgerInterval = setInterval(
+      () => reloadLedger({ refresh: true, waitForFresh: false }),
+      15 * 60 * 1000
+    );
     return () => {
       clearInterval(interval);
       clearInterval(ledgerInterval);
@@ -235,9 +244,16 @@ export default function MyOrdersPage() {
           <button
             type="button"
             className="date-filter__download-all"
-            disabled={ledgerLoading}
+            disabled={ledgerLoading && ledgerDocs.length === 0}
             onClick={async () => {
-              const docs = await reloadLedger({ refresh: true, waitForFresh: true });
+              // Prefer cached ledger; only wait on first empty pull.
+              let docs = ledgerDocs;
+              if (!docs.length) {
+                docs = await reloadLedger({ refresh: true, waitForFresh: true });
+              } else {
+                // Background soft-refresh — does not enqueue if cache is fresh.
+                reloadLedger({ refresh: true, waitForFresh: false });
+              }
               if (!docs.length) {
                 alert("هنوز اسناد ته‌حساب دریافت نشده. چند ثانیه بعد دوباره تلاش کنید.");
                 return;
@@ -251,16 +267,21 @@ export default function MyOrdersPage() {
               });
             }}
           >
-            {ledgerLoading
+            {ledgerLoading && ledgerDocs.length === 0
               ? "در حال دریافت اسناد ته‌حساب…"
               : `دانلود گزارش ته‌حساب (${fa(ledgerDocs.length)}) — PDF`}
           </button>
           <button
             type="button"
             className="date-filter__download-all date-filter__download-all--ghost"
-            disabled={ledgerLoading}
+            disabled={ledgerLoading && ledgerDocs.length === 0}
             onClick={async () => {
-              const docs = await reloadLedger({ refresh: true, waitForFresh: true });
+              let docs = ledgerDocs;
+              if (!docs.length) {
+                docs = await reloadLedger({ refresh: true, waitForFresh: true });
+              } else {
+                reloadLedger({ refresh: true, waitForFresh: false });
+              }
               if (!docs.length) {
                 alert("هنوز اسناد ته‌حساب دریافت نشده. چند ثانیه بعد دوباره تلاش کنید.");
                 return;
