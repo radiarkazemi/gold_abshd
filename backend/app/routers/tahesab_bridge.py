@@ -479,31 +479,33 @@ def bridge_agent_bat():
     """
     Double-click daily on the Tahesab Windows PC (API window must be open).
     Download: https://ghasrtala.ir/api/tahesab-bridge/agent.bat
+    Always pulls the latest agent.ps1 from the VPS (encoding fix included).
     """
     content = r"""@echo off
 chcp 65001 >nul
-title همگام‌سازی ته‌حساب - قصر طلا
+title GhasrTala - Tahesab Sync (TEST only)
 cd /d "%~dp0"
 
 echo ============================================
-echo   قصر طلا - همگام‌سازی ته‌حساب ^(فقط تست^)
+echo   GhasrTala - Tahesab Sync  [TEST DB ONLY]
+echo   Always downloads LATEST script from server
 echo ============================================
 echo.
-echo مهم: فقط روی ته حساب تست اجرا شود.
-echo        روی ته حساب اصلی هرگز API را روشن نکنید.
+echo IMPORTANT:
+echo   - Run only against TEST Tahesab (not main)
+echo   - Keep TEST API open on port 8081
+echo   - Leave this window open; Ctrl+C to stop
 echo.
-echo قبل از اجرا:
-echo   1^) ته حساب تست باز باشد ^(نه اصلی^)
-echo   2^) افزونه API روی تست روشن باشد ^(پورت 8081^)
-echo.
-echo این پنجره را باز بگذارید. برای توقف: Ctrl+C
+echo After update: Tahesab log must show \u0631\u0636\u0627
+echo               NOT the broken \u00d9\u0085 form.
 echo.
 
 :loop
-echo [%date% %time%] در حال اتصال به سرور...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { irm https://ghasrtala.ir/api/tahesab-bridge/agent.ps1 | iex } catch { Write-Host $_; exit 1 }"
+echo [%date% %time%] Connecting / updating agent from server...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$ProgressPreference='SilentlyContinue'; try { $s = Invoke-WebRequest -Uri 'https://ghasrtala.ir/api/tahesab-bridge/agent.ps1' -UseBasicParsing -TimeoutSec 60; if (-not $s.Content) { throw 'empty agent.ps1' }; Invoke-Expression $s.Content } catch { Write-Host $_; exit 1 }"
 echo.
-echo [%date% %time%] ارتباط قطع شد. تلاش دوباره تا ۵ ثانیه دیگر...
+echo [%date% %time%] Disconnected. Retry in 5 seconds...
 timeout /t 5 /nobreak >nul
 goto loop
 """
