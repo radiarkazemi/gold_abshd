@@ -166,14 +166,35 @@ def parse_mande_rows(payload: Any) -> list[dict[str, Any]]:
             code = int(str(code_raw).translate(_PERSIAN_DIGITS).strip())
         except (TypeError, ValueError):
             continue
-        vazni = _to_float(
-            row.get("MandeyeVazni", row.get("mandeyevazni", row.get("Mandeye_Vazni")))
-        )
+        vazni = _mande_gold_from_row(row)
         mali = _to_float(
             row.get("MandeyeMali", row.get("mandeyemali", row.get("Mandeye_Mali")))
         )
         out.append({"code": code, "vazni": vazni, "mali": mali})
     return out
+
+
+def _mande_gold_from_row(row: dict[str, Any]) -> float:
+    """Final مانده طلا as Tahesab reports it (already grams, not مثقال)."""
+    details = row.get("details") or row.get("Details")
+    if isinstance(details, list):
+        for item in details:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("Name") or item.get("name") or "")
+            name_n = (
+                name.replace("\u064a", "\u06cc")
+                .replace("\u0643", "\u06a9")
+                .replace("\u200c", "")
+                .strip()
+            )
+            if name_n == "مانده طلا":
+                raw = item.get("Value", item.get("Value1"))
+                if raw not in (None, ""):
+                    return _to_float(raw)
+    return _to_float(
+        row.get("MandeyeVazni", row.get("mandeyevazni", row.get("Mandeye_Vazni")))
+    )
 
 
 def payload_is_mande_success(data: Any) -> bool:
@@ -186,8 +207,12 @@ def payload_is_mande_success(data: Any) -> bool:
 
 
 def apply_mande_rows(db: Session, rows: list[dict[str, Any]]) -> int:
-    """Write MandeyeVazni/MandeyeMali onto matching User rows."""
-    from app.gold_conversion import mesghal17_weight_to_gram18
+    """Write Tahesab مانده طلا / مانده مالی onto matching User rows.
+
+    MandeyeVazni / details.مانده طلا is already the final gold remaining
+    in grams. Do not multiply by 4.3318 (that is a price divisor).
+    MandeyeMali is rial-scale and is divided by TAHESAB_AMOUNT_SCALE.
+    """
     from app.models_db import User
 
     now = datetime.utcnow()
@@ -201,7 +226,7 @@ def apply_mande_rows(db: Session, rows: list[dict[str, Any]]) -> int:
         if not user:
             logger.info("[tahesab] mande skip unknown moshtari %s", row["code"])
             continue
-        user.tahesab_gold_balance = mesghal17_weight_to_gram18(row["vazni"])
+        user.tahesab_gold_balance = float(row["vazni"])
         user.tahesab_cash_balance = _unscale_amount(row["mali"])
         user.tahesab_balance_at = now
         db.add(user)

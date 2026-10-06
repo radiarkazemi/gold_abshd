@@ -49,5 +49,5 @@ def motaferaghe_vazn_mesghal17(gram_weight_740: float) -> float:
 
 
 def mesghal17_weight_to_gram18(mesghal_weight: float) -> float:
-    """Tahesab مانده وزنی (مثقال) → app گرم ۱۸. Inverse of the price divisor."""
+    """مثقال۱۷ quantity → گرم ۱۸. Price-card math only; not for Tahesab مانده."""
     return float(mesghal_weight) * MESGHAL17_TO_GRAM18

@@ -148,7 +148,7 @@ class User(Base):
     # Tahesab (ته‌حساب) moshtari/account code after DoNewMoshtari sync.
     tahesab_moshtari_id = Column(Integer, nullable=True, index=True)
     # Last pulled مانده from Tahesab (source of truth for the app header).
-    # gold = گرم ۱۸ (from MandeyeVazni مثقال), cash = تومان (from MandeyeMali).
+    # gold = مانده طلا / MandeyeVazni (grams), cash = تومان (MandeyeMali / scale).
     tahesab_gold_balance = Column(Float, nullable=True)
     tahesab_cash_balance = Column(Float, nullable=True)
     tahesab_balance_at = Column(DateTime, nullable=True)

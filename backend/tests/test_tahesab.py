@@ -411,17 +411,28 @@ def test_parse_mande_rows_from_docs_shape():
     ]
 
 
-def test_parse_mande_rows_persian_digits():
+def test_parse_mande_prefers_details_mande_tala():
     rows = tahesab.parse_mande_rows(
-        {"mandehesab": [{"Code": "۱۰۴۳", "MandeyeVazni": "1.5", "MandeyeMali": "0"}]}
+        {
+            "MandeHesab": [
+                {
+                    "Code": "1002",
+                    "MandeyeMali": "4194765513",
+                    "MandeyeVazni": "-1.444",
+                    "details": [
+                        {"Name": "مانده مالی", "Value": "4194765513"},
+                        {"Name": "مانده طلا", "Value": "-1.444", "Value1": "-1.444"},
+                    ],
+                }
+            ]
+        }
     )
-    # Arabic decimal ٫ may not parse; at least Code maps.
-    assert rows[0]["code"] == 1043
+    assert rows[0]["code"] == 1002
+    assert rows[0]["vazni"] == -1.444
+    assert rows[0]["mali"] == 4194765513.0
 
 
-def test_apply_mande_rows_converts_mesghal_and_unscales_cash():
-    from app.gold_conversion import mesghal17_weight_to_gram18
-
+def test_apply_mande_rows_keeps_tahesab_grams_and_unscales_cash():
     user = SimpleNamespace(
         id="u1",
         user_code="1043",
@@ -433,12 +444,21 @@ def test_apply_mande_rows_converts_mesghal_and_unscales_cash():
     db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = user
     n = tahesab.apply_mande_rows(
-        db, [{"code": 1043, "vazni": 2.0, "mali": 250_000}]
+        db, [{"code": 1043, "vazni": -1.444, "mali": 4_194_765_513}]
     )
     assert n == 1
-    assert abs(user.tahesab_gold_balance - mesghal17_weight_to_gram18(2.0)) < 1e-9
-    assert user.tahesab_cash_balance == 25_000.0  # / TAHESAB_AMOUNT_SCALE=10
+    assert user.tahesab_gold_balance == -1.444
+    assert user.tahesab_gold_balance != -1.444 * 4.3318
+    assert user.tahesab_cash_balance == 419_476_551.3
     assert user.tahesab_balance_at is not None
+
+
+def test_parse_mande_rows_persian_digits():
+    rows = tahesab.parse_mande_rows(
+        {"mandehesab": [{"Code": "۱۰۴۳", "MandeyeVazni": "1.5", "MandeyeMali": "0"}]}
+    )
+    # Arabic decimal ٫ may not parse; at least Code maps.
+    assert rows[0]["code"] == 1043
 
 
 @patch("app.services.tahesab.enqueue_mande_for_user")
@@ -476,7 +496,7 @@ def test_apply_bridge_result_mande_updates_user():
         job,
         {"MandeHesab": [{"Code": 1043, "MandeyeVazni": 1, "MandeyeMali": 10000}]},
     )
-    assert user.tahesab_gold_balance is not None
+    assert user.tahesab_gold_balance == 1.0
     assert user.tahesab_cash_balance == 1000.0
 
 
