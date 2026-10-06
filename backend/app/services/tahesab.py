@@ -377,6 +377,9 @@ def parse_asnad_rows(payload: Any) -> list[dict[str, Any]]:
         tabdil = _to_float(tabdil_raw) if tabdil_raw is not None else 0.0
         factor = _nullish(raw.get("Factor_Code")) or str(raw.get("ID") or key)
         sharh = _nullish(raw.get("Sharh1"))
+        lab = _nullish(raw.get("Name_az") or raw.get("Name_Az"))
+        ang = _nullish(raw.get("Sh_Sharti") or raw.get("ShSharti"))
+        is_abshode = bool(raw.get("IsAbshode") or raw.get("IsAbshodeh"))
         api_user = str(_nullish(raw.get("User")) or "")
         # App-written sanads: keep شرح short. Shop-entered docs keep Tahesab Sharh1.
         if api_user.upper() == "API":
@@ -394,6 +397,9 @@ def parse_asnad_rows(payload: Any) -> list[dict[str, Any]]:
                 "weight": weight,
                 "tabdil_vazn": tabdil,
                 "ayar": _to_float(ayar_raw) if ayar_raw is not None else None,
+                "lab_name": str(lab) if lab else "",
+                "ang": str(ang) if ang else "",
+                "is_abshode": is_abshode,
                 "mazaneh": _to_float(mazaneh_raw) if mazaneh_raw is not None else None,
                 "money": money,
                 "gold_balance": gold_bal,

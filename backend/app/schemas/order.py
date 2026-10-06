@@ -94,6 +94,9 @@ class LedgerDocOut(BaseModel):
     weight: float = 0.0
     tabdil_vazn: float = 0.0
     ayar: Optional[float] = None
+    lab_name: str = ""
+    ang: str = ""
+    is_abshode: bool = False
     mazaneh: Optional[float] = None
     money: float = 0.0
     gold_balance: float = 0.0

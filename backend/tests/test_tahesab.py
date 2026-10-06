@@ -899,6 +899,48 @@ def test_parse_asnad_rows_running_balance_and_short_app_sharh():
     assert rows[1]["cash_balance"] == 638037758.0
 
 
+def test_parse_asnad_rows_abshode_lab_and_ang():
+    payload = {
+        "33": {
+            "ID": 33,
+            "NO": "خروج آبشده",
+            "ZamanSabt": "1405/07/14 19:32:44",
+            "Vazn": 22.3,
+            "TabdilVazn": -22.241,
+            "Ayar": 748,
+            "Name_az": "رزابهر",
+            "Sh_Sharti": "07530",
+            "IsAbshode": True,
+            "TahesabVazni": -21.652,
+            "TahesabMali": 0,
+        },
+        "34": {
+            "ID": 34,
+            "NO": "ورود آبشده",
+            "ZamanSabt": "1405/07/14 19:33:03",
+            "Vazn": 9,
+            "TabdilVazn": 9,
+            "Ayar": 750,
+            "Name_az": "رزابهر",
+            "Sh_Sharti": "3424",
+            "IsAbshode": True,
+            "TahesabVazni": -12.652,
+            "TahesabMali": 0,
+        },
+    }
+    rows = tahesab.parse_asnad_rows(payload)
+    assert len(rows) == 2
+    out = rows[0]
+    assert out["doc_type"] == "خروج آبشده"
+    assert out["weight"] == 22.3
+    assert out["tabdil_vazn"] == -22.241
+    assert out["ayar"] == 748.0
+    assert out["lab_name"] == "رزابهر"
+    assert out["ang"] == "07530"
+    assert out["is_abshode"] is True
+    assert rows[1]["ang"] == "3424"
+
+
 def test_parse_asnad_rows_unwraps_list_envelope():
     payload = [
         {

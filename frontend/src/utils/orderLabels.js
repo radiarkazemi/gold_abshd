@@ -192,6 +192,17 @@ export function buildCustomerLedgerDocs(orders, { priceLabelMode = "mesghal_and_
  * Map /api/my/ledger docs (DoListAsnad) into the PDF row shape.
  * These already include Tahesab running ته حساب طلا / نقد.
  */
+/** Rows that carry وزن/عیار/آزمایشگاه/انگ detail (آبشده، متفرقه، …). */
+export function ledgerRowHasMetalDetail(row) {
+  const t = row?.doc_type || row?.docType || "";
+  if (/آبشده|متفرقه|طلا|سکه/i.test(t)) return true;
+  if (row?.is_abshode || row?.isAbshode) return true;
+  const w = Number(row?.weight) || 0;
+  const ay = row?.ayar;
+  const tab = Number(row?.tabdil_vazn ?? row?.tabdilVazn750) || 0;
+  return w > 0 || ay != null || tab !== 0 || row?.lab_name || row?.labName || row?.ang;
+}
+
 export function normalizeTahesabLedgerDocs(ledgerDocs = []) {
   const docs = [...(ledgerDocs || [])]
     .map((row) => ({
@@ -203,11 +214,17 @@ export function normalizeTahesabLedgerDocs(ledgerDocs = []) {
       sideShort: row.doc_type || "—",
       explanation: row.explanation || "",
       weight: Number(row.weight) || 0,
+      tabdilVazn750: Number(row.tabdil_vazn) || 0,
+      ayar: row.ayar == null ? null : Number(row.ayar),
+      labName: row.lab_name || "",
+      ang: row.ang || "",
+      isAbshode: Boolean(row.is_abshode),
+      hasMetalDetail: ledgerRowHasMetalDetail(row),
       mazaneh: row.mazaneh == null ? null : Number(row.mazaneh),
       money: Math.round(Number(row.money) || 0),
       goldBalance: Number(row.gold_balance) || 0,
       cashBalance: Number(row.cash_balance) || 0,
-      kind: /پرداخت|دريافت|دریافت|واريز|واریز|طلب|بدهي|بدهی/.test(row.doc_type || "")
+      kind: /پرداخت|دريافت|دریافت|واريز|واریز|طلب|بدهي|بدهی|برداشت|واريز نقد/.test(row.doc_type || "")
         ? "payment"
         : "trade",
       status: "accepted",

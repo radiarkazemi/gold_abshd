@@ -23,6 +23,34 @@ function formatDate(iso) {
   return formatTehranDateTime(iso, { second: "2-digit", hour12: false });
 }
 
+function ledgerCellWeight(doc) {
+  if (!doc.hasMetalDetail || !doc.weight) return "—";
+  return fa(doc.weight, { maximumFractionDigits: 3 });
+}
+
+function ledgerCellTabdil750(doc) {
+  if (!doc.hasMetalDetail) return "—";
+  const v = Math.abs(Number(doc.tabdilVazn750) || 0);
+  if (!v) return "—";
+  return fa(v, { maximumFractionDigits: 3 });
+}
+
+function ledgerCellAyar(doc) {
+  if (!doc.hasMetalDetail || doc.ayar == null) return "—";
+  const n = Number(doc.ayar);
+  return Number.isInteger(n) ? fa(n) : fa(n, { maximumFractionDigits: 1 });
+}
+
+function ledgerCellLab(doc) {
+  if (!doc.hasMetalDetail || !doc.labName) return "—";
+  return doc.labName;
+}
+
+function ledgerCellAng(doc) {
+  if (!doc.hasMetalDetail || !doc.ang) return "—";
+  return doc.ang;
+}
+
 function formatStamp(iso) {
   return formatTehranMonthDayTime(iso);
 }
@@ -268,12 +296,16 @@ export function buildOrdersReceiptHtml(
       const stamp = doc.created_at
         ? formatStamp(doc.created_at)
         : doc.zaman_sabt || "—";
-      return `<tr class="${isPay ? "row-pay" : "row-trade"}">
+      return `<tr class="${isPay ? "row-pay" : "row-trade"}${doc.isAbshode ? " row-abshode" : ""}">
         <td class="num">${fa(idx + 1)}</td>
         <td class="time" dir="ltr">${stamp}</td>
         <td>${doc.docType}</td>
         <td class="explain">${doc.explanation || "—"}</td>
-        <td>${doc.weight ? fa(doc.weight, { maximumFractionDigits: 3 }) : "—"}</td>
+        <td class="metal">${ledgerCellWeight(doc)}</td>
+        <td class="metal">${ledgerCellTabdil750(doc)}</td>
+        <td class="metal">${ledgerCellAyar(doc)}</td>
+        <td class="metal lab">${ledgerCellLab(doc)}</td>
+        <td class="metal ang">${ledgerCellAng(doc)}</td>
         <td>${doc.mazaneh != null ? fa(Math.round(doc.mazaneh)) : "—"}</td>
         <td>${doc.money ? fa(doc.money) : "—"}</td>
         <td class="bal">${formatBedBes(doc.goldBalance, { digits: 3 })}</td>
@@ -308,7 +340,7 @@ export function buildOrdersReceiptHtml(
   h1 { font-size: clamp(16px, 4.2vw, 20px); text-align: center; margin: 0 0 4px; }
   .sub { text-align: center; color: #666; font-size: clamp(11px, 3vw, 12px); margin-bottom: clamp(16px, 4vw, 28px); }
   .table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  table { width: 100%; min-width: 780px; border-collapse: collapse; }
+  table { width: 100%; min-width: 980px; border-collapse: collapse; }
   th, td {
     padding: clamp(5px, 1.4vw, 7px) clamp(2px, 0.9vw, 4px);
     border-bottom: 1px solid #ddd;
@@ -320,9 +352,12 @@ export function buildOrdersReceiptHtml(
   th { color: #666; font-weight: 600; background: #f7f2e4; }
   td.time, td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
   td.explain { text-align: right; font-size: clamp(8px, 2vw, 10px); font-weight: 500; color: #333; }
+  td.metal { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.lab, td.ang { font-size: clamp(8px, 2vw, 9.5px); }
   td.bal { font-weight: 700; white-space: nowrap; }
   tr.row-pay { background: #f3f8ff; }
   tr.row-pay td.explain { color: #1a4a7a; }
+  tr.row-abshode { background: #fff9ef; }
   .summary {
     margin-top: clamp(14px, 3vw, 20px);
     text-align: right;
@@ -357,6 +392,10 @@ export function buildOrdersReceiptHtml(
           <th>نوع سند</th>
           <th>شرح سند</th>
           <th>وزن</th>
+          <th>وزن ۷۵۰</th>
+          <th>عیار</th>
+          <th>آزمایشگاه</th>
+          <th>انگ</th>
           <th>${unitLabel}</th>
           <th>مبلغ سند</th>
           <th>ته حساب طلا</th>
@@ -373,7 +412,7 @@ export function buildOrdersReceiptHtml(
   </p>
   <p class="legend">
     بد = بدهکار &nbsp;|&nbsp; بس = بستانکار &nbsp;|&nbsp;
-    منبع گزارش: اسناد ثبت‌شده در ته‌حساب (ورود متفرقه، پرداخت/دریافت، طلب/بدهی، خرید/فروش).
+    منبع گزارش: جزئیات اسناد ته‌حساب — برای آبشده/متفرقه: وزن، وزن ۷۵۰، عیار، آزمایشگاه، انگ.
   </p>
   <p class="footer">این گزارش در تاریخ ${formatDate(new Date().toISOString())} صادر شده است.</p>
   </div>
