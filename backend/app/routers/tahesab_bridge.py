@@ -74,39 +74,31 @@ def bridge_next(db: Session = Depends(get_db), _auth=Depends(_require_bridge)):
 
     from app.models_db import Order, User
 
-    from sqlalchemy import case
-
     now = datetime.utcnow()
     stale_before = now - timedelta(seconds=20)
-    # Prefer customer ledger pulls over bulk مانده so PDF refresh is not starved.
-    asnad_waiting = (
-        db.query(TahesabOutbox.id)
-        .filter(
-            TahesabOutbox.method == tahesab.ASNAD_METHOD,
-            TahesabOutbox.status.in_(("pending", "claimed")),
-        )
-        .first()
+    ready = or_(
+        TahesabOutbox.status == "pending",
+        and_(
+            TahesabOutbox.status == "claimed",
+            TahesabOutbox.updated_at < stale_before,
+        ),
     )
-    if not asnad_waiting:
-        tahesab.maybe_enqueue_online_mande_refresh(db)
-        db.commit()
+    # Serve DoListAsnad first so PDF ledger refresh is never starved by مانده.
     job = (
         db.query(TahesabOutbox)
-        .filter(
-            or_(
-                TahesabOutbox.status == "pending",
-                and_(
-                    TahesabOutbox.status == "claimed",
-                    TahesabOutbox.updated_at < stale_before,
-                ),
-            )
-        )
-        .order_by(
-            case((TahesabOutbox.method == tahesab.ASNAD_METHOD, 0), else_=1),
-            TahesabOutbox.created_at.asc(),
-        )
+        .filter(ready, TahesabOutbox.method == tahesab.ASNAD_METHOD)
+        .order_by(TahesabOutbox.created_at.asc())
         .first()
     )
+    if not job:
+        tahesab.maybe_enqueue_online_mande_refresh(db)
+        db.commit()
+        job = (
+            db.query(TahesabOutbox)
+            .filter(ready)
+            .order_by(TahesabOutbox.created_at.asc())
+            .first()
+        )
     if not job:
         return {"job": None}
     try:
