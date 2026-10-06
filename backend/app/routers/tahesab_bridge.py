@@ -501,7 +501,7 @@ while ($true) {{
       $errText = $err
     }}
 
-    if ($errText -and $methodName -eq "DoNewMoshtari" -and ($errText -match "تلفن تکراری|شماره.*تکراری|duplicate|kept alive|closed by the server")) {{
+    if ($errText -and $methodName -eq "DoNewMoshtari" -and ($errText -match "تلفن تکراری|شماره.*تکراری|کد.*تکراری|تکراری|duplicate|kept alive|closed by the server")) {{
       $linked = Resolve-DuplicateMoshtari $job.params $errText
       if ($null -ne $linked) {{
         Ack-Bridge $jobId $true $linked "" $false

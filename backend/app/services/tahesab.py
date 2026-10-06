@@ -40,6 +40,9 @@ MANDE_BATCH_SIZE = 80
 AGENT_ONLINE_GAP_SECONDS = 30 * 60
 SETTING_AGENT_LAST_SEEN = "tahesab_agent_last_seen"
 SETTING_MANDE_REFRESH_DAY = "tahesab_mande_refresh_day"
+# While this equals today's Tehran date, skip مانده pulls so a one-shot
+# remaining wipe is not overwritten by stale Tahesab books.
+SETTING_MANDE_HOLD_DAY = "tahesab_mande_hold_day"
 TEHRAN_TZ = ZoneInfo("Asia/Tehran")
 
 
@@ -117,7 +120,10 @@ def _get_app_setting(db: Session, key: str) -> str | None:
     from app.models_db import AppSetting
 
     row = db.query(AppSetting).filter(AppSetting.key == key).first()
-    return row.value if row else None
+    if row is None:
+        return None
+    value = getattr(row, "value", None)
+    return value if isinstance(value, str) else None
 
 
 def _set_app_setting(db: Session, key: str, value: str) -> None:
@@ -241,8 +247,61 @@ def apply_mande_rows(db: Session, rows: list[dict[str, Any]]) -> int:
     return applied
 
 
+def mande_refresh_is_held(db: Session) -> bool:
+    return _get_app_setting(db, SETTING_MANDE_HOLD_DAY) == _tehran_today_iso()
+
+
+def hold_mande_refresh_today(db: Session) -> None:
+    """Block مانده pulls for the rest of the Tehran day (remaining reset)."""
+    today = _tehran_today_iso()
+    _set_app_setting(db, SETTING_MANDE_HOLD_DAY, today)
+    _set_app_setting(db, SETTING_MANDE_REFRESH_DAY, today)
+    _set_app_setting(db, SETTING_AGENT_LAST_SEEN, datetime.utcnow().isoformat())
+
+
+def cancel_pending_mande_jobs(db: Session) -> int:
+    """Drop queued getmandehesabbycode jobs so they cannot restore old مانده."""
+    from app.models_db import TahesabOutbox
+
+    now = datetime.utcnow()
+    jobs = (
+        db.query(TahesabOutbox)
+        .filter(
+            TahesabOutbox.status.in_(("pending", "claimed")),
+            TahesabOutbox.method == MANDE_METHOD,
+        )
+        .all()
+    )
+    extra = (
+        db.query(TahesabOutbox)
+        .filter(
+            TahesabOutbox.status.in_(("pending", "claimed")),
+            TahesabOutbox.ref_type.in_(("mande", "mande-day")),
+        )
+        .all()
+    )
+    seen: set[str] = set()
+    n = 0
+    for job in list(jobs) + list(extra):
+        jid = getattr(job, "id", None)
+        if jid in seen:
+            continue
+        if jid:
+            seen.add(jid)
+        job.status = "cancelled"
+        job.last_error = "cancelled: remaining reset"
+        job.updated_at = now
+        db.add(job)
+        n += 1
+    if n:
+        logger.info("[tahesab] cancelled %s pending mande jobs", n)
+    return n
+
+
 def enqueue_mande_for_user(db: Session, user, *, ref_suffix: str | None = None) -> str | None:
     if not is_configured():
+        return None
+    if mande_refresh_is_held(db):
         return None
     moshtari = getattr(user, "tahesab_moshtari_id", None)
     if moshtari is None:
@@ -264,6 +323,8 @@ def enqueue_mande_for_all_users(db: Session) -> int:
     from app.models_db import User
 
     if not is_configured():
+        return 0
+    if mande_refresh_is_held(db):
         return 0
     users = (
         db.query(User)
@@ -306,6 +367,9 @@ def maybe_enqueue_online_mande_refresh(db: Session) -> int:
     if not is_configured():
         return 0
     now = datetime.utcnow()
+    if mande_refresh_is_held(db):
+        _set_app_setting(db, SETTING_AGENT_LAST_SEEN, now.isoformat())
+        return 0
     last_seen_raw = _get_app_setting(db, SETTING_AGENT_LAST_SEEN)
     last_day = _get_app_setting(db, SETTING_MANDE_REFRESH_DAY)
     today = _tehran_today_iso()
@@ -664,7 +728,29 @@ def create_sanad_buy_sale_sekeh(
     return str(ok)
 
 
+def _link_user_to_moshtari(db: Session, user, code: int, *, reason: str) -> int:
+    """Bind an app user to an existing Tahesab moshtari. Never creates an app user."""
+    user.tahesab_moshtari_id = int(code)
+    db.add(user)
+    db.flush()
+    _queue_pending_order_sanads(db, user)
+    enqueue_mande_for_user(db, user)
+    logger.info(
+        "[tahesab] linked user %s → existing moshtari %s (%s)",
+        user.user_code,
+        code,
+        reason,
+    )
+    return int(code)
+
+
 def sync_user_to_tahesab(db: Session, user) -> int | None:
+    """Ensure this app user exists as a Tahesab moshtari.
+
+    Direction is app → Tahesab only. Tahesab-only customers are never
+    imported. If the person already has a card (any group, even created
+    by hand), link that Code instead of DoNewMoshtari.
+    """
     if not is_configured():
         return None
     existing = getattr(user, "tahesab_moshtari_id", None)
@@ -676,6 +762,16 @@ def sync_user_to_tahesab(db: Session, user) -> int | None:
         preferred_code = int(str(user.user_code).strip())
     except (TypeError, ValueError):
         preferred_code = -1
+
+    # Direct mode can look up now. Bridge mode queues DoNewMoshtari and
+    # links on duplicate via resolve_duplicate_moshtari / the Windows agent.
+    if not is_bridge_mode():
+        linked = lookup_existing_moshtari(
+            tel=user.phone_number,
+            preferred_code=preferred_code if preferred_code != -1 else None,
+        )
+        if linked is not None:
+            return _link_user_to_moshtari(db, user, linked, reason="pre-create lookup")
 
     code = create_moshtari(
         name=(user.full_name or user.phone_number or f"کاربر {user.user_code}"),
@@ -936,8 +1032,44 @@ def _error_text(data: dict[str, Any] | None) -> str:
     return str(data.get("ERROR") or data.get("Error") or data.get("error") or "")
 
 
+def _moshtari_codes_from_payload(data: Any) -> list[int]:
+    """Collect Code values from a DoListMoshtari payload (any group)."""
+    if not data:
+        return []
+    rows: list[Any] = []
+    if isinstance(data, list):
+        rows = data
+    elif isinstance(data, dict):
+        if _error_text(data):
+            return []
+        for key, val in data.items():
+            if str(key).lower() in {"ok", "error", "api_status", "dbname", "dbtype"}:
+                continue
+            if isinstance(val, list):
+                rows.extend(val)
+            elif isinstance(val, dict):
+                rows.append(val)
+    codes: list[int] = []
+    seen: set[int] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        code = row.get("Code", row.get("code"))
+        if code is None:
+            continue
+        try:
+            n = int(str(code).translate(_PERSIAN_DIGITS).strip())
+        except (TypeError, ValueError):
+            continue
+        if n in seen:
+            continue
+        seen.add(n)
+        codes.append(n)
+    return codes
+
+
 def lookup_moshtari_by_phone(tel: str) -> int | None:
-    """DoListMoshtari filtered by phone; returns first Code or None."""
+    """DoListMoshtari filtered by phone; returns first Code or None (any group)."""
     digits = _digits(tel)
     if not digits:
         return None
@@ -959,19 +1091,66 @@ def lookup_moshtari_by_phone(tel: str) -> int | None:
 
     for cand in candidates:
         data = call_method_direct("DoListMoshtari", [cand])
-        if not data or _error_text(data):
-            continue
-        for _key, row in data.items():
-            if not isinstance(row, dict):
-                continue
-            code = row.get("Code", row.get("code"))
-            if code is None:
-                continue
-            try:
-                return int(code)
-            except (TypeError, ValueError):
-                continue
+        codes = _moshtari_codes_from_payload(data)
+        if codes:
+            return codes[0]
     return None
+
+
+def lookup_moshtari_by_code(code: int) -> int | None:
+    """DoListMoshtari by moshtari Code; None if that card does not exist."""
+    try:
+        n = int(code)
+    except (TypeError, ValueError):
+        return None
+    if n <= 0:
+        return None
+    data = call_method_direct("DoListMoshtari", [n])
+    codes = _moshtari_codes_from_payload(data)
+    if n in codes:
+        return n
+    return None
+
+
+def lookup_existing_moshtari(
+    *,
+    tel: str | None = None,
+    preferred_code: int | None = None,
+) -> int | None:
+    """Find a moshtari already in Tahesab (any group). Never creates one."""
+    if tel:
+        found = lookup_moshtari_by_phone(tel)
+        if found is not None:
+            return found
+    if preferred_code is not None:
+        found = lookup_moshtari_by_code(int(preferred_code))
+        if found is not None:
+            return found
+    return None
+
+
+def _preferred_code_from_params(params: list[Any]) -> int | None:
+    if len(params) <= 8:
+        return None
+    try:
+        n = int(params[8])
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+def resolve_duplicate_moshtari(params: list[Any]) -> int | None:
+    """On DoNewMoshtari تکراری: reuse the existing card instead of a second one."""
+    tel = params[2] if len(params) > 2 else ""
+    pref = _preferred_code_from_params(params)
+    linked = lookup_existing_moshtari(
+        tel=str(tel) if tel is not None else "",
+        preferred_code=pref,
+    )
+    if linked is not None:
+        return linked
+    # Tahesab already has this phone/code — work on the requested Code.
+    return pref
 
 
 def process_outbox_job(db: Session, job) -> str:
@@ -998,8 +1177,7 @@ def process_outbox_job(db: Session, job) -> str:
     err = _error_text(data)
     if err:
         if job.method == "DoNewMoshtari" and ("تلفن تکراری" in err or "تکراری" in err):
-            tel = params[2] if len(params) > 2 else ""
-            linked = lookup_moshtari_by_phone(str(tel))
+            linked = resolve_duplicate_moshtari(params)
             if linked is not None:
                 result = {"OK": linked, "linked": True, "note": err}
                 job.status = "done"
@@ -1008,7 +1186,7 @@ def process_outbox_job(db: Session, job) -> str:
                 apply_bridge_result(db, job, result)
                 db.add(job)
                 db.commit()
-                logger.info("[tahesab] linked duplicate phone → moshtari %s", linked)
+                logger.info("[tahesab] linked duplicate → moshtari %s", linked)
                 return "done"
 
         # Already posted — treat duplicate Factor_Code as success, do not retry.
@@ -1182,6 +1360,119 @@ def sync_accepted_order_isolated(order_id: str) -> None:
         db.close()
 
 
+def sync_unsynced_users_to_tahesab(db: Session, limit: int = 100) -> int:
+    """Queue/link DoNewMoshtari for every app user missing a moshtari id.
+
+    Does not create app users from Tahesab.
+    """
+    from app.models_db import User
+
+    if not is_configured():
+        return 0
+    users = (
+        db.query(User)
+        .filter(User.tahesab_moshtari_id.is_(None))
+        .order_by(User.created_at.asc())
+        .limit(limit)
+        .all()
+    )
+    n = 0
+    for user in users:
+        try:
+            sync_user_to_tahesab(db, user)
+            n += 1
+        except Exception:
+            logger.exception(
+                "[tahesab] catch-up user sync failed for %s",
+                getattr(user, "user_code", getattr(user, "id", "?")),
+            )
+    if n:
+        db.commit()
+        logger.info("[tahesab] catch-up queued/linked %s app users to Tahesab", n)
+    return n
+
+
+def reset_all_app_remainings(db: Session) -> dict[str, int]:
+    """Zero gold + cash remaining for every app user.
+
+    Tahesab assets are wiped separately on the shop PC. This:
+      - writes Tahesab cache to 0 so the remaining card shows empty
+      - offsets the app gold/cash ledger so the fallback is also 0
+      - cancels pending مانده jobs and holds further pulls for today
+    Coin (سکه) ledgers are left unchanged.
+    """
+    from sqlalchemy import func
+
+    from app.models_db import (
+        BalanceTransaction,
+        TransactionReasonEnum,
+        User,
+        gen_uuid,
+    )
+
+    now = datetime.utcnow()
+    users = db.query(User).all()
+    ledger_rows = (
+        db.query(
+            BalanceTransaction.user_id,
+            func.coalesce(func.sum(BalanceTransaction.gold_change), 0.0),
+            func.coalesce(func.sum(BalanceTransaction.cash_change), 0.0),
+        )
+        .filter(BalanceTransaction.goldbridge_item_id.is_(None))
+        .group_by(BalanceTransaction.user_id)
+        .all()
+    )
+    ledger = {
+        uid: (float(gold or 0.0), float(cash or 0.0)) for uid, gold, cash in ledger_rows
+    }
+
+    n_users = 0
+    n_offsets = 0
+    for user in users:
+        user.tahesab_gold_balance = 0.0
+        user.tahesab_cash_balance = 0.0
+        user.tahesab_balance_at = now
+        db.add(user)
+        n_users += 1
+        gold_sum, cash_sum = ledger.get(user.id, (0.0, 0.0))
+        if gold_sum or cash_sum:
+            db.add(
+                BalanceTransaction(
+                    id=gen_uuid(),
+                    user_id=user.id,
+                    gold_change=-gold_sum,
+                    cash_change=-cash_sum,
+                    reason=TransactionReasonEnum.admin_adjustment,
+                    note="صفر کردن مانده هم‌زمان با ته‌حساب",
+                    created_at=now,
+                )
+            )
+            n_offsets += 1
+
+    cancelled = cancel_pending_mande_jobs(db)
+    hold_mande_refresh_today(db)
+    db.flush()
+    logger.info(
+        "[tahesab] remaining reset users=%s ledger_offsets=%s mande_cancelled=%s",
+        n_users,
+        n_offsets,
+        cancelled,
+    )
+    return {
+        "users": n_users,
+        "ledger_offsets": n_offsets,
+        "mande_cancelled": cancelled,
+    }
+
+
+def reset_remainings_and_sync_users(db: Session) -> dict[str, int]:
+    """One-shot: clear app remaining, then ensure every app user is in Tahesab."""
+    stats = reset_all_app_remainings(db)
+    queued = sync_unsynced_users_to_tahesab(db, limit=5000)
+    stats["users_queued"] = queued
+    return stats
+
+
 def sync_unsynced_accepted_orders(db: Session, limit: int = 50) -> int:
     """Retry accepted orders flagged for Tahesab until Windows acks them.
 
@@ -1219,7 +1510,7 @@ def sync_unsynced_accepted_orders(db: Session, limit: int = 50) -> int:
 
 
 async def catchup_worker_loop() -> None:
-    """Bridge + direct: retry accepted orders missing a Tahesab sanad."""
+    """Bridge + direct: retry unsynced app users, then accepted orders."""
     from app.db import SessionLocal
 
     poll = 20.0
@@ -1229,6 +1520,7 @@ async def catchup_worker_loop() -> None:
             if is_configured():
                 db = SessionLocal()
                 try:
+                    sync_unsynced_users_to_tahesab(db)
                     sync_unsynced_accepted_orders(db)
                 finally:
                     db.close()
@@ -1286,3 +1578,46 @@ def bridge_agent_config() -> dict[str, Any]:
         "allowed_dbnames": sorted(settings.TAHESAB_ALLOWED_DBNAMES_SET),
         "blocked_dbnames": sorted(settings.TAHESAB_BLOCKED_DBNAMES_SET),
     }
+
+
+def _cli(argv: list[str] | None = None) -> int:
+    """One-shot ops: python -m app.services.tahesab reset-and-sync"""
+    import sys
+
+    from app.db import SessionLocal
+
+    args = list(sys.argv[1:] if argv is None else argv)
+    cmd = args[0] if args else ""
+    db = SessionLocal()
+    try:
+        if cmd == "reset-remainings":
+            stats = reset_all_app_remainings(db)
+            db.commit()
+            print(stats)
+            return 0
+        if cmd == "sync-users":
+            n = sync_unsynced_users_to_tahesab(db, limit=5000)
+            db.commit()
+            print({"users_queued": n})
+            return 0
+        if cmd == "reset-and-sync":
+            stats = reset_remainings_and_sync_users(db)
+            db.commit()
+            print(stats)
+            return 0
+        print(
+            "usage: python -m app.services.tahesab "
+            "{reset-remainings|sync-users|reset-and-sync}",
+            file=sys.stderr,
+        )
+        return 2
+    except Exception:
+        db.rollback()
+        logger.exception("[tahesab] cli %s failed", cmd)
+        raise
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(_cli())

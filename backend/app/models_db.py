@@ -661,7 +661,7 @@ class TahesabOutbox(Base):
     params_json = Column(Text, nullable=False, default="[]")
     ref_type = Column(String, nullable=True)  # user | order
     ref_id = Column(String, nullable=True, index=True)
-    status = Column(String, nullable=False, default="pending", index=True)  # pending|done|error
+    status = Column(String, nullable=False, default="pending", index=True)  # pending|claimed|done|error|cancelled
     attempts = Column(Integer, nullable=False, default=0)
     last_error = Column(Text, nullable=True)
     result_json = Column(Text, nullable=True)

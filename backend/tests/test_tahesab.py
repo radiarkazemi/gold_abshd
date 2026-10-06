@@ -546,6 +546,8 @@ def test_maybe_enqueue_after_agent_gap(mock_enq):
     def get_s(_db, key):
         if key == tahesab.SETTING_AGENT_LAST_SEEN:
             return last
+        if key == tahesab.SETTING_MANDE_HOLD_DAY:
+            return None
         return today
 
     db = MagicMock()
@@ -566,6 +568,8 @@ def test_maybe_enqueue_skips_same_day_recent_poll(mock_enq):
     def get_s(_db, key):
         if key == tahesab.SETTING_AGENT_LAST_SEEN:
             return last
+        if key == tahesab.SETTING_MANDE_HOLD_DAY:
+            return None
         return today
 
     db = MagicMock()
@@ -608,4 +612,176 @@ def test_enqueue_mande_for_user_uses_code(mock_enqueue):
     assert args[2] == ["1043"]
     assert kwargs["ref_type"] == "mande"
     assert kwargs["ref_id"] == "u1:order-1"
+
+
+@patch("app.services.tahesab.mande_refresh_is_held", return_value=True)
+@patch("app.services.tahesab.enqueue_method")
+def test_enqueue_mande_skipped_when_held(mock_enqueue, _held):
+    user = SimpleNamespace(id="u1", tahesab_moshtari_id=1043)
+    assert tahesab.enqueue_mande_for_user(MagicMock(), user) is None
+    mock_enqueue.assert_not_called()
+
+
+@patch("app.services.tahesab.enqueue_mande_for_all_users", return_value=3)
+def test_maybe_enqueue_skips_when_held(_enq):
+    today = tahesab._tehran_today_iso()
+
+    def get_s(_db, key):
+        if key == tahesab.SETTING_MANDE_HOLD_DAY:
+            return today
+        return None
+
+    db = MagicMock()
+    with patch("app.services.tahesab._get_app_setting", side_effect=get_s), patch(
+        "app.services.tahesab._set_app_setting"
+    ) as set_s:
+        n = tahesab.maybe_enqueue_online_mande_refresh(db)
+    assert n == 0
+    _enq.assert_not_called()
+    keys = [c.args[1] for c in set_s.call_args_list]
+    assert tahesab.SETTING_AGENT_LAST_SEEN in keys
+
+
+@patch("app.services.tahesab.create_moshtari")
+@patch("app.services.tahesab._queue_pending_order_sanads")
+@patch("app.services.tahesab.enqueue_mande_for_user")
+@patch("app.services.tahesab.lookup_existing_moshtari", return_value=55)
+def test_sync_user_links_existing_without_create(
+    mock_lookup, mock_mande, mock_sanads, mock_create
+):
+    user = SimpleNamespace(
+        id="u1",
+        user_code="1001",
+        tahesab_moshtari_id=None,
+        full_name="علی",
+        phone_number="09120001122",
+        national_id="1",
+        referrer=None,
+    )
+    code = tahesab.sync_user_to_tahesab(MagicMock(), user)
+    assert code == 55
+    assert user.tahesab_moshtari_id == 55
+    mock_create.assert_not_called()
+    mock_lookup.assert_called_once()
+    mock_sanads.assert_called_once()
+
+
+@patch("app.services.tahesab.create_moshtari", return_value=None)
+@patch("app.services.tahesab.lookup_existing_moshtari")
+def test_sync_user_bridge_queues_without_direct_lookup(mock_lookup, mock_create):
+    tahesab.settings.TAHESAB_MODE = "bridge"
+    user = SimpleNamespace(
+        id="u1",
+        user_code="1001",
+        tahesab_moshtari_id=None,
+        full_name="علی",
+        phone_number="09120001122",
+        national_id="1",
+        referrer=None,
+    )
+    code = tahesab.sync_user_to_tahesab(MagicMock(), user)
+    assert code is None
+    mock_lookup.assert_not_called()
+    mock_create.assert_called_once()
+
+
+@patch("app.services.tahesab.lookup_existing_moshtari", return_value=None)
+@patch("app.services.tahesab.call_method_direct")
+def test_process_outbox_links_duplicate_via_preferred_code(mock_direct, mock_lookup):
+    mock_direct.return_value = {"ERROR": "کد مشتری تکراری می باشد."}
+    db = MagicMock()
+    job = SimpleNamespace(
+        id="j1",
+        method="DoNewMoshtari",
+        params_json='["n","g","09120001122","","1","","",-1,1025,0]',
+        ref_type="user",
+        ref_id="u1",
+        attempts=0,
+        status="pending",
+        last_error=None,
+        result_json=None,
+    )
+    with patch("app.services.tahesab.apply_bridge_result") as apply:
+        status = tahesab.process_outbox_job(db, job)
+    assert status == "done"
+    apply.assert_called_once()
+    assert apply.call_args[0][2]["OK"] == 1025
+    assert apply.call_args[0][2]["linked"] is True
+
+
+def test_resolve_duplicate_prefers_phone_then_code():
+    with patch("app.services.tahesab.lookup_existing_moshtari", return_value=88) as lookup:
+        code = tahesab.resolve_duplicate_moshtari(
+            ["n", "g", "0912", "", "1", "", "", -1, 1025, 0]
+        )
+    assert code == 88
+    assert lookup.call_args.kwargs["tel"] == "0912"
+    assert lookup.call_args.kwargs["preferred_code"] == 1025
+
+
+@patch("app.services.tahesab.sync_user_to_tahesab")
+def test_catchup_syncs_unsynced_users(mock_sync):
+    user = SimpleNamespace(id="u1", user_code="1001")
+    db = MagicMock()
+    db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [
+        user
+    ]
+    n = tahesab.sync_unsynced_users_to_tahesab(db)
+    assert n == 1
+    mock_sync.assert_called_once()
+    db.commit.assert_called_once()
+
+
+@patch("app.services.tahesab.hold_mande_refresh_today")
+@patch("app.services.tahesab.cancel_pending_mande_jobs", return_value=2)
+def test_reset_all_app_remainings_zeros_cache_and_ledger(mock_cancel, mock_hold):
+    user = SimpleNamespace(
+        id="u1",
+        user_code="1001",
+        tahesab_gold_balance=-1.444,
+        tahesab_cash_balance=419_476_551.3,
+        tahesab_balance_at=None,
+    )
+    db = MagicMock()
+    calls = {"n": 0}
+
+    def query_side(*_args, **_kwargs):
+        calls["n"] += 1
+        q = MagicMock()
+        if calls["n"] == 1:
+            q.all.return_value = [user]
+        else:
+            q.filter.return_value.group_by.return_value.all.return_value = [
+                ("u1", -1.444, 419_476_551.3)
+            ]
+        return q
+
+    db.query.side_effect = query_side
+    stats = tahesab.reset_all_app_remainings(db)
+    assert stats["users"] == 1
+    assert stats["ledger_offsets"] == 1
+    assert stats["mande_cancelled"] == 2
+    assert user.tahesab_gold_balance == 0.0
+    assert user.tahesab_cash_balance == 0.0
+    assert user.tahesab_balance_at is not None
+    mock_cancel.assert_called_once()
+    mock_hold.assert_called_once()
+    offset = db.add.call_args_list[-1][0][0]
+    assert offset.gold_change == 1.444
+    assert offset.cash_change == -419_476_551.3
+
+
+def test_apply_mande_does_not_create_app_users():
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = None
+    n = tahesab.apply_mande_rows(db, [{"code": 9999, "vazni": 3.0, "mali": 1000}])
+    assert n == 0
+    db.add.assert_not_called()
+
+
+def test_moshtari_codes_from_numbered_payload():
+    codes = tahesab._moshtari_codes_from_payload(
+        {"1": {"Code": 88, "Name": "x", "Tel": "0912"}}
+    )
+    assert codes == [88]
 
