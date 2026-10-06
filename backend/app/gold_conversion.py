@@ -9,9 +9,12 @@ Market formula used by this business (default cards):
 
 متفرقه physical gold is عیار 740. Remaining gold in the shop books
 is tracked as عیار 750 (گرم ۱۸), so a 740 weight is scaled by 740/750
-before it is added to مانده طلا. Tahesab خرید متفرقه is entered in
-مثقال۱۷, which is the inverse of the price formula above:
-    مثقال۱۷ = گرم / 4.39
+before it is added to مانده طلا.
+
+Tahesab خرید متفرقه(بدون تسویه) takes the physical weight in grams
+and the price per gram (MazanehIsMesghalOrGeram=1). The ÷4.39
+conversion is applied to the مثقال price, not to the weight:
+    مظنه گرم = مثقال۱۷ / 4.39
 """
 
 # Keep in sync with frontend/src/utils/priceCommission.js
@@ -41,7 +44,7 @@ def motaferaghe_weight_to_ayar750(weight_740: float) -> float:
 
 
 def motaferaghe_vazn_mesghal17(gram_weight_740: float) -> float:
-    """App گرم of 740 متفرقه → Tahesab مثقال۱۷ after 740→750 soothe."""
+    """Legacy: 740 گرم → مثقال۱۷ after 740→750. Not used for Tahesab vazn."""
     return gram18_to_motaferaghe_mesghal17(motaferaghe_weight_to_ayar750(gram_weight_740))
 
 

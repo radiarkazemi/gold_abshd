@@ -240,6 +240,7 @@ def test_sync_accepted_order_gold(mock_sync_user, mock_sanad):
     assert kwargs["vazn"] == 2.0
     assert kwargs["ayar"] == 750
     assert kwargs["is_abshode"] == 1
+    assert kwargs["mazaneh_is_gram"] == 0
     assert kwargs["moshtari_code"] == 1043
     assert kwargs["mablagh_kol"] == 2.0 * 6_800_000 * 10  # toman * scale
 
@@ -326,7 +327,6 @@ def test_catchup_syncs_unsynced_accepted(mock_sync):
 @patch("app.services.tahesab.create_sanad_buy_sale_gold")
 @patch("app.services.tahesab.sync_user_to_tahesab")
 def test_sync_motaferaghe_sell_is_shop_buy_ayar_740(mock_sync_user, mock_sanad):
-    from app.gold_conversion import motaferaghe_vazn_mesghal17
     from app.services.price_cards import SPECIAL_CARD_MOTAFEREGHE_ID
 
     mock_sync_user.return_value = 1043
@@ -346,12 +346,12 @@ def test_sync_motaferaghe_sell_is_shop_buy_ayar_740(mock_sync_user, mock_sanad):
         user_id="u1",
         side=SimpleNamespace(value="sell"),
         amount_type=SimpleNamespace(value="weight"),
-        value=10.0,
+        value=2.0,
         description="",
         updated_at=datetime(2025, 10, 5, 12, 0, 0),
         created_at=datetime(2025, 10, 5, 12, 0, 0),
         mesghal17_price_at_submit=43_900_000,
-        price_at_submit=10_000_000,
+        price_at_submit=10_000_000,  # already مثقال / 4.39
         goldbridge_item_id=SPECIAL_CARD_MOTAFEREGHE_ID,
         tahesab_factor_code=None,
     )
@@ -363,10 +363,13 @@ def test_sync_motaferaghe_sell_is_shop_buy_ayar_740(mock_sync_user, mock_sanad):
     kwargs = mock_sanad.call_args.kwargs
     assert kwargs["buy_or_sale"] == 0  # shop buys scrap from the customer
     assert kwargs["ayar"] == 740
-    assert kwargs["is_abshode"] == 0  # خرید متفرقه بدون تسویه
-    assert kwargs["mazaneh_is_gram"] == 0
-    assert kwargs["vazn"] == motaferaghe_vazn_mesghal17(10.0)
+    assert kwargs["is_abshode"] == 0  # خرید متفرقه
+    assert kwargs["zaman_tasvie"] == ""  # بدون تسویه
+    assert kwargs["mazaneh_is_gram"] == 1  # مظنه هر گرم, not مثقال
+    assert kwargs["vazn"] == 2.0  # physical grams, not ÷4.39
+    assert kwargs["mazaneh"] == 10_000_000 * 10  # gram price * scale
     assert "متفرقه" in kwargs["sharh"]
+    assert "بدون تسويه" in kwargs["sharh"] or "بدون تسویه" in kwargs["sharh"]
     assert "740" in kwargs["sharh"]
 
 

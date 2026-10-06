@@ -703,23 +703,23 @@ def _order_quantity(order) -> float:
     return float(order.value) / price if price else 0.0
 
 
-def _gold_sanad_specs(order) -> tuple[float, float, int]:
-    """vazn, ayar, is_abshode for DoNewSanadBuySaleGOLD.
+def _gold_sanad_specs(order) -> tuple[float, float, int, int]:
+    """vazn, ayar, is_abshode, mazaneh_is_gram for DoNewSanadBuySaleGOLD.
 
-    آبشده (default): weight stays in app گرم ۱۸, ayar 750, is_abshode=1.
+    آبشده (default): vazn = app گرم ۱۸, ayar 750, is_abshode=1,
+    mazaneh per مثقال (mazaneh_is_gram=0).
+
     فروش متفرقه: shop buy of 740-ayar scrap. Tahesab form is
-    خرید متفرقه بدون تسویه (is_abshode=0, ayar=740). App weight is
-    grams; Tahesab vazn is مثقال۱۷ after 740→750 soothe:
-        مثقال۱۷ = (گرم × 740/750) / 4.39
-    Empty zaman_tasvie keeps the row بدون تسویه.
+    خرید متفرقه(بدون تسویه): is_abshode=0, ayar=740, empty zaman_tasvie.
+    Vazn stays the physical grams (do not ÷4.39). The 4.39 conversion
+    belongs on the price: mazaneh_is_gram=1 and mazaneh = گرم price.
     """
-    from app.gold_conversion import motaferaghe_vazn_mesghal17
     from app.services.price_cards import is_motaferaghe_card
 
     qty = _order_quantity(order)
     if is_motaferaghe_card(getattr(order, "goldbridge_item_id", None)):
-        return motaferaghe_vazn_mesghal17(qty), 740.0, 0
-    return qty, 750.0, int(settings.TAHESAB_IS_ABSHODE)
+        return qty, 740.0, 0, 1
+    return qty, 750.0, int(settings.TAHESAB_IS_ABSHODE), 0
 
 
 def _order_total_toman(order) -> float:
@@ -791,10 +791,6 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
     buy_or_sale = 1 if order.side.value == "buy" else 0
     qty = _order_quantity(order)
     total = _scale_amount(_order_total_toman(order))
-    mazaneh_mesghal = order.mesghal17_price_at_submit
-    if mazaneh_mesghal is None:
-        mazaneh_mesghal = order.price_at_submit or 0
-    mazaneh = _scale_amount(float(mazaneh_mesghal))
     factor_code = _factor_code_for_order(order.id)
     is_coin = order.amount_type.value == "count"
     side_fa = "خرید" if order.side.value == "buy" else "فروش"
@@ -804,6 +800,10 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
     )
 
     if is_coin:
+        mazaneh_mesghal = order.mesghal17_price_at_submit
+        if mazaneh_mesghal is None:
+            mazaneh_mesghal = order.price_at_submit or 0
+        mazaneh = _scale_amount(float(mazaneh_mesghal))
         name = (order.description or "").strip() or "سکه"
         ok = create_sanad_buy_sale_sekeh(
             moshtari_code=int(moshtari),
@@ -821,10 +821,17 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
             ref_id=order.id,
         )
     else:
-        vazn, ayar, is_abshode = _gold_sanad_specs(order)
+        vazn, ayar, is_abshode, mazaneh_is_gram = _gold_sanad_specs(order)
+        if mazaneh_is_gram:
+            mazaneh = _scale_amount(float(order.price_at_submit or 0))
+        else:
+            mazaneh_mesghal = order.mesghal17_price_at_submit
+            if mazaneh_mesghal is None:
+                mazaneh_mesghal = order.price_at_submit or 0
+            mazaneh = _scale_amount(float(mazaneh_mesghal))
         if is_abshode == 0:
             sharh = (
-                f"اپ {side_fa} متفرقه عيار 740 "
+                f"اپ خريد متفرقه(بدون تسويه) عيار 740 "
                 f"کد مشتري {user.user_code} سفارش {order.id[:8]}"
             )
         ok = create_sanad_buy_sale_gold(
@@ -836,11 +843,12 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
             ayar=ayar,
             buy_or_sale=buy_or_sale,
             mazaneh=mazaneh,
-            mazaneh_is_gram=0,
+            mazaneh_is_gram=mazaneh_is_gram,
             is_abshode=is_abshode,
             mablagh_kol=total,
             sharh=sharh,
             factor_code=factor_code,
+            zaman_tasvie="",
             db=db,
             ref_id=order.id,
         )
