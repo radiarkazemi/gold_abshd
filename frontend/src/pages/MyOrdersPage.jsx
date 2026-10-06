@@ -63,6 +63,7 @@ export default function MyOrdersPage() {
   const { theme, toggleTheme } = useTheme();
   const [orders, setOrders] = useState([]);
   const [ledgerDocs, setLedgerDocs] = useState([]);
+  const [ledgerUpdatedAt, setLedgerUpdatedAt] = useState(null);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [filter, setFilter] = useState(null);
   const [dateFrom, setDateFrom] = useState("");
@@ -79,20 +80,23 @@ export default function MyOrdersPage() {
       .finally(() => setLoading(false));
   }
 
-  async function reloadLedger({ refresh = false } = {}) {
+  async function reloadLedger({ refresh = false, waitForFresh = false } = {}) {
     setLedgerLoading(true);
     try {
       let data = await fetchMyLedger({ refresh });
-      // Bridge may need a few seconds to return DoListAsnad.
-      if (refresh && data?.pending_refresh) {
-        for (let i = 0; i < 10; i += 1) {
+      const beforeAt = data?.updated_at || ledgerUpdatedAt;
+      // Wait until DoListAsnad ack updates the cache (not just until old cache exists).
+      if (refresh && waitForFresh && data?.pending_refresh) {
+        for (let i = 0; i < 12; i += 1) {
           await new Promise((r) => setTimeout(r, 2500));
           data = await fetchMyLedger({ refresh: false });
-          if ((data.docs || []).length > 0) break;
+          const at = data?.updated_at;
+          if (at && at !== beforeAt) break;
         }
       }
       const docs = data.docs || [];
       setLedgerDocs(docs);
+      if (data.updated_at) setLedgerUpdatedAt(data.updated_at);
       return docs;
     } catch (e) {
       console.error(e);
@@ -104,12 +108,16 @@ export default function MyOrdersPage() {
 
   useEffect(() => {
     reload();
-    reloadLedger({ refresh: true });
+    reloadLedger({ refresh: true, waitForFresh: true });
     fetchOrderLimits()
       .then((limits) => setPriceLabelMode(limits.price_label_mode || "mesghal_and_gram18"))
       .catch(() => {});
     const interval = setInterval(reload, 6000);
-    return () => clearInterval(interval);
+    const ledgerInterval = setInterval(() => reloadLedger({ refresh: true }), 5 * 60 * 1000);
+    return () => {
+      clearInterval(interval);
+      clearInterval(ledgerInterval);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -227,47 +235,58 @@ export default function MyOrdersPage() {
           <button
             type="button"
             className="date-filter__download-all"
-            disabled={ledgerLoading || (ledgerDocs.length === 0 && pdfOrders.length === 0)}
+            disabled={ledgerLoading}
             onClick={async () => {
-              const docs = await reloadLedger({ refresh: true });
-              downloadOrdersReceipt(pdfOrders, {
+              const docs = await reloadLedger({ refresh: true, waitForFresh: true });
+              if (!docs.length) {
+                alert("هنوز اسناد ته‌حساب دریافت نشده. چند ثانیه بعد دوباره تلاش کنید.");
+                return;
+              }
+              downloadOrdersReceipt([], {
                 dateFrom,
                 dateTo,
                 priceLabelMode,
                 ledgerDocs: docs,
+                preferLedger: true,
               });
             }}
           >
             {ledgerLoading
-              ? "در حال دریافت از ته‌حساب…"
-              : `دانلود گزارش ته‌حساب (${fa(ledgerDocs.length || pdfOrders.length)}) — PDF`}
+              ? "در حال دریافت اسناد ته‌حساب…"
+              : `دانلود گزارش ته‌حساب (${fa(ledgerDocs.length)}) — PDF`}
           </button>
           <button
             type="button"
             className="date-filter__download-all date-filter__download-all--ghost"
-            disabled={ledgerLoading || (ledgerDocs.length === 0 && pdfOrders.length === 0)}
+            disabled={ledgerLoading}
             onClick={async () => {
-              const docs = await reloadLedger({ refresh: true });
-              const html = buildOrdersReceiptHtml(pdfOrders, {
+              const docs = await reloadLedger({ refresh: true, waitForFresh: true });
+              if (!docs.length) {
+                alert("هنوز اسناد ته‌حساب دریافت نشده. چند ثانیه بعد دوباره تلاش کنید.");
+                return;
+              }
+              const html = buildOrdersReceiptHtml([], {
                 dateFrom,
                 dateTo,
                 priceLabelMode,
                 ledgerDocs: docs,
+                preferLedger: true,
               });
               setPreview({
-                title: `گزارش ته‌حساب (${fa((docs || []).length || pdfOrders.length)})`,
+                title: `گزارش ته‌حساب (${fa(docs.length)})`,
                 html,
                 onDownload: () =>
-                  downloadOrdersReceipt(pdfOrders, {
+                  downloadOrdersReceipt([], {
                     dateFrom,
                     dateTo,
                     priceLabelMode,
                     ledgerDocs: docs,
+                    preferLedger: true,
                   }),
               });
             }}
           >
-            مشاهده در برنامه
+            مشاهده گزارش ته‌حساب
           </button>
         </div>
       </div>

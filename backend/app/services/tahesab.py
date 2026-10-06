@@ -324,7 +324,13 @@ def _jalali_datetime_to_utc(text: Any) -> datetime | None:
 
 
 def _shamsi_day_str(dt: datetime) -> str:
-    j = _to_jalali(dt)
+    """Shamsi YYYY-MM-DD for a datetime interpreted in Asia/Tehran."""
+    if dt.tzinfo is None:
+        # App stores naive UTC for books_reset_at / created_at.
+        aware = dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(TEHRAN_TZ)
+    else:
+        aware = dt.astimezone(TEHRAN_TZ)
+    j = jdatetime.date.fromgregorian(date=aware.date())
     return f"{j.year:04d}-{j.month:02d}-{j.day:02d}"
 
 
@@ -447,7 +453,8 @@ def request_asnad_refresh(db: Session, user, *, force: bool = False) -> bool:
 
     cutoff = books_reset_at(db) or datetime.utcnow()
     az = _shamsi_day_str(cutoff)
-    ta = _shamsi_day_str(datetime.now(TEHRAN_TZ).replace(tzinfo=None))
+    # Pad end date so same-day Tehran edge cases still return rows.
+    ta = _shamsi_day_str(datetime.now(TEHRAN_TZ) + timedelta(days=1))
     # Count_Last=-1 builds TahesabVazni/TahesabMali per row; metal 0 = طلا.
     params = [-1, int(moshtari), az, ta, "", 0]
     enqueue_method(
@@ -1263,6 +1270,7 @@ def apply_bridge_result(db: Session, job, result: dict[str, Any]) -> None:
                 user = db.query(User).filter(User.id == user_id).first()
                 if user:
                     enqueue_mande_for_user(db, user, ref_suffix=str(order.id))
+                    request_asnad_refresh(db, user, force=True)
 
 
 def _error_text(data: dict[str, Any] | None) -> str:

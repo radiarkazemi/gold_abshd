@@ -501,7 +501,8 @@ def test_parse_mande_rows_persian_digits():
 
 
 @patch("app.services.tahesab.enqueue_mande_for_user")
-def test_apply_bridge_result_order_queues_mande(mock_mande):
+@patch("app.services.tahesab.request_asnad_refresh", return_value=True)
+def test_apply_bridge_result_order_queues_mande(mock_asnad, mock_mande):
     user = SimpleNamespace(id="u1", tahesab_moshtari_id=1043)
     order = SimpleNamespace(
         id="o1",
@@ -516,6 +517,7 @@ def test_apply_bridge_result_order_queues_mande(mock_mande):
     assert order.tahesab_factor_code == "GAFACTOR"
     mock_mande.assert_called_once()
     assert mock_mande.call_args.kwargs["ref_suffix"] == "o1"
+    mock_asnad.assert_called_once()
 
 
 def test_apply_bridge_result_mande_updates_user():

@@ -246,15 +246,22 @@ export function buildOrderReceiptHtml(order, { priceLabelMode = "mesghal_and_gra
 
 export function buildOrdersReceiptHtml(
   orders,
-  { dateFrom, dateTo, priceLabelMode = "mesghal_and_gram18", ledgerDocs = null } = {}
+  {
+    dateFrom,
+    dateTo,
+    priceLabelMode = "mesghal_and_gram18",
+    ledgerDocs,
+    preferLedger = false,
+  } = {}
 ) {
   const unitLabel = priceLabelMode === "gram18_only" ? "مظنه" : "مظنه ۱۷";
-  let { docs, goldBalance, cashBalance } =
-    Array.isArray(ledgerDocs) && ledgerDocs.length
-      ? normalizeTahesabLedgerDocs(ledgerDocs)
-      : buildCustomerLedgerDocs(orders, { priceLabelMode });
+  // Explicit ledgerDocs (even empty) means: use Tahesab only, never invent from app orders.
+  const useLedger = preferLedger || ledgerDocs !== undefined;
+  let { docs, goldBalance, cashBalance } = useLedger
+    ? normalizeTahesabLedgerDocs(Array.isArray(ledgerDocs) ? ledgerDocs : [])
+    : buildCustomerLedgerDocs(orders, { priceLabelMode });
 
-  if (Array.isArray(ledgerDocs) && ledgerDocs.length && (dateFrom || dateTo)) {
+  if (useLedger && (dateFrom || dateTo)) {
     docs = docs.filter((doc) => {
       const day = tehranDayKey(doc.created_at);
       if (!day) return true;
@@ -395,7 +402,21 @@ export function downloadOrderReceipt(order, { priceLabelMode = "mesghal_and_gram
 
 export function downloadOrdersReceipt(
   orders,
-  { dateFrom, dateTo, priceLabelMode = "mesghal_and_gram18", ledgerDocs = null } = {}
+  {
+    dateFrom,
+    dateTo,
+    priceLabelMode = "mesghal_and_gram18",
+    ledgerDocs,
+    preferLedger = false,
+  } = {}
 ) {
-  printHtml(buildOrdersReceiptHtml(orders, { dateFrom, dateTo, priceLabelMode, ledgerDocs }));
+  printHtml(
+    buildOrdersReceiptHtml(orders, {
+      dateFrom,
+      dateTo,
+      priceLabelMode,
+      ledgerDocs,
+      preferLedger,
+    })
+  );
 }
