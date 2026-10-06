@@ -131,6 +131,24 @@ def enqueue_method(
     return row.id
 
 
+def _persian_for_tahesab(text: Any) -> Any:
+    """
+    Access/Windows-1256 has no Iranian Yeh (U+06CC) or Keheh (U+06A9).
+    Map them to Arabic Yeh/Kaf so names round-trip in Tahesab UI.
+    """
+    if not isinstance(text, str):
+        return text
+    return text.replace("\u06cc", "\u064a").replace("\u06a9", "\u0643")
+
+
+def _encode_tahesab_body(body: dict[str, Any]) -> bytes:
+    mapped = {
+        method: [_persian_for_tahesab(p) for p in params]
+        for method, params in body.items()
+    }
+    return json.dumps(mapped, ensure_ascii=False).encode("cp1256", errors="replace")
+
+
 def call_method_direct(method: str, params: list[Any]) -> dict[str, Any] | None:
     """
     POST one method to TAHESAB_BASE_URL.
@@ -146,7 +164,13 @@ def call_method_direct(method: str, params: list[Any]) -> dict[str, Any] | None:
             verify=settings.TAHESAB_VERIFY_SSL,
             follow_redirects=True,
         ) as client:
-            resp = client.post(url, headers=_headers(), json=body)
+            # Access desktop API stores Persian as Windows-1256 (code page 1256).
+            payload = _encode_tahesab_body(body)
+            headers = {
+                **_headers(),
+                "Content-Type": "application/json; charset=windows-1256",
+            }
+            resp = client.post(url, headers=headers, content=payload)
     except Exception as exc:
         logger.warning("[tahesab] %s unreachable: %s", method, exc)
         return None

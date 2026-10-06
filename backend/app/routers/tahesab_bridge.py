@@ -187,7 +187,6 @@ public static class TahesabTls {{
 $ThHeaders = @{{
   "Authorization" = "Bearer $TahesabToken"
   "DBName" = $DbName
-  "Content-Type" = "application/json; charset=utf-8"
   "Accept" = "application/json"
 }}
 
@@ -196,32 +195,46 @@ Write-Host "############################################" -ForegroundColor Yello
 Write-Host "  TARGET: $TargetLabel  (TEST books only)" -ForegroundColor Yellow
 Write-Host "  DBName header: $DbName" -ForegroundColor Yellow
 Write-Host "  Do NOT enable API on MAIN Tahesab" -ForegroundColor Yellow
+Write-Host "  Encoding: Windows-1256 (Persian / Iran)" -ForegroundColor Yellow
 Write-Host "############################################" -ForegroundColor Yellow
 Write-Host ""
 
-function ConvertTo-AsciiJson([object]$BodyObj) {{
-  # Pure-ASCII JSON with \\uXXXX escapes so Tahesab (and older Windows
-  # stacks) never mis-decode Persian as Latin-1/CP1252 mojibake.
-  $json = $BodyObj | ConvertTo-Json -Compress -Depth 20
-  $sb = New-Object System.Text.StringBuilder
-  foreach ($ch in $json.ToCharArray()) {{
-    $code = [int][char]$ch
-    if ($code -gt 127) {{
-      [void]$sb.Append('\\u')
-      [void]$sb.AppendFormat('{{0:x4}}', $code)
-    }} else {{
-      [void]$sb.Append($ch)
-    }}
+function Get-Windows1256 {{
+  try {{
+    return [System.Text.Encoding]::GetEncoding(1256)
+  }} catch {{
+    return [System.Text.Encoding]::GetEncoding("windows-1256")
   }}
-  return $sb.ToString()
+}}
+
+function ConvertTo-TahesabText([string]$Text) {{
+  # Access/Windows-1256 has no Iranian Yeh/Keheh (ی/ک). Map to Arabic ي/ك.
+  if ([string]::IsNullOrEmpty($Text)) {{ return $Text }}
+  return (($Text -replace [char]0x06CC, [char]0x064A) -replace [char]0x06A9, [char]0x0643)
+}}
+
+function Convert-ParamsForTahesab($Params) {{
+  if ($null -eq $Params) {{ return @() }}
+  $out = @()
+  foreach ($p in @($Params)) {{
+    if ($p -is [string]) {{ $out += (ConvertTo-TahesabText $p) }}
+    else {{ $out += $p }}
+  }}
+  return $out
 }}
 
 function Send-Tahesab([object]$BodyObj) {{
-  $json = ConvertTo-AsciiJson $BodyObj
-  $bytes = [System.Text.Encoding]::ASCII.GetBytes($json)
+  # Tahesab Access API expects ANSI/Windows-1256 Persian, not UTF-8.
+  $enc = Get-Windows1256
+  $fixed = @{{}}
+  foreach ($prop in $BodyObj.PSObject.Properties) {{
+    $fixed[$prop.Name] = @(Convert-ParamsForTahesab $prop.Value)
+  }}
+  $json = $fixed | ConvertTo-Json -Compress -Depth 20
+  $bytes = $enc.GetBytes($json)
   return Invoke-RestMethod -Uri $TahesabUrl -Method POST -Headers $ThHeaders `
     -Body $bytes `
-    -ContentType "application/json; charset=utf-8" `
+    -ContentType "application/json; charset=windows-1256" `
     -TimeoutSec 60 -UseBasicParsing
 }}
 

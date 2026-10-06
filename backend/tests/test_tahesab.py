@@ -74,7 +74,7 @@ def test_factor_code_length_and_prefix():
 
 
 @patch("app.services.tahesab.httpx.Client")
-def test_call_method_direct_posts_expected_body(mock_client_cls):
+def test_call_method_direct_posts_cp1256_body(mock_client_cls):
     client = MagicMock()
     mock_client_cls.return_value.__enter__.return_value = client
     client.post.return_value = _FakeResp(200, {"OK": 1043})
@@ -87,8 +87,17 @@ def test_call_method_direct_posts_expected_body(mock_client_cls):
     args, kwargs = client.post.call_args
     assert args[0] == "https://203.0.113.10:8081"
     assert kwargs["headers"]["Authorization"] == "Bearer TESTTOKEN"
-    assert kwargs["headers"]["DBName"] == "DB"
-    assert "DoNewMoshtari" in kwargs["json"]
+    assert "windows-1256" in kwargs["headers"]["Content-Type"]
+    raw = kwargs["content"]
+    assert isinstance(raw, (bytes, bytearray))
+    mapped = "علي تست"
+    assert mapped.encode("cp1256") in raw
+    assert "علی تست".encode("utf-8") not in raw
+
+
+def test_persian_for_tahesab_maps_yeh_keheh():
+    assert tahesab._persian_for_tahesab("علی") == "علي"
+    assert "\u06cc" not in tahesab._persian_for_tahesab("ته‌حساب")
 
 
 @patch("app.services.tahesab.enqueue_method", return_value="job-1")
