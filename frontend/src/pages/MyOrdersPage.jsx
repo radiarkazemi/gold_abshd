@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatTehranDateTime, tehranDayKey, tehranThisWeekExcludingToday, tehranTodayKey } from "../utils/tehranTime";
-import { fetchMyOrders, fetchReceiptBlobUrl, uploadReceipt, cancelMyOrder, fetchOrderLimits } from "../api";
+import {
+  fetchMyOrders,
+  fetchMyLedger,
+  fetchReceiptBlobUrl,
+  uploadReceipt,
+  cancelMyOrder,
+  fetchOrderLimits,
+} from "../api";
 import {
   downloadOrderReceipt,
   downloadOrdersReceipt,
@@ -55,6 +62,8 @@ export default function MyOrdersPage() {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [orders, setOrders] = useState([]);
+  const [ledgerDocs, setLedgerDocs] = useState([]);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
   const [filter, setFilter] = useState(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -70,8 +79,32 @@ export default function MyOrdersPage() {
       .finally(() => setLoading(false));
   }
 
+  async function reloadLedger({ refresh = false } = {}) {
+    setLedgerLoading(true);
+    try {
+      let data = await fetchMyLedger({ refresh });
+      // Bridge may need a few seconds to return DoListAsnad.
+      if (refresh && data?.pending_refresh) {
+        for (let i = 0; i < 10; i += 1) {
+          await new Promise((r) => setTimeout(r, 2500));
+          data = await fetchMyLedger({ refresh: false });
+          if ((data.docs || []).length > 0) break;
+        }
+      }
+      const docs = data.docs || [];
+      setLedgerDocs(docs);
+      return docs;
+    } catch (e) {
+      console.error(e);
+      return ledgerDocs;
+    } finally {
+      setLedgerLoading(false);
+    }
+  }
+
   useEffect(() => {
     reload();
+    reloadLedger({ refresh: true });
     fetchOrderLimits()
       .then((limits) => setPriceLabelMode(limits.price_label_mode || "mesghal_and_gram18"))
       .catch(() => {});
@@ -194,22 +227,45 @@ export default function MyOrdersPage() {
           <button
             type="button"
             className="date-filter__download-all"
-            disabled={pdfOrders.length === 0}
-            onClick={() => downloadOrdersReceipt(pdfOrders, { dateFrom, dateTo, priceLabelMode })}
+            disabled={ledgerLoading || (ledgerDocs.length === 0 && pdfOrders.length === 0)}
+            onClick={async () => {
+              const docs = await reloadLedger({ refresh: true });
+              downloadOrdersReceipt(pdfOrders, {
+                dateFrom,
+                dateTo,
+                priceLabelMode,
+                ledgerDocs: docs,
+              });
+            }}
           >
-            دانلود همه ({fa(pdfOrders.length)}) — PDF
+            {ledgerLoading
+              ? "در حال دریافت از ته‌حساب…"
+              : `دانلود گزارش ته‌حساب (${fa(ledgerDocs.length || pdfOrders.length)}) — PDF`}
           </button>
           <button
             type="button"
             className="date-filter__download-all date-filter__download-all--ghost"
-            disabled={pdfOrders.length === 0}
-            onClick={() =>
+            disabled={ledgerLoading || (ledgerDocs.length === 0 && pdfOrders.length === 0)}
+            onClick={async () => {
+              const docs = await reloadLedger({ refresh: true });
+              const html = buildOrdersReceiptHtml(pdfOrders, {
+                dateFrom,
+                dateTo,
+                priceLabelMode,
+                ledgerDocs: docs,
+              });
               setPreview({
-                title: `مشاهده گزارش (${fa(pdfOrders.length)})`,
-                html: buildOrdersReceiptHtml(pdfOrders, { dateFrom, dateTo, priceLabelMode }),
-                onDownload: () => downloadOrdersReceipt(pdfOrders, { dateFrom, dateTo, priceLabelMode }),
-              })
-            }
+                title: `گزارش ته‌حساب (${fa((docs || []).length || pdfOrders.length)})`,
+                html,
+                onDownload: () =>
+                  downloadOrdersReceipt(pdfOrders, {
+                    dateFrom,
+                    dateTo,
+                    priceLabelMode,
+                    ledgerDocs: docs,
+                  }),
+              });
+            }}
           >
             مشاهده در برنامه
           </button>

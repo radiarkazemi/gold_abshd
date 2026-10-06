@@ -856,6 +856,47 @@ def test_reset_all_app_remainings_zeros_cache_and_ledger(mock_cancel, mock_hold)
     assert offset.cash_change == -419_476_551.3
 
 
+def test_parse_asnad_rows_running_balance_and_short_app_sharh():
+    payload = {
+        "17": {
+            "ID": 17,
+            "Factor_Code": "ga1",
+            "NO": "فروش طلا",
+            "ZamanSabt": "1405/07/14 17:26:32",
+            "Vazn": 2,
+            "Mazaneh": 1156800000,
+            "Mali": -534096680,
+            "TabdilVazn": 2,
+            "TahesabVazni": 2,
+            "TahesabMali": -534096680,
+            "Sharh1": "اپ خرید طلا کد مشتری 1002 سفارش a183e7af",
+            "User": "APi",
+        },
+        "23": {
+            "ID": 23,
+            "Factor_Code": "x23",
+            "NO": "ورود متفرقه",
+            "ZamanSabt": "1405/07/14 17:46:45",
+            "Vazn": 24.33,
+            "Mazaneh": "null",
+            "Mali": "null",
+            "TabdilVazn": 24.006,
+            "TahesabVazni": 2,
+            "TahesabMali": 6380377580,
+            "Sharh1": None,
+            "User": "مدير",
+        },
+    }
+    rows = tahesab.parse_asnad_rows(payload)
+    assert len(rows) == 2
+    assert rows[0]["doc_type"] == "فروش طلا"
+    assert rows[0]["explanation"] == "اپ"
+    assert rows[0]["money"] == -53409668.0  # unscaled /10
+    assert rows[1]["doc_type"] == "ورود متفرقه"
+    assert rows[1]["weight"] == 24.33
+    assert rows[1]["cash_balance"] == 638037758.0
+
+
 def test_books_reset_at_parses_iso():
     db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(

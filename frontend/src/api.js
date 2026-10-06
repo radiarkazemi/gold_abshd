@@ -403,6 +403,15 @@ export async function fetchMyBalance({ refresh = false } = {}) {
   return res.json();
 }
 
+export async function fetchMyLedger({ refresh = false } = {}) {
+  const qs = refresh ? "?refresh=1" : "";
+  const res = await fetch(`${API_BASE}/api/my/ledger${qs}`, {
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to fetch ledger");
+  return res.json();
+}
+
 export async function submitOrder({ goldbridgeItemId, side, amountType, value, description }) {
   const res = await fetch(`${API_BASE}/api/orders`, {
     method: "POST",

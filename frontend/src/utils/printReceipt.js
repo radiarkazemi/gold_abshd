@@ -2,12 +2,14 @@ import { formatTehranDateTime, formatTehranMonthDayTime } from "./tehranTime";
 import {
   buildCustomerLedgerDocs,
   formatBedBes,
+  normalizeTahesabLedgerDocs,
   orderExplanationFull,
   orderLedgerGoldWeight,
   orderSideShort,
   orderTahesabDocType,
   paymentExplanationFull,
 } from "./orderLabels";
+import { tehranDayKey } from "./tehranTime";
 import { orderTotalMoney } from "./orderCalc";
 
 function fa(n, opts) {
@@ -242,18 +244,40 @@ export function buildOrderReceiptHtml(order, { priceLabelMode = "mesghal_and_gra
 </html>`;
 }
 
-export function buildOrdersReceiptHtml(orders, { dateFrom, dateTo, priceLabelMode = "mesghal_and_gram18" } = {}) {
+export function buildOrdersReceiptHtml(
+  orders,
+  { dateFrom, dateTo, priceLabelMode = "mesghal_and_gram18", ledgerDocs = null } = {}
+) {
   const unitLabel = priceLabelMode === "gram18_only" ? "مظنه" : "مظنه ۱۷";
-  const { docs, goldBalance, cashBalance } = buildCustomerLedgerDocs(orders, { priceLabelMode });
+  let { docs, goldBalance, cashBalance } =
+    Array.isArray(ledgerDocs) && ledgerDocs.length
+      ? normalizeTahesabLedgerDocs(ledgerDocs)
+      : buildCustomerLedgerDocs(orders, { priceLabelMode });
+
+  if (Array.isArray(ledgerDocs) && ledgerDocs.length && (dateFrom || dateTo)) {
+    docs = docs.filter((doc) => {
+      const day = tehranDayKey(doc.created_at);
+      if (!day) return true;
+      if (dateFrom && day < dateFrom) return false;
+      if (dateTo && day > dateTo) return false;
+      return true;
+    });
+    const last = docs[docs.length - 1];
+    goldBalance = last ? last.goldBalance : 0;
+    cashBalance = last ? last.cashBalance : 0;
+  }
 
   const rowsHtml = docs
     .map((doc, idx) => {
       const isPay = doc.kind === "payment";
+      const stamp = doc.created_at
+        ? formatStamp(doc.created_at)
+        : doc.zaman_sabt || "—";
       return `<tr class="${isPay ? "row-pay" : "row-trade"}">
         <td class="num">${fa(idx + 1)}</td>
-        <td class="time" dir="ltr">${formatStamp(doc.created_at)}</td>
+        <td class="time" dir="ltr">${stamp}</td>
         <td>${doc.docType}</td>
-        <td class="explain">${doc.explanation}</td>
+        <td class="explain">${doc.explanation || "—"}</td>
         <td>${doc.weight ? fa(doc.weight, { maximumFractionDigits: 3 }) : "—"}</td>
         <td>${doc.mazaneh != null ? fa(Math.round(doc.mazaneh)) : "—"}</td>
         <td>${doc.money ? fa(doc.money) : "—"}</td>
@@ -266,7 +290,7 @@ export function buildOrdersReceiptHtml(orders, { dateFrom, dateTo, priceLabelMod
   const rangeLabel =
     dateFrom || dateTo
       ? `از ${dateFrom || "ابتدا"} تا ${dateTo || "امروز"}`
-      : "همه سفارش‌ها";
+      : "اسناد ته‌حساب";
 
   return `
 <!DOCTYPE html>
@@ -357,7 +381,7 @@ export function buildOrdersReceiptHtml(orders, { dateFrom, dateTo, priceLabelMod
   </p>
   <p class="legend">
     بد = بدهکار &nbsp;|&nbsp; بس = بستانکار &nbsp;|&nbsp;
-    فروش متفرقه بدون تسویه است؛ پرداخت پول فقط پس از ثبت در ته‌حساب نمایش داده می‌شود.
+    منبع گزارش: اسناد ثبت‌شده در ته‌حساب (ورود متفرقه، پرداخت/دریافت، طلب/بدهی، خرید/فروش).
   </p>
   <p class="footer">این گزارش در تاریخ ${formatDate(new Date().toISOString())} صادر شده است.</p>
   </div>
@@ -369,6 +393,9 @@ export function downloadOrderReceipt(order, { priceLabelMode = "mesghal_and_gram
   printHtml(buildOrderReceiptHtml(order, { priceLabelMode }));
 }
 
-export function downloadOrdersReceipt(orders, { dateFrom, dateTo, priceLabelMode = "mesghal_and_gram18" } = {}) {
-  printHtml(buildOrdersReceiptHtml(orders, { dateFrom, dateTo, priceLabelMode }));
+export function downloadOrdersReceipt(
+  orders,
+  { dateFrom, dateTo, priceLabelMode = "mesghal_and_gram18", ledgerDocs = null } = {}
+) {
+  printHtml(buildOrdersReceiptHtml(orders, { dateFrom, dateTo, priceLabelMode, ledgerDocs }));
 }

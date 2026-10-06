@@ -5,7 +5,7 @@ from app.db import get_db
 from app.ws_manager import manager
 from app.auth import get_current_user
 from app.models_db import User, Order
-from app.schemas.order import OrderCreateIn, OrderOut, BalanceOut
+from app.schemas.order import OrderCreateIn, OrderOut, BalanceOut, LedgerOut, LedgerDocOut
 from app.schemas.admin import TransactionOut
 from app.services.orders import (
     create_order as create_order_db,
@@ -199,6 +199,28 @@ async def my_balance(
     if queued:
         db.commit()
     return get_user_balance(db, current_user.id)
+
+
+@router.get("/api/my/ledger", response_model=LedgerOut)
+async def my_ledger(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    refresh: bool = Query(False, description="Force a Tahesab DoListAsnad pull"),
+):
+    """Customer PDF source: real Tahesab اسناد (ورود متفرقه، پرداخت، طلب، …)."""
+    queued = tahesab.request_asnad_refresh(db, current_user, force=refresh)
+    if queued:
+        db.commit()
+        db.refresh(current_user)
+    payload = tahesab.user_ledger_payload(db, current_user)
+    payload["pending_refresh"] = bool(queued)
+    return LedgerOut(
+        docs=[LedgerDocOut(**d) for d in payload["docs"]],
+        gold_balance=payload["gold_balance"],
+        cash_balance=payload["cash_balance"],
+        updated_at=payload["updated_at"],
+        pending_refresh=payload["pending_refresh"],
+    )
 
 
 @router.get("/api/my/transactions", response_model=list[TransactionOut])

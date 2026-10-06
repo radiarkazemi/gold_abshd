@@ -36,8 +36,11 @@ _PERSIAN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "012
 
 # Docs: {"getmandehesabbycode":["1","2"]} → {MandeHesab:[{Code, MandeyeVazni, MandeyeMali, ...}]}
 MANDE_METHOD = "getmandehesabbycode"
+# Docs: {"DoListAsnad":[Count_Last, Moshtari_Code, Az, Ta, FilterNoSanad, Mande_Jens_Felez]}
+ASNAD_METHOD = "DoListAsnad"
 MANDE_BATCH_SIZE = 80
 AGENT_ONLINE_GAP_SECONDS = 30 * 60
+ASNAD_STALE_SECONDS = 5 * 60
 MANDE_STALE_SECONDS = 5 * 60
 SETTING_AGENT_LAST_SEEN = "tahesab_agent_last_seen"
 SETTING_MANDE_REFRESH_DAY = "tahesab_mande_refresh_day"
@@ -296,6 +299,182 @@ def filter_since_books_reset(db: Session, query, column):
     if cutoff is None:
         return query
     return query.filter(column > cutoff)
+
+
+def _nullish(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip().lower() in {"", "null", "none"}:
+        return None
+    return value
+
+
+def _jalali_datetime_to_utc(text: Any) -> datetime | None:
+    raw = _nullish(text)
+    if raw is None:
+        return None
+    s = str(raw).translate(_PERSIAN_DIGITS).strip().replace("-", "/")
+    for fmt in ("%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y/%m/%d"):
+        try:
+            jdt = jdatetime.datetime.strptime(s, fmt)
+            return jdt.togregorian()
+        except ValueError:
+            continue
+    return None
+
+
+def _shamsi_day_str(dt: datetime) -> str:
+    j = _to_jalali(dt)
+    return f"{j.year:04d}-{j.month:02d}-{j.day:02d}"
+
+
+def parse_asnad_rows(payload: Any) -> list[dict[str, Any]]:
+    """Normalize DoListAsnad JSON into sorted ledger rows for the customer PDF."""
+    if not payload or not isinstance(payload, dict):
+        return []
+    if _error_text(payload):
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for key, raw in payload.items():
+        if str(key).lower() in {"ok", "error", "api_status", "dbname", "dbtype"}:
+            continue
+        if not isinstance(raw, dict):
+            continue
+        no = _nullish(raw.get("NO") or raw.get("No") or raw.get("no"))
+        if no is None:
+            continue
+        zaman = _nullish(raw.get("ZamanSabt") or raw.get("Zaman_Sabt"))
+        created = _jalali_datetime_to_utc(zaman) or _jalali_datetime_to_utc(
+            f"{raw.get('Tarikh') or ''} {raw.get('Tarikh_Time') or ''}".strip()
+        )
+        mali_raw = _nullish(raw.get("Mali"))
+        mazaneh_raw = _nullish(raw.get("Mazaneh"))
+        vazn_raw = _nullish(raw.get("Vazn"))
+        tabdil_raw = _nullish(raw.get("TabdilVazn"))
+        ayar_raw = _nullish(raw.get("Ayar"))
+        gold_bal = _to_float(raw.get("TahesabVazni"))
+        cash_bal = _unscale_amount(_to_float(raw.get("TahesabMali")))
+        money = _unscale_amount(_to_float(mali_raw)) if mali_raw is not None else 0.0
+        weight = _to_float(vazn_raw) if vazn_raw is not None else 0.0
+        tabdil = _to_float(tabdil_raw) if tabdil_raw is not None else 0.0
+        factor = _nullish(raw.get("Factor_Code")) or str(raw.get("ID") or key)
+        sharh = _nullish(raw.get("Sharh1"))
+        api_user = str(_nullish(raw.get("User")) or "")
+        # App-written sanads: keep شرح short. Shop-entered docs keep Tahesab Sharh1.
+        if api_user.upper() == "API":
+            explanation = "اپ"
+        else:
+            explanation = str(sharh) if sharh else ""
+        rows.append(
+            {
+                "id": str(raw.get("ID") or key),
+                "factor_code": str(factor),
+                "created_at": created.isoformat() + "Z" if created else None,
+                "zaman_sabt": str(zaman) if zaman else None,
+                "doc_type": str(no),
+                "explanation": explanation,
+                "weight": weight,
+                "tabdil_vazn": tabdil,
+                "ayar": _to_float(ayar_raw) if ayar_raw is not None else None,
+                "mazaneh": _to_float(mazaneh_raw) if mazaneh_raw is not None else None,
+                "money": money,
+                "gold_balance": gold_bal,
+                "cash_balance": cash_bal,
+                "user": _nullish(raw.get("User")),
+                "sh_factor": raw.get("Sh_Factor"),
+            }
+        )
+
+    def sort_key(row: dict[str, Any]) -> tuple:
+        created = row.get("created_at") or ""
+        try:
+            sid = int(str(row.get("id") or "0"))
+        except ValueError:
+            sid = 0
+        return (created, sid)
+
+    rows.sort(key=sort_key)
+    return rows
+
+
+def apply_asnad_payload(db: Session, user, payload: Any) -> int:
+    """Cache normalized DoListAsnad rows on the user for PDF/report."""
+    rows = parse_asnad_rows(payload)
+    user.tahesab_asnad_json = json.dumps(rows, ensure_ascii=False)
+    user.tahesab_asnad_at = datetime.utcnow()
+    db.add(user)
+    if rows:
+        last = rows[-1]
+        # Keep header remaining aligned with the last ledger line when present.
+        user.tahesab_gold_balance = float(last.get("gold_balance") or 0.0)
+        user.tahesab_cash_balance = float(last.get("cash_balance") or 0.0)
+        user.tahesab_balance_at = user.tahesab_asnad_at
+        db.add(user)
+    logger.info(
+        "[tahesab] asnad user=%s moshtari=%s rows=%s",
+        getattr(user, "user_code", "?"),
+        getattr(user, "tahesab_moshtari_id", None),
+        len(rows),
+    )
+    return len(rows)
+
+
+def get_cached_asnad_rows(user) -> list[dict[str, Any]]:
+    raw = getattr(user, "tahesab_asnad_json", None)
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    return data if isinstance(data, list) else []
+
+
+def request_asnad_refresh(db: Session, user, *, force: bool = False) -> bool:
+    """Queue DoListAsnad for this user (Count_Last=-1 → row-by-row مانده)."""
+    if not is_configured():
+        return False
+    moshtari = getattr(user, "tahesab_moshtari_id", None)
+    if moshtari is None:
+        return False
+    if not force:
+        at = getattr(user, "tahesab_asnad_at", None)
+        if at is not None:
+            age = (datetime.utcnow() - at).total_seconds()
+            if age < ASNAD_STALE_SECONDS:
+                return False
+
+    cutoff = books_reset_at(db) or datetime.utcnow()
+    az = _shamsi_day_str(cutoff)
+    ta = _shamsi_day_str(datetime.now(TEHRAN_TZ).replace(tzinfo=None))
+    # Count_Last=-1 builds TahesabVazni/TahesabMali per row; metal 0 = طلا.
+    params = [-1, int(moshtari), az, ta, "", 0]
+    enqueue_method(
+        db,
+        ASNAD_METHOD,
+        params,
+        ref_type="asnad",
+        ref_id=str(user.id),
+    )
+    return True
+
+
+def user_ledger_payload(db: Session, user) -> dict[str, Any]:
+    """API shape for customer PDF: Tahesab docs + running balances."""
+    rows = get_cached_asnad_rows(user)
+    gold = float(getattr(user, "tahesab_gold_balance", None) or 0.0)
+    cash = float(getattr(user, "tahesab_cash_balance", None) or 0.0)
+    if rows:
+        gold = float(rows[-1].get("gold_balance") or gold)
+        cash = float(rows[-1].get("cash_balance") or cash)
+    return {
+        "docs": rows,
+        "gold_balance": gold,
+        "cash_balance": cash,
+        "updated_at": getattr(user, "tahesab_asnad_at", None),
+        "pending_refresh": False,
+    }
 
 
 def cancel_pending_mande_jobs(db: Session) -> int:
@@ -1054,6 +1233,13 @@ def apply_bridge_result(db: Session, job, result: dict[str, Any]) -> None:
         apply_mande_rows(db, parse_mande_rows(result or {}))
         return
 
+    if method == ASNAD_METHOD.lower() or job.ref_type == "asnad":
+        if job.ref_id:
+            user = db.query(User).filter(User.id == job.ref_id).first()
+            if user:
+                apply_asnad_payload(db, user, result or {})
+        return
+
     ok = result.get("OK")
     if job.ref_type == "user" and job.ref_id and ok is not None:
         user = db.query(User).filter(User.id == job.ref_id).first()
@@ -1272,12 +1458,15 @@ def process_outbox_job(db: Session, job) -> str:
         return job.status
 
     # Success shapes: {"OK": ...}, CheckHealth {"Api_Status": "OK"},
-    # or getmandehesabbycode {"MandeHesab": [...]}.
+    # getmandehesabbycode {"MandeHesab": [...]}, DoListAsnad {id: {...}, ...}.
+    method_l = (job.method or "").lower()
     if (
         "OK" not in data
         and "Api_Status" not in data
         and not payload_is_mande_success(data)
-        and (job.method or "").lower() != MANDE_METHOD
+        and method_l != MANDE_METHOD
+        and method_l != ASNAD_METHOD.lower()
+        and not parse_asnad_rows(data)
     ):
         job.last_error = f"unexpected response: {str(data)[:500]}"
         job.status = "pending"

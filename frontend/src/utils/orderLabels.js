@@ -188,6 +188,44 @@ export function buildCustomerLedgerDocs(orders, { priceLabelMode = "mesghal_and_
   return { docs, goldBalance: gold, cashBalance: cash };
 }
 
+/**
+ * Map /api/my/ledger docs (DoListAsnad) into the PDF row shape.
+ * These already include Tahesab running ته حساب طلا / نقد.
+ */
+export function normalizeTahesabLedgerDocs(ledgerDocs = []) {
+  const docs = [...(ledgerDocs || [])]
+    .map((row) => ({
+      id: row.id || row.factor_code,
+      orderId: row.factor_code,
+      created_at: row.created_at || null,
+      zaman_sabt: row.zaman_sabt || null,
+      docType: row.doc_type || "—",
+      sideShort: row.doc_type || "—",
+      explanation: row.explanation || "",
+      weight: Number(row.weight) || 0,
+      mazaneh: row.mazaneh == null ? null : Number(row.mazaneh),
+      money: Math.round(Number(row.money) || 0),
+      goldBalance: Number(row.gold_balance) || 0,
+      cashBalance: Number(row.cash_balance) || 0,
+      kind: /پرداخت|دريافت|دریافت|واريز|واریز|طلب|بدهي|بدهی/.test(row.doc_type || "")
+        ? "payment"
+        : "trade",
+      status: "accepted",
+    }))
+    .sort((a, b) => {
+      const ta = new Date(a.created_at || 0).getTime();
+      const tb = new Date(b.created_at || 0).getTime();
+      if (ta !== tb) return ta - tb;
+      return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+    });
+  const last = docs[docs.length - 1];
+  return {
+    docs,
+    goldBalance: last ? last.goldBalance : 0,
+    cashBalance: last ? last.cashBalance : 0,
+  };
+}
+
 export function sortOrdersByTimeAsc(orders) {
   return [...(orders || [])].sort((a, b) => {
     const ta = new Date(a?.created_at || 0).getTime();

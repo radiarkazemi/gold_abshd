@@ -152,6 +152,9 @@ class User(Base):
     tahesab_gold_balance = Column(Float, nullable=True)
     tahesab_cash_balance = Column(Float, nullable=True)
     tahesab_balance_at = Column(DateTime, nullable=True)
+    # Cached DoListAsnad rows (JSON list) for customer PDF / ledger report.
+    tahesab_asnad_json = Column(Text, nullable=True)
+    tahesab_asnad_at = Column(DateTime, nullable=True)
 
     @property
     def is_online(self) -> bool:

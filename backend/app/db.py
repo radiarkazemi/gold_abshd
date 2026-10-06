@@ -102,6 +102,8 @@ def _patch_users_table():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS tahesab_gold_balance FLOAT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS tahesab_cash_balance FLOAT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS tahesab_balance_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS tahesab_asnad_json TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS tahesab_asnad_at TIMESTAMP",
     ]
     with engine.connect() as conn:
         for stmt in statements:
