@@ -125,8 +125,7 @@ def enqueue_method(
         updated_at=datetime.utcnow(),
     )
     db.add(row)
-    db.commit()
-    db.refresh(row)
+    db.flush()
     logger.info("[tahesab] queued %s ref=%s/%s id=%s", method, ref_type, ref_id, row.id)
     return row.id
 
@@ -616,6 +615,7 @@ def apply_bridge_result(db: Session, job, result: dict[str, Any]) -> None:
         order = db.query(Order).filter(Order.id == job.ref_id).first()
         if order:
             order.tahesab_factor_code = str(ok)
+            order.tahesab_sync_needed = False
             db.add(order)
 
 
@@ -810,8 +810,10 @@ def sync_user_isolated(user_id: str) -> None:
         if not user:
             return
         sync_user_to_tahesab(db, user)
+        db.commit()
     except Exception:
         logger.exception("[tahesab] isolated user sync failed for %s", user_id)
+        db.rollback()
     finally:
         db.close()
 
@@ -836,32 +838,32 @@ def sync_accepted_order_isolated(order_id: str) -> None:
             order.tahesab_factor_code,
         )
         sync_accepted_order_to_tahesab(db, order)
+        db.commit()
     except Exception:
         logger.exception("[tahesab] isolated order sync failed for %s", order_id)
+        db.rollback()
     finally:
         db.close()
 
 
-def sync_unsynced_accepted_orders(db: Session, limit: int = 30, max_age_hours: float = 6.0) -> int:
-    """Catch-up: recent accepted orders that never reached Tahesab outbox.
+def sync_unsynced_accepted_orders(db: Session, limit: int = 50) -> int:
+    """Retry accepted orders flagged for Tahesab until Windows acks them.
 
-    Only looks at orders accepted in the last `max_age_hours` so we never
-    replay the shop's full historical book onto the TEST Tahesab DB.
+    Uses `tahesab_sync_needed` (set in the same DB commit as accept) so
+    jobs wait indefinitely while the shop PC / agent is offline, without
+    replaying the shop's pre-integration history.
     """
-    from datetime import timedelta
-
     from app.models_db import Order, OrderStatusEnum
 
     if not is_configured():
         return 0
-    cutoff = datetime.utcnow() - timedelta(hours=max_age_hours)
     orders = (
         db.query(Order)
         .filter(
+            Order.tahesab_sync_needed.is_(True),
             Order.status == OrderStatusEnum.accepted,
             Order.tahesab_factor_code.is_(None),
             Order.user_id.isnot(None),
-            Order.updated_at >= cutoff,
         )
         .order_by(Order.updated_at.asc())
         .limit(limit)
@@ -875,6 +877,7 @@ def sync_unsynced_accepted_orders(db: Session, limit: int = 30, max_age_hours: f
         except Exception:
             logger.exception("[tahesab] catch-up failed for order %s", order.id)
     if n:
+        db.commit()
         logger.info("[tahesab] catch-up queued/synced %s accepted orders", n)
     return n
 

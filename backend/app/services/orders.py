@@ -31,6 +31,7 @@ When an order is accepted:
   weight/amount toggle exists for them.
 """
 import json
+import logging
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
@@ -50,6 +51,8 @@ from app.gold_conversion import mesghal17_to_gram18, motaferaghe_to_gram18
 from app.schemas.order import OrderOut
 from app.services.order_limits import get_effective_limits
 from app.services import price_cards
+
+logger = logging.getLogger(__name__)
 
 
 def _new_pending_deadline() -> datetime:
@@ -470,6 +473,18 @@ def decide_order(db: Session, order_id: str, status: str) -> Order:
             goldbridge_item_id=order.goldbridge_item_id if is_coin else None,
         )
         db.add(txn)
+        # Same commit as accept: flag + outbox row. If Windows is offline
+        # the job stays pending until the agent is online again.
+        order.tahesab_sync_needed = True
+        try:
+            from app.services import tahesab
+            if tahesab.is_configured():
+                tahesab.sync_accepted_order_to_tahesab(db, order)
+        except Exception:
+            logger.exception(
+                "[tahesab] queue on accept failed for %s — catch-up will retry",
+                order.id,
+            )
 
     db.commit()
     db.refresh(order)

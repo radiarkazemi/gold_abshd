@@ -248,6 +248,9 @@ class Order(Base):
 
     # Tahesab Factor_Code returned by DoNewSanadBuySale* on accept.
     tahesab_factor_code = Column(String, nullable=True, index=True)
+    # Durable outbox flag: True until Tahesab sanad is acked. Survives
+    # backend restarts; catch-up worker retries until Windows is online.
+    tahesab_sync_needed = Column(Boolean, nullable=False, default=False, index=True)
 
     @property
     def has_receipt(self) -> bool:

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.orm import Session
 from datetime import datetime, time
+import logging
 
 from app.db import get_db
 from app.admin_auth import require_permission
@@ -29,6 +30,8 @@ from app.services.orders import (
     set_user_trading_banned,
     update_user as update_user_db,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin/users", tags=["admin-users"])
 
@@ -74,6 +77,11 @@ async def create_user(
         max_devices=payload.max_devices,
     )
     if tahesab.is_configured():
+        try:
+            tahesab.sync_user_to_tahesab(db, user)
+            db.commit()
+        except Exception:
+            logger.exception("[tahesab] queue moshtari on user create failed for %s", user.id)
         background_tasks.add_task(tahesab.sync_user_isolated, user.id)
     return AdminCreateUserOut(
         user_id=user.id,

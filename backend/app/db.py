@@ -163,6 +163,12 @@ def _patch_orders_table():
         conn.execute(text(
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tahesab_factor_code VARCHAR"
         ))
+        conn.execute(text(
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tahesab_sync_needed BOOLEAN NOT NULL DEFAULT false"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_orders_tahesab_sync_needed ON orders (tahesab_sync_needed)"
+        ))
         # Existing pending rows with no deadline would be invisible to
         # the admin queue (filter requires deadline > now). Give them a
         # fresh window so a deploy mid-shift doesn't drop live orders.

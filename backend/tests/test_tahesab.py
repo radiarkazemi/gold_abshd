@@ -118,6 +118,16 @@ def test_create_moshtari_always_queues(mock_enqueue):
     assert mock_enqueue.call_args[0][1] == "DoNewMoshtari"
 
 
+def test_enqueue_flushes_without_commit():
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = None
+    oid = tahesab.enqueue_method(db, "DoNewMoshtari", ["a"], ref_type="user", ref_id="u1")
+    assert oid
+    db.add.assert_called_once()
+    db.flush.assert_called_once()
+    db.commit.assert_not_called()
+
+
 @patch("app.services.tahesab.call_method_direct")
 def test_process_outbox_links_duplicate_phone(mock_direct):
     mock_direct.side_effect = [
@@ -257,6 +267,16 @@ def test_apply_bridge_result_queues_pending_sanads(mock_sync_order):
     flush.assert_called_once()
 
 
+def test_apply_bridge_result_clears_order_sync_flag():
+    order = SimpleNamespace(id="o1", tahesab_factor_code=None, tahesab_sync_needed=True)
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = order
+    job = SimpleNamespace(ref_type="order", ref_id="o1")
+    tahesab.apply_bridge_result(db, job, {"OK": "GAFACTOR"})
+    assert order.tahesab_factor_code == "GAFACTOR"
+    assert order.tahesab_sync_needed is False
+
+
 def test_disabled_skips_network():
     tahesab.settings.TAHESAB_ENABLED = False
     with patch("app.services.tahesab.httpx.Client") as mock_client_cls:
@@ -274,3 +294,4 @@ def test_catchup_syncs_unsynced_accepted(mock_sync):
     n = tahesab.sync_unsynced_accepted_orders(db)
     assert n == 1
     mock_sync.assert_called_once()
+    db.commit.assert_called_once()
