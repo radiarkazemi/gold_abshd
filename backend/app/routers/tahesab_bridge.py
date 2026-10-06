@@ -59,7 +59,7 @@ def bridge_next(db: Session = Depends(get_db), _auth=Depends(_require_bridge)):
     from app.models_db import Order, User
 
     now = datetime.utcnow()
-    stale_before = now - timedelta(minutes=2)
+    stale_before = now - timedelta(seconds=20)
     job = (
         db.query(TahesabOutbox)
         .filter(
@@ -276,18 +276,41 @@ function Send-TahesabJson([string]$Json) {{
   Write-Host ("  POST ascii-json len=" + $bytes.Length + " head=" + $Json.Substring(0, [Math]::Min(90, $Json.Length)))
   Write-Host ("  HEX " + $hex)
 
-  $wc = New-Object System.Net.WebClient
+  # KeepAlive=false: Tahesab closes HTTP/1.1 connections after 400 and
+  # WebClient then throws "connection was expected to be kept alive".
+  $req = [System.Net.HttpWebRequest]::Create($TahesabUrl)
+  $req.Method = "POST"
+  $req.KeepAlive = $false
+  $req.ProtocolVersion = [System.Net.HttpVersion]::Version10
+  $req.Timeout = 60000
+  $req.ReadWriteTimeout = 60000
+  $req.ContentType = "application/json; charset=utf-8"
+  $req.Accept = "application/json"
+  $req.Headers["Authorization"] = "Bearer $TahesabToken"
+  $req.Headers["DBName"] = $DbName
+  $req.ContentLength = $bytes.Length
+  $req.ServicePoint.Expect100Continue = $false
+  $out = $req.GetRequestStream()
+  $out.Write($bytes, 0, $bytes.Length)
+  $out.Close()
+
+  $resp = $null
   try {{
-    $wc.Headers["Authorization"] = "Bearer $TahesabToken"
-    $wc.Headers["DBName"] = $DbName
-    $wc.Headers["Content-Type"] = "application/json; charset=utf-8"
-    $respBytes = $wc.UploadData($TahesabUrl, "POST", $bytes)
-    $respText = [System.Text.Encoding]::UTF8.GetString($respBytes)
-    if ([string]::IsNullOrWhiteSpace($respText)) {{ return @{{ OK = $true }} }}
-    return ($respText | ConvertFrom-Json)
-  }} finally {{
-    $wc.Dispose()
+    $resp = $req.GetResponse()
+  }} catch [System.Net.WebException] {{
+    $resp = $_.Exception.Response
+    if ($null -eq $resp) {{ throw }}
   }}
+  try {{
+    $rs = $resp.GetResponseStream()
+    $reader = New-Object System.IO.StreamReader($rs, [System.Text.Encoding]::UTF8)
+    $respText = $reader.ReadToEnd()
+    $reader.Close()
+  }} finally {{
+    if ($resp) {{ $resp.Close() }}
+  }}
+  if ([string]::IsNullOrWhiteSpace($respText)) {{ return @{{ OK = $true }} }}
+  return ($respText | ConvertFrom-Json)
 }}
 
 function ConvertTo-TahesabText([string]$Text) {{
@@ -384,6 +407,16 @@ function Resolve-DuplicateMoshtari($Params, [string]$ErrText) {{
     }} catch {{
       Write-Host "  lookup try $c failed: $_"
     }}
+  }}
+  # Tahesab already has this phone — use the code we asked to create.
+  if ($Params -and $Params.Count -ge 9) {{
+    try {{
+      $pref = [int]$Params[8]
+      if ($pref -gt 0) {{
+        Write-Host "  Linked requested moshtari Code=$pref (duplicate phone, list lookup skipped)"
+        return @{{ OK = $pref; linked = $true; note = $ErrText }}
+      }}
+    }} catch {{}}
   }}
   return $null
 }}
