@@ -59,6 +59,7 @@ from app.routers import (
     admin_expert,
     admin_push,
     reygiri,
+    tahesab_bridge,
 )
 
 
@@ -145,6 +146,12 @@ async def startup_event():
         asyncio.create_task(price_service.run_simulation())
     asyncio.create_task(price_cards.poll_all_items())
     asyncio.create_task(price_broadcaster())
+    # Tahesab direct mode: push queued jobs whenever the Windows API is online.
+    from app.services import tahesab as tahesab_svc
+    if tahesab_svc.is_configured():
+        asyncio.create_task(tahesab_svc.catchup_worker_loop())
+        if not tahesab_svc.is_bridge_mode():
+            asyncio.create_task(tahesab_svc.outbox_worker_loop())
 
 
 async def price_broadcaster():
@@ -249,3 +256,4 @@ app.include_router(transfers.router)
 app.include_router(admin_price_cards.router)
 app.include_router(admin_expert.router)
 app.include_router(admin_push.router)
+app.include_router(tahesab_bridge.router)

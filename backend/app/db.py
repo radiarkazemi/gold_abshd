@@ -98,6 +98,12 @@ def _patch_users_table():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_trading_banned BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer VARCHAR",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS max_devices INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS tahesab_moshtari_id INTEGER",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS tahesab_gold_balance FLOAT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS tahesab_cash_balance FLOAT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS tahesab_balance_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS tahesab_asnad_json TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS tahesab_asnad_at TIMESTAMP",
     ]
     with engine.connect() as conn:
         for stmt in statements:
@@ -158,6 +164,15 @@ def _patch_orders_table():
         ))
         conn.execute(text(
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS reject_reason VARCHAR"
+        ))
+        conn.execute(text(
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tahesab_factor_code VARCHAR"
+        ))
+        conn.execute(text(
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tahesab_sync_needed BOOLEAN NOT NULL DEFAULT false"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_orders_tahesab_sync_needed ON orders (tahesab_sync_needed)"
         ))
         # Existing pending rows with no deadline would be invisible to
         # the admin queue (filter requires deadline > now). Give them a
@@ -286,12 +301,72 @@ def _patch_amount_type_enum():
 
 
 def _patch_expert_hedges_table():
-    """Add Tehran deal-price column to existing expert_hedges installs."""
+    """Add Tehran deal-price / Tahesab sync columns to expert_hedges."""
     from sqlalchemy import text
     with engine.connect() as conn:
         conn.execute(
             text("ALTER TABLE expert_hedges ADD COLUMN IF NOT EXISTS price_mesghal17 DOUBLE PRECISION")
         )
+        conn.execute(
+            text("ALTER TABLE expert_hedges ADD COLUMN IF NOT EXISTS tahesab_factor_code VARCHAR")
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE expert_hedges ADD COLUMN IF NOT EXISTS "
+                "tahesab_sync_needed BOOLEAN NOT NULL DEFAULT false"
+            )
+        )
+        conn.commit()
+
+
+def _patch_tehran_dealers_table():
+    """Link آبشده‌فروش rows to Tahesab moshtari codes."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(
+            text("ALTER TABLE tehran_dealers ADD COLUMN IF NOT EXISTS tahesab_moshtari_id INTEGER")
+        )
+        conn.execute(
+            text("ALTER TABLE tehran_dealers ADD COLUMN IF NOT EXISTS tahesab_synced_at TIMESTAMP")
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_tehran_dealers_tahesab_moshtari_id "
+                "ON tehran_dealers (tahesab_moshtari_id) "
+                "WHERE tahesab_moshtari_id IS NOT NULL"
+            )
+        )
+        conn.commit()
+
+
+def _patch_tahesab_outbox_table():
+    """Create tahesab_outbox if missing (create_all also covers new installs)."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS tahesab_outbox (
+                id VARCHAR NOT NULL PRIMARY KEY,
+                method VARCHAR NOT NULL,
+                params_json TEXT NOT NULL DEFAULT '[]',
+                ref_type VARCHAR,
+                ref_id VARCHAR,
+                status VARCHAR NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                result_json TEXT,
+                created_at TIMESTAMP WITHOUT TIME ZONE,
+                updated_at TIMESTAMP WITHOUT TIME ZONE
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_tahesab_outbox_status ON tahesab_outbox (status)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_tahesab_outbox_ref_id ON tahesab_outbox (ref_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_tahesab_outbox_created_at ON tahesab_outbox (created_at)"
+        ))
         conn.commit()
 
 
@@ -310,7 +385,9 @@ def init_db():
     _patch_balance_transactions_table()
     _patch_price_cards_table()
     _patch_expert_hedges_table()
+    _patch_tehran_dealers_table()
     _patch_amount_type_enum()
+    _patch_tahesab_outbox_table()
     _backfill_user_devices()
     print("[db] Tables ready")
 

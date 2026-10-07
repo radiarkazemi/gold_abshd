@@ -69,8 +69,55 @@ class OrderDecisionIn(BaseModel):
 
 
 class BalanceOut(BaseModel):
-    gold_balance: float   # مثقال
+    gold_balance: float   # گرم ۱۸
     cash_balance: float   # تومان
+    # Last Tahesab مانده pull (or ledger change if never pulled). UTC.
+    updated_at: Optional[datetime] = None
+
+    @field_serializer("updated_at")
+    def serialize_balance_updated_at(self, value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        text = value.isoformat()
+        if value.tzinfo is None and not text.endswith("Z") and "+" not in text[-6:]:
+            return f"{text}Z"
+        return text
+
+
+class LedgerDocOut(BaseModel):
+    id: str
+    factor_code: str = ""
+    created_at: Optional[str] = None
+    zaman_sabt: Optional[str] = None
+    doc_type: str
+    explanation: str = ""
+    weight: float = 0.0
+    tabdil_vazn: float = 0.0
+    ayar: Optional[float] = None
+    lab_name: str = ""
+    ang: str = ""
+    is_abshode: bool = False
+    mazaneh: Optional[float] = None
+    money: float = 0.0
+    gold_balance: float = 0.0
+    cash_balance: float = 0.0
+
+
+class LedgerOut(BaseModel):
+    docs: list[LedgerDocOut] = []
+    gold_balance: float = 0.0
+    cash_balance: float = 0.0
+    updated_at: Optional[datetime] = None
+    pending_refresh: bool = False
+
+    @field_serializer("updated_at")
+    def serialize_ledger_updated_at(self, value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        text = value.isoformat()
+        if value.tzinfo is None and not text.endswith("Z") and "+" not in text[-6:]:
+            return f"{text}Z"
+        return text
 
 
 class CardCommissionOut(BaseModel):

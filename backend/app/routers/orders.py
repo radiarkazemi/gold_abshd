@@ -1,11 +1,11 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.ws_manager import manager
 from app.auth import get_current_user
 from app.models_db import User, Order
-from app.schemas.order import OrderCreateIn, OrderOut, BalanceOut
+from app.schemas.order import OrderCreateIn, OrderOut, BalanceOut, LedgerOut, LedgerDocOut
 from app.schemas.admin import TransactionOut
 from app.services.orders import (
     create_order as create_order_db,
@@ -21,6 +21,7 @@ from app.services.trading_status import is_trading_online
 from app.services import price_cards
 from app.services.kyc import require_kyc_approved
 from app.services import admin_push
+from app.services import tahesab
 
 router = APIRouter(tags=["orders"])
 
@@ -97,8 +98,11 @@ async def my_orders(
     db: Session = Depends(get_db),
 ):
     orders = (
-        db.query(Order)
-        .filter(Order.user_id == current_user.id)
+        tahesab.filter_since_books_reset(
+            db,
+            db.query(Order).filter(Order.user_id == current_user.id),
+            Order.created_at,
+        )
         .order_by(Order.created_at.desc())
         .all()
     )
@@ -116,7 +120,8 @@ async def my_order_detail(
         .filter(Order.id == order_id, Order.user_id == current_user.id)
         .first()
     )
-    if not order:
+    cutoff = tahesab.books_reset_at(db)
+    if not order or (cutoff is not None and order.created_at <= cutoff):
         raise HTTPException(status_code=404, detail="سفارش پیدا نشد")
     return order_to_customer_out(order)
 
@@ -186,8 +191,49 @@ async def retry_my_order_at_new_price(
 async def my_balance(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    refresh: bool = Query(False, description="Force a Tahesab مانده pull"),
 ):
+    # Queue getmandehesabbycode so the remaining card tracks Tahesab.
+    # refresh=1: app enter / refresh button. Otherwise only if older than 5 min.
+    queued = tahesab.request_mande_refresh(db, current_user, force=refresh)
+    if queued:
+        db.commit()
     return get_user_balance(db, current_user.id)
+
+
+@router.get("/api/my/ledger", response_model=LedgerOut)
+async def my_ledger(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    refresh: bool = Query(
+        False,
+        description="Soft-refresh from Tahesab when cache is stale/empty (never force)",
+    ),
+):
+    """Customer PDF source: cached Tahesab اسناد; optional soft DoListAsnad pull."""
+    queued = False
+    if refresh:
+        # Soft view refresh (2m) — post-sanad still force=True so trades stay current.
+        queued = tahesab.request_asnad_refresh(
+            db,
+            current_user,
+            force=False,
+            max_age=tahesab.ASNAD_VIEW_STALE_SECONDS,
+        )
+        if queued:
+            db.commit()
+            db.refresh(current_user)
+    else:
+        queued = tahesab.asnad_job_pending(db, current_user)
+    payload = tahesab.user_ledger_payload(db, current_user)
+    payload["pending_refresh"] = bool(queued)
+    return LedgerOut(
+        docs=[LedgerDocOut(**d) for d in payload["docs"]],
+        gold_balance=payload["gold_balance"],
+        cash_balance=payload["cash_balance"],
+        updated_at=payload["updated_at"],
+        pending_refresh=payload["pending_refresh"],
+    )
 
 
 @router.get("/api/my/transactions", response_model=list[TransactionOut])
@@ -195,4 +241,6 @@ async def my_transactions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return get_user_transactions_db(db, current_user.id)
+    return get_user_transactions_db(
+        db, current_user.id, since=tahesab.books_reset_at(db)
+    )

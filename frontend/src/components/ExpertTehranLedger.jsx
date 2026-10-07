@@ -174,7 +174,23 @@ export default function ExpertTehranLedger({
                     : "—"}
                 </td>
                 <td>{HEDGE_LABEL[h.side] || h.side}</td>
-                <td>{h.dealer_name}</td>
+                <td>
+                  {h.dealer_name}
+                  {h.dealer_moshtari_id != null ? (
+                    <div className="expert-hedges__order">
+                      <span>کد ته‌حساب {h.dealer_moshtari_id}</span>
+                      {h.tahesab_factor_code
+                        ? <span> · سند شد</span>
+                        : h.tahesab_sync_needed
+                          ? <span> · در صف ته‌حساب</span>
+                          : null}
+                    </div>
+                  ) : (
+                    <div className="expert-hedges__order">
+                      <span>بدون کد ته‌حساب</span>
+                    </div>
+                  )}
+                </td>
                 <td>{fa(h.weight_gram18, { maximumFractionDigits: 3 })} g</td>
                 <td>{h.price_mesghal17 != null ? fa(Math.round(h.price_mesghal17)) : "—"}</td>
                 <td>{h.note || "—"}</td>

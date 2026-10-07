@@ -145,6 +145,17 @@ class User(Base):
     kyc_reviewed_at = Column(DateTime, nullable=True)
     kyc_reject_reason = Column(String, nullable=True)
 
+    # Tahesab (ته‌حساب) moshtari/account code after DoNewMoshtari sync.
+    tahesab_moshtari_id = Column(Integer, nullable=True, index=True)
+    # Last pulled مانده from Tahesab (source of truth for the app header).
+    # gold = مانده طلا / MandeyeVazni (grams), cash = تومان (MandeyeMali / scale).
+    tahesab_gold_balance = Column(Float, nullable=True)
+    tahesab_cash_balance = Column(Float, nullable=True)
+    tahesab_balance_at = Column(DateTime, nullable=True)
+    # Cached DoListAsnad rows (JSON list) for customer PDF / ledger report.
+    tahesab_asnad_json = Column(Text, nullable=True)
+    tahesab_asnad_at = Column(DateTime, nullable=True)
+
     @property
     def is_online(self) -> bool:
         if not self.last_seen_at:
@@ -242,6 +253,12 @@ class Order(Base):
     # Optional reject reason. Currently used for admin "رد به دلیل تغییر مظنه"
     # which sets reject_reason="price_change" while status stays "rejected".
     reject_reason = Column(String, nullable=True)
+
+    # Tahesab Factor_Code returned by DoNewSanadBuySale* on accept.
+    tahesab_factor_code = Column(String, nullable=True, index=True)
+    # Durable outbox flag: True until Tahesab sanad is acked. Survives
+    # backend restarts; catch-up worker retries until Windows is online.
+    tahesab_sync_needed = Column(Boolean, nullable=False, default=False, index=True)
 
     @property
     def has_receipt(self) -> bool:
@@ -557,6 +574,8 @@ class TehranDealer(Base):
     """
     آبشده‌فروش‌های تهران - counterparties the expert desk hedges
     unmatched customer buy/sell weight with (e.g. فرشاد گلد، منیری).
+
+    Preferred source: Tahesab group «آبشده فروشان» (tahesab_moshtari_id).
     """
 
     __tablename__ = "tehran_dealers"
@@ -567,6 +586,9 @@ class TehranDealer(Base):
     notes = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     sort_order = Column(Integer, default=0, nullable=False)
+    # Tahesab moshtari Code from group آبشده فروشان (None = manual-only).
+    tahesab_moshtari_id = Column(Integer, nullable=True, unique=True, index=True)
+    tahesab_synced_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -594,6 +616,9 @@ class ExpertHedge(Base):
     note = Column(Text, nullable=True)
     created_by = Column(String, nullable=True)  # admin username
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    # Tahesab Factor_Code for the dealer sanad (خرید/فروش روی کارت آبشده‌فروش).
+    tahesab_factor_code = Column(String, nullable=True)
+    tahesab_sync_needed = Column(Boolean, default=False, nullable=False)
 
     dealer = relationship("TehranDealer")
     order = relationship("Order")
@@ -630,3 +655,26 @@ class TermsAcceptance(Base):
     accepted_at_client = Column(DateTime, nullable=True)
 
     user = relationship("User")
+
+
+class TahesabOutbox(Base):
+    """
+    Jobs for the Windows Tahesab pull-bridge. VPS cannot reach the shop
+    PC's 127.0.0.1 API, so the agent on that PC pulls pending rows and
+    POSTs them to local Tahesab.
+    """
+
+    __tablename__ = "tahesab_outbox"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    method = Column(String, nullable=False)
+    # JSON array of method params
+    params_json = Column(Text, nullable=False, default="[]")
+    ref_type = Column(String, nullable=True)  # user | order
+    ref_id = Column(String, nullable=True, index=True)
+    status = Column(String, nullable=False, default="pending", index=True)  # pending|claimed|done|error|cancelled
+    attempts = Column(Integer, nullable=False, default=0)
+    last_error = Column(Text, nullable=True)
+    result_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)

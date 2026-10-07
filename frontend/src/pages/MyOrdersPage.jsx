@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatTehranDateTime, tehranDayKey, tehranThisWeekExcludingToday, tehranTodayKey } from "../utils/tehranTime";
-import { fetchMyOrders, fetchReceiptBlobUrl, uploadReceipt, cancelMyOrder, fetchOrderLimits } from "../api";
+import {
+  fetchMyOrders,
+  fetchMyLedger,
+  fetchReceiptBlobUrl,
+  uploadReceipt,
+  cancelMyOrder,
+  fetchOrderLimits,
+} from "../api";
 import {
   downloadOrderReceipt,
   downloadOrdersReceipt,
@@ -12,8 +19,8 @@ import { useTheme } from "../context/ThemeContext";
 import BottomTabBar from "../components/BottomTabBar";
 import JalaliDateInput from "../components/JalaliDateInput";
 import ReceiptPreviewModal from "../components/ReceiptPreviewModal";
+import { orderSideShort, sortOrdersByTimeDesc } from "../utils/orderLabels";
 
-const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
 const AMOUNT_LABEL = { weight: "گرم ۱۸", amount: "تومان" };
 const STATUS_LABEL = {
   pending: "در انتظار",
@@ -55,6 +62,9 @@ export default function MyOrdersPage() {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [orders, setOrders] = useState([]);
+  const [ledgerDocs, setLedgerDocs] = useState([]);
+  const [ledgerUpdatedAt, setLedgerUpdatedAt] = useState(null);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
   const [filter, setFilter] = useState(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -70,13 +80,57 @@ export default function MyOrdersPage() {
       .finally(() => setLoading(false));
   }
 
+  async function reloadLedger({
+    refresh = false,
+    waitForFresh = false,
+    silent = false,
+  } = {}) {
+    if (!silent) setLedgerLoading(true);
+    try {
+      let data = await fetchMyLedger({ refresh });
+      const beforeAt = data?.updated_at || ledgerUpdatedAt;
+      const cached = data.docs || [];
+      // Only block briefly when we have nothing to show; never hang on a stuck bridge job.
+      const shouldWait =
+        waitForFresh && data?.pending_refresh && cached.length === 0;
+      if (shouldWait) {
+        for (let i = 0; i < 4; i += 1) {
+          await new Promise((r) => setTimeout(r, 2000));
+          data = await fetchMyLedger({ refresh: false });
+          if ((data.docs || []).length > 0) break;
+          const at = data?.updated_at;
+          if (at && at !== beforeAt) break;
+          if (!data?.pending_refresh) break;
+        }
+      }
+      const docs = data.docs || [];
+      setLedgerDocs(docs);
+      if (data.updated_at) setLedgerUpdatedAt(data.updated_at);
+      return docs;
+    } catch (e) {
+      console.error(e);
+      return ledgerDocs;
+    } finally {
+      if (!silent) setLedgerLoading(false);
+    }
+  }
+
   useEffect(() => {
     reload();
+    // Soft refresh if view-stale; wait only when cache is empty (capped).
+    reloadLedger({ refresh: true, waitForFresh: true });
     fetchOrderLimits()
       .then((limits) => setPriceLabelMode(limits.price_label_mode || "mesghal_and_gram18"))
       .catch(() => {});
     const interval = setInterval(reload, 6000);
-    return () => clearInterval(interval);
+    const ledgerInterval = setInterval(
+      () => reloadLedger({ refresh: true, waitForFresh: false, silent: true }),
+      15 * 60 * 1000
+    );
+    return () => {
+      clearInterval(interval);
+      clearInterval(ledgerInterval);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -91,9 +145,11 @@ export default function MyOrdersPage() {
     return true;
   });
 
+  const visibleSorted = useMemo(() => sortOrdersByTimeDesc(visible), [visible]);
+
   const pdfOrders = useMemo(
-    () => visible.filter((o) => o.status === "accepted"),
-    [visible]
+    () => visibleSorted.filter((o) => o.status === "accepted"),
+    [visibleSorted]
   );
 
   function applyToday() {
@@ -192,39 +248,79 @@ export default function MyOrdersPage() {
           <button
             type="button"
             className="date-filter__download-all"
-            disabled={pdfOrders.length === 0}
-            onClick={() => downloadOrdersReceipt(pdfOrders, { dateFrom, dateTo, priceLabelMode })}
+            disabled={ledgerLoading && ledgerDocs.length === 0}
+            onClick={async () => {
+              // Prefer cached ledger; only wait on first empty pull.
+              let docs = ledgerDocs;
+              if (!docs.length) {
+                docs = await reloadLedger({ refresh: true, waitForFresh: true });
+              } else {
+                // Soft view-refresh in background (2m stale) — no UI hang.
+                reloadLedger({ refresh: true, waitForFresh: false, silent: true });
+              }
+              if (!docs.length) {
+                alert("هنوز اسناد ته‌حساب دریافت نشده. چند ثانیه بعد دوباره تلاش کنید.");
+                return;
+              }
+              downloadOrdersReceipt([], {
+                priceLabelMode,
+                ledgerDocs: docs,
+                preferLedger: true,
+              });
+            }}
           >
-            دانلود همه ({fa(pdfOrders.length)}) — PDF
+            {ledgerLoading && ledgerDocs.length === 0
+              ? "در حال دریافت اسناد ته‌حساب…"
+              : `دانلود گزارش ته‌حساب (${fa(ledgerDocs.length)}) — PDF`}
           </button>
           <button
             type="button"
             className="date-filter__download-all date-filter__download-all--ghost"
-            disabled={pdfOrders.length === 0}
-            onClick={() =>
+            disabled={ledgerLoading && ledgerDocs.length === 0}
+            onClick={async () => {
+              let docs = ledgerDocs;
+              if (!docs.length) {
+                docs = await reloadLedger({ refresh: true, waitForFresh: true });
+              } else {
+                reloadLedger({ refresh: true, waitForFresh: false, silent: true });
+              }
+              if (!docs.length) {
+                alert("هنوز اسناد ته‌حساب دریافت نشده. چند ثانیه بعد دوباره تلاش کنید.");
+                return;
+              }
+              const html = buildOrdersReceiptHtml([], {
+                priceLabelMode,
+                ledgerDocs: docs,
+                preferLedger: true,
+              });
               setPreview({
-                title: `مشاهده گزارش (${fa(pdfOrders.length)})`,
-                html: buildOrdersReceiptHtml(pdfOrders, { dateFrom, dateTo, priceLabelMode }),
-                onDownload: () => downloadOrdersReceipt(pdfOrders, { dateFrom, dateTo, priceLabelMode }),
-              })
-            }
+                title: `گزارش ته‌حساب (${fa(docs.length)})`,
+                html,
+                onDownload: () =>
+                  downloadOrdersReceipt([], {
+                    priceLabelMode,
+                    ledgerDocs: docs,
+                    preferLedger: true,
+                  }),
+              });
+            }}
           >
-            مشاهده در برنامه
+            مشاهده گزارش ته‌حساب
           </button>
         </div>
       </div>
 
       {loading ? (
         <p className="myorders__empty">در حال بارگذاری…</p>
-      ) : visible.length === 0 ? (
+      ) : visibleSorted.length === 0 ? (
         <p className="myorders__empty">سفارشی برای نمایش نیست.</p>
       ) : (
         <div className="myorders__list">
-          {visible.map((order) => (
+          {visibleSorted.map((order) => (
             <div key={order.id} className={`history-card history-card--${order.side}`}>
               <div className="history-card__top">
                 <span className={`order-card__badge order-card__badge--${order.side}`}>
-                  {SIDE_LABEL[order.side]}
+                  {orderSideShort(order)}
                 </span>
                 {order.is_manual && <span className="manual-order-tag">دستی</span>}
                 <span className={`history-card__status history-card__status--${order.status}`}>

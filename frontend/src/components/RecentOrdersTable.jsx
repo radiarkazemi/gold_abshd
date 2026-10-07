@@ -3,8 +3,8 @@ import { formatTehranDateTime, tehranDayKey, tehranTodayKey } from "../utils/teh
 import { fetchMyOrders } from "../api";
 import { orderGoldWeight } from "../utils/orderCalc";
 import { remainingFromOrder } from "../utils/orderCountdown";
+import { orderKindTag, orderSideShort, sortOrdersByTimeDesc } from "../utils/orderLabels";
 
-const SIDE_LABEL = { buy: "خرید", sell: "فروش" };
 const STATUS_LABEL = {
   pending: "در انتظار",
   accepted: "تایید شده",
@@ -70,7 +70,10 @@ export default function RecentOrdersTable({ limit = 5, refreshSignal }) {
     return () => clearInterval(id);
   }, []);
 
-  const todayOrders = useMemo(() => pickTodayOrders(orders, nowMs), [orders, nowMs]);
+  const todayOrders = useMemo(
+    () => sortOrdersByTimeDesc(pickTodayOrders(orders, nowMs)),
+    [orders, nowMs]
+  );
   const rows = useMemo(() => todayOrders.slice(0, limit), [todayOrders, limit]);
 
   // Totals: only accepted orders count. Rejected/cancelled/pending stay
@@ -130,22 +133,30 @@ export default function RecentOrdersTable({ limit = 5, refreshSignal }) {
           <span>مظنه</span>
           <span>وضعیت</span>
         </div>
-        {rows.map((o) => (
-          <div className="recent-orders__row" key={o.id}>
-            <span className={`recent-orders__side recent-orders__side--${o.side}`}>
-              {SIDE_LABEL[o.side]}
-            </span>
-            <span>{fa(orderGoldWeight(o), { maximumFractionDigits: 3 })} گرم</span>
-            <span>
-              {o.mesghal17_price_at_submit != null
-                ? `${fa(Math.round(o.mesghal17_price_at_submit))} ت`
-                : "—"}
-            </span>
-            <span className={`recent-orders__status ${STATUS_CLASS[o.status] || ""}`}>
-              {STATUS_LABEL[o.status] || o.status}
-            </span>
-          </div>
-        ))}
+        {rows.map((o) => {
+          const tag = orderKindTag(o);
+          const sideBase = o.side === "buy" ? "خرید" : o.side === "sell" ? "فروش" : o.side;
+          return (
+            <div className="recent-orders__row" key={o.id}>
+              <span
+                className={`recent-orders__side recent-orders__side--${o.side}`}
+                title={orderSideShort(o)}
+              >
+                {sideBase}
+                {tag ? <span className="recent-orders__kind"> ({tag})</span> : null}
+              </span>
+              <span>{fa(orderGoldWeight(o), { maximumFractionDigits: 3 })} گرم</span>
+              <span>
+                {o.mesghal17_price_at_submit != null
+                  ? `${fa(Math.round(o.mesghal17_price_at_submit))} ت`
+                  : "—"}
+              </span>
+              <span className={`recent-orders__status ${STATUS_CLASS[o.status] || ""}`}>
+                {STATUS_LABEL[o.status] || o.status}
+              </span>
+            </div>
+          );
+        })}
       </div>
       <span className="recent-orders__time-note">{formatTime(rows[0].created_at)} آخرین بروزرسانی</span>
     </div>

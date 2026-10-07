@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.orm import Session
 from datetime import datetime, time
+import logging
 
 from app.db import get_db
 from app.admin_auth import require_permission
@@ -11,6 +12,7 @@ from app.schemas.admin import (
     TermsAcceptanceSummaryOut, TermsAcceptancesReportOut, BalanceTransactionUpdateIn,
 )
 from app.services.registration import create_user_with_key, delete_user
+from app.services import tahesab
 from app.services.devices import list_user_devices, revoke_user_device, count_user_devices
 from app.services.terms import (
     list_user_terms_acceptances,
@@ -28,6 +30,8 @@ from app.services.orders import (
     set_user_trading_banned,
     update_user as update_user_db,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin/users", tags=["admin-users"])
 
@@ -55,7 +59,12 @@ def _user_summary(db: Session, user: User) -> UserSummaryOut:
 
 
 @router.post("", response_model=AdminCreateUserOut)
-async def create_user(payload: AdminCreateUserIn, db: Session = Depends(get_db), _admin=Depends(require_permission("add-user"))):
+async def create_user(
+    payload: AdminCreateUserIn,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_permission("add-user")),
+):
     user, reg_key = create_user_with_key(
         db,
         phone_number=payload.phone_number,
@@ -67,6 +76,13 @@ async def create_user(payload: AdminCreateUserIn, db: Session = Depends(get_db),
         key_ttl_days=payload.key_ttl_days,
         max_devices=payload.max_devices,
     )
+    if tahesab.is_configured():
+        try:
+            tahesab.sync_user_to_tahesab(db, user)
+            db.commit()
+        except Exception:
+            logger.exception("[tahesab] queue moshtari on user create failed for %s", user.id)
+        background_tasks.add_task(tahesab.sync_user_isolated, user.id)
     return AdminCreateUserOut(
         user_id=user.id,
         user_code=user.user_code,

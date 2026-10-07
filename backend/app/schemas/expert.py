@@ -10,10 +10,26 @@ class TehranDealerOut(BaseModel):
     notes: Optional[str] = None
     is_active: bool = True
     sort_order: int = 0
+    tahesab_moshtari_id: Optional[int] = None
+    tahesab_synced_at: Optional[datetime] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class TehranDealersSyncOut(BaseModel):
+    ok: bool = False
+    reason: Optional[str] = None
+    created: int = 0
+    updated: int = 0
+    deactivated: int = 0
+    total: Optional[int] = None
+    group: Optional[str] = None
+    gid: Optional[int] = None
+    pending_refresh: bool = False
+    outbox_id: Optional[str] = None
+    dealers: list[TehranDealerOut] = []
 
 
 class TehranDealerCreateIn(BaseModel):
@@ -47,6 +63,7 @@ class ExpertHedgeOut(BaseModel):
     id: str
     dealer_id: str
     dealer_name: str
+    dealer_moshtari_id: Optional[int] = None
     side: str  # buy_from_dealer | sell_to_dealer
     weight_gram18: float
     price_mesghal17: Optional[float] = None  # فی معامله با تهران (مثقال ۱۷)
@@ -55,6 +72,8 @@ class ExpertHedgeOut(BaseModel):
     note: Optional[str] = None
     created_by: Optional[str] = None
     created_at: datetime
+    tahesab_factor_code: Optional[str] = None
+    tahesab_sync_needed: bool = False
 
 
 class ExpertHedgeCreateIn(BaseModel):
@@ -117,6 +136,8 @@ class ExpertDeskOut(BaseModel):
     hedges: list[ExpertHedgeOut]
     session_day: Optional[str] = None  # Tehran YYYY-MM-DD for مانده
     session_hours: Optional[int] = None  # legacy; desk is calendar-day based now
+    dealers_sync: Optional[dict] = None
+    abshode_sellers_group: Optional[str] = None
 
 
 class ExpertDayReportOut(BaseModel):

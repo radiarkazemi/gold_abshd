@@ -394,11 +394,21 @@ export async function fetchMyTransactions() {
   return res.json();
 }
 
-export async function fetchMyBalance() {
-  const res = await fetch(`${API_BASE}/api/my/balance`, {
+export async function fetchMyBalance({ refresh = false } = {}) {
+  const qs = refresh ? "?refresh=1" : "";
+  const res = await fetch(`${API_BASE}/api/my/balance${qs}`, {
     headers: { ...authHeaders() },
   });
   if (!res.ok) throw new Error("Failed to fetch balance");
+  return res.json();
+}
+
+export async function fetchMyLedger({ refresh = false } = {}) {
+  const qs = refresh ? "?refresh=1" : "";
+  const res = await fetch(`${API_BASE}/api/my/ledger${qs}`, {
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to fetch ledger");
   return res.json();
 }
 
@@ -517,6 +527,23 @@ export async function createTehranDealer({ name, phone, notes, sortOrder = 0 }) 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "Failed to create dealer");
+  }
+  return res.json();
+}
+
+/** Force-pull آبشده فروشان group from Tahesab into the expert desk dealer list. */
+export async function syncTehranDealersFromTahesab() {
+  const res = await fetch(`${API_BASE}/api/admin/expert/dealers/sync-tahesab`, {
+    method: "POST",
+    headers: { ...adminAuthHeaders() },
+  });
+  if (res.status === 401 || res.status === 403) {
+    clearAdminToken();
+    throw new Error("ADMIN_SESSION_EXPIRED");
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "بروزرسانی از ته‌حساب ناموفق بود");
   }
   return res.json();
 }

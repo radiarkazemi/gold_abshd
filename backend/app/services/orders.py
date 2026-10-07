@@ -31,6 +31,7 @@ When an order is accepted:
   weight/amount toggle exists for them.
 """
 import json
+import logging
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
@@ -46,10 +47,16 @@ from app.models_db import (
     TransactionReasonEnum,
 )
 from app.config import settings
-from app.gold_conversion import mesghal17_to_gram18, motaferaghe_to_gram18
+from app.gold_conversion import (
+    mesghal17_to_gram18,
+    motaferaghe_to_gram18,
+    motaferaghe_weight_to_ayar750,
+)
 from app.schemas.order import OrderOut
 from app.services.order_limits import get_effective_limits
 from app.services import price_cards
+
+logger = logging.getLogger(__name__)
 
 
 def _new_pending_deadline() -> datetime:
@@ -312,20 +319,45 @@ def create_phone_order(
     return decide_order(db, order.id, "accepted")
 
 
+def prefer_tahesab_balance(user, gold: float, cash: float, updated_at=None) -> dict:
+    """Use Tahesab مانده when it has been pulled; otherwise the ledger sum."""
+    if user is not None and getattr(user, "tahesab_balance_at", None) is not None:
+        return {
+            "gold_balance": float(user.tahesab_gold_balance or 0.0),
+            "cash_balance": float(user.tahesab_cash_balance or 0.0),
+            "updated_at": user.tahesab_balance_at,
+        }
+    return {
+        "gold_balance": float(gold or 0.0),
+        "cash_balance": float(cash or 0.0),
+        "updated_at": updated_at,
+    }
+
+
 def get_user_balance(db: Session, user_id: str) -> dict:
-    """گرم۱۸ gold + cash only - excludes coin-ledger transactions
-    entirely (see get_user_coin_balances for those)."""
+    """گرم۱۸ gold + cash.
+
+    When Tahesab has been pulled for this user, that مانده is the source
+    of truth (shop books). Otherwise fall back to the app ledger sum.
+    """
+    from app.models_db import User
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is not None and getattr(user, "tahesab_balance_at", None) is not None:
+        return prefer_tahesab_balance(user, 0.0, 0.0)
+
     result = (
         db.query(
             func.coalesce(func.sum(BalanceTransaction.gold_change), 0.0),
             func.coalesce(func.sum(BalanceTransaction.cash_change), 0.0),
+            func.max(BalanceTransaction.created_at),
         )
         .filter(BalanceTransaction.user_id == user_id)
         .filter(BalanceTransaction.goldbridge_item_id.is_(None))
         .first()
     )
-    gold_balance, cash_balance = result
-    return {"gold_balance": float(gold_balance), "cash_balance": float(cash_balance)}
+    gold_balance, cash_balance, updated_at = result
+    return prefer_tahesab_balance(user, gold_balance, cash_balance, updated_at)
 
 
 def get_user_coin_balances(db: Session, user_id: str) -> dict[int, float]:
@@ -342,11 +374,17 @@ def get_user_coin_balances(db: Session, user_id: str) -> dict[int, float]:
     return {item_id: float(count) for item_id, count in rows}
 
 
-def get_user_transactions(db: Session, user_id: str, limit: int = 20) -> list[BalanceTransaction]:
+def get_user_transactions(
+    db: Session,
+    user_id: str,
+    limit: int = 20,
+    since: datetime | None = None,
+) -> list[BalanceTransaction]:
+    query = db.query(BalanceTransaction).filter(BalanceTransaction.user_id == user_id)
+    if since is not None:
+        query = query.filter(BalanceTransaction.created_at > since)
     return (
-        db.query(BalanceTransaction)
-        .filter(BalanceTransaction.user_id == user_id)
-        .order_by(BalanceTransaction.created_at.desc())
+        query.order_by(BalanceTransaction.created_at.desc())
         .limit(limit)
         .all()
     )
@@ -446,7 +484,11 @@ def decide_order(db: Session, order_id: str, status: str) -> Order:
     if status == "accepted" and order.user_id:
         is_coin = order.amount_type.value == "count"
         quantity = order_quantity(order)
-        gold_change = quantity if order.side.value == "buy" else -quantity
+        gold_qty = quantity
+        if (not is_coin) and price_cards.is_motaferaghe_card(order.goldbridge_item_id):
+            # Physical متفرقه is عیار 740; مانده طلا is گرم ۱۸ / 750.
+            gold_qty = motaferaghe_weight_to_ayar750(quantity)
+        gold_change = gold_qty if order.side.value == "buy" else -gold_qty
 
         total_toman = order_total_toman(order)
         # buy: customer received it, now owes the shop -> negative
@@ -470,6 +512,18 @@ def decide_order(db: Session, order_id: str, status: str) -> Order:
             goldbridge_item_id=order.goldbridge_item_id if is_coin else None,
         )
         db.add(txn)
+        # Same commit as accept: flag + outbox row. If Windows is offline
+        # the job stays pending until the agent is online again.
+        order.tahesab_sync_needed = True
+        try:
+            from app.services import tahesab
+            if tahesab.is_configured():
+                tahesab.sync_accepted_order_to_tahesab(db, order)
+        except Exception:
+            logger.exception(
+                "[tahesab] queue on accept failed for %s — catch-up will retry",
+                order.id,
+            )
 
     db.commit()
     db.refresh(order)
@@ -596,8 +650,7 @@ def list_users_with_balance(db: Session, search: str | None = None) -> list[dict
             "is_blocked": user.is_blocked,
             "is_trading_banned": user.is_trading_banned,
             "created_at": user.created_at,
-            "gold_balance": float(gold),
-            "cash_balance": float(cash),
+            **{k: v for k, v in prefer_tahesab_balance(user, gold, cash).items() if k != "updated_at"},
             "role": user.role,
             "is_online": user.is_online,
             "registration_status": reg_key.status.value if reg_key else None,

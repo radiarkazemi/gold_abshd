@@ -154,6 +154,66 @@ class Settings:
     # already reports in Toman.
     PRICE_API_RIAL_TO_TOMAN: bool = os.getenv("GOLDAPP_PRICE_API_RIAL_TO_TOMAN", "true").lower() == "true"
 
+    # --- Tahesab (ته‌حساب) accounting API ---
+    # Self-hosted Windows service. Typically https://HOST:8081 or
+    # http://HOST:9550. 127.0.0.1 only works when the app runs on the
+    # same Windows machine (or via tunnel/VPN); a remote VPS cannot
+    # reach the shop PC's loopback.
+    TAHESAB_ENABLED: bool = os.getenv("GOLDAPP_TAHESAB_ENABLED", "false").lower() == "true"
+    # direct (recommended by Tahesab support) = VPS POSTs to public/static IP:8081
+    #   (modem port-forward + Windows firewall). Jobs stay in outbox and retry
+    #   until the shop PC is online.
+    # bridge = optional Windows pull-agent fallback (no port-forward).
+    TAHESAB_MODE: str = os.getenv("GOLDAPP_TAHESAB_MODE", "direct").strip().lower()
+    # Public URL of the Windows API, e.g. https://STATIC.IP:8081 or http://STATIC.IP:9550
+    # Do NOT use 127.0.0.1 here when the app runs on the VPS.
+    TAHESAB_BASE_URL: str = os.getenv("GOLDAPP_TAHESAB_BASE_URL", "").rstrip("/")
+    TAHESAB_TOKEN: str = os.getenv("GOLDAPP_TAHESAB_TOKEN", "")
+    # DBName header: Access folder (DB / DB1) or SQL Server db (TahesabDB / TahesabDB1).
+    # Point this at the TEST environment only — never the main shop books.
+    TAHESAB_DBNAME: str = os.getenv("GOLDAPP_TAHESAB_DBNAME", "DB")
+    # Human label shown in the Windows agent banner (ASCII-safe for cmd.exe).
+    TAHESAB_TARGET_LABEL: str = os.getenv("GOLDAPP_TAHESAB_TARGET_LABEL", "TEST")
+    # If set (comma-separated), CheckHealth DBName must match one of these
+    # (case-insensitive) or the agent/worker refuses to write.
+    # Example for Access test folder: "db,DB1"
+    TAHESAB_ALLOWED_DBNAMES: str = os.getenv("GOLDAPP_TAHESAB_ALLOWED_DBNAMES", "db")
+    # Always refuse these CheckHealth DBName values (main / production books).
+    TAHESAB_BLOCKED_DBNAMES: str = os.getenv(
+        "GOLDAPP_TAHESAB_BLOCKED_DBNAMES",
+        "TahesabDB,tahesabdb",
+    )
+    TAHESAB_TIMEOUT: float = float(os.getenv("GOLDAPP_TAHESAB_TIMEOUT", "20"))
+    # Local/self-signed certs are common; set true once a real cert is active.
+    TAHESAB_VERIFY_SSL: bool = os.getenv("GOLDAPP_TAHESAB_VERIFY_SSL", "false").lower() == "true"
+    # App amounts are Toman; Tahesab usually expects Rial → multiply by 10.
+    TAHESAB_AMOUNT_SCALE: float = float(os.getenv("GOLDAPP_TAHESAB_AMOUNT_SCALE", "10"))
+    TAHESAB_DEFAULT_GROUP: str = os.getenv("GOLDAPP_TAHESAB_DEFAULT_GROUP", "اپلیکیشن")
+    # Tahesab group that holds آبشده‌فروش‌های تهران (فرشاد گلد، منیری، …).
+    TAHESAB_ABSHODE_SELLERS_GROUP: str = os.getenv(
+        "GOLDAPP_TAHESAB_ABSHODE_SELLERS_GROUP", "آبشده فروشان"
+    )
+    # Soft-refresh interval for the expert-desk dealer list from that group.
+    TAHESAB_ABSHODE_SELLERS_STALE_SECONDS: float = float(
+        os.getenv("GOLDAPP_TAHESAB_ABSHODE_SELLERS_STALE_SECONDS", "900")
+    )
+    # 1 = ثبت کل, 0 = ثبت موقت
+    TAHESAB_SABTE_KOL: int = int(os.getenv("GOLDAPP_TAHESAB_SABTE_KOL", "1"))
+    # 0 = متفرقه, 1 = آبشده
+    TAHESAB_IS_ABSHODE: int = int(os.getenv("GOLDAPP_TAHESAB_IS_ABSHODE", "1"))
+    # Shared secret for the optional Windows pull-bridge agent.
+    TAHESAB_BRIDGE_TOKEN: str = os.getenv("GOLDAPP_TAHESAB_BRIDGE_TOKEN", "")
+    # How often the VPS retries pending outbox jobs against BASE_URL.
+    TAHESAB_OUTBOX_POLL_SECONDS: float = float(os.getenv("GOLDAPP_TAHESAB_OUTBOX_POLL_SECONDS", "15"))
+
+    @property
+    def TAHESAB_ALLOWED_DBNAMES_SET(self) -> set[str]:
+        return {x.strip().lower() for x in self.TAHESAB_ALLOWED_DBNAMES.split(",") if x.strip()}
+
+    @property
+    def TAHESAB_BLOCKED_DBNAMES_SET(self) -> set[str]:
+        return {x.strip().lower() for x in self.TAHESAB_BLOCKED_DBNAMES.split(",") if x.strip()}
+
     # Receipt uploads (proof of bank transfer / حواله for cash orders)
     UPLOAD_DIR: str = os.getenv("GOLDAPP_UPLOAD_DIR", "uploads/receipts")
     MAX_RECEIPT_SIZE_MB: int = int(os.getenv("GOLDAPP_MAX_RECEIPT_SIZE_MB", "5"))

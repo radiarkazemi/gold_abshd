@@ -6,6 +6,7 @@ import {
   decideOrder,
   createTehranDealer,
   updateTehranDealer,
+  syncTehranDealersFromTahesab,
   createExpertHedge,
   deleteExpertHedge,
 } from "../api";
@@ -72,6 +73,7 @@ function DealerAssignInline({ order, dealers, busy, onAssign }) {
             {activeDealers.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}
+                {d.tahesab_moshtari_id != null ? ` (#${d.tahesab_moshtari_id})` : ""}
               </option>
             ))}
           </select>
@@ -214,6 +216,7 @@ export default function AdminExpertTab({ refreshSignal }) {
   const [liveCard, setLiveCard] = useState(null);
   const [dealerForm, setDealerForm] = useState({ name: "", phone: "", notes: "" });
   const [dealerBusy, setDealerBusy] = useState(false);
+  const [dealerSyncBusy, setDealerSyncBusy] = useState(false);
   const [freeHedge, setFreeHedge] = useState({
     dealerId: "",
     side: "sell_to_dealer",
@@ -318,6 +321,42 @@ export default function AdminExpertTab({ refreshSignal }) {
       alert(err.message || "ثبت آبشده‌فروش ناموفق بود");
     } finally {
       setDealerBusy(false);
+    }
+  }
+
+  async function handleSyncDealersFromTahesab() {
+    setDealerSyncBusy(true);
+    try {
+      const result = await syncTehranDealersFromTahesab();
+      reload();
+      const n = result?.total ?? (result?.dealers || []).length;
+      const group = result?.group || desk?.abshode_sellers_group || "آبشده فروشان";
+      if (!result?.ok && result?.reason === "tahesab_disabled") {
+        alert("ته‌حساب فعال نیست — لیست از کش محلی خوانده می‌شود");
+      } else if (result?.pending_refresh || result?.reason === "queued" || result?.reason === "already_queued") {
+        alert(
+          `درخواست لیست «${group}» به ته‌حساب صف شد. چند ثانیه صبر کنید و دوباره «بروزرسانی از ته‌حساب» را بزنید (ایجنت ویندوز باید آنلاین باشد).`
+        );
+        // Soft-poll desk so linked codes appear when the agent acks.
+        setTimeout(reload, 4000);
+        setTimeout(reload, 10000);
+      } else if (result?.ok) {
+        alert(
+          `لیست «${group}» از ته‌حساب به‌روز شد` +
+            (n != null ? ` (${fa(n)} نفر)` : "") +
+            (result?.created ? ` · جدید: ${fa(result.created)}` : "")
+        );
+      } else {
+        alert(
+          `بروزرسانی «${group}» کامل نشد` +
+            (result?.reason ? ` (${result.reason})` : "") +
+            " — دوباره تلاش کنید"
+        );
+      }
+    } catch (err) {
+      alert(err.message || "بروزرسانی از ته‌حساب ناموفق بود");
+    } finally {
+      setDealerSyncBusy(false);
     }
   }
 
@@ -638,9 +677,23 @@ export default function AdminExpertTab({ refreshSignal }) {
 
       <section className="expert-dealers">
         <h3 className="dashboard__section-title">آبشده‌فروش‌های تهران</h3>
+        <p className="expert__hint">
+          منبع اصلی: گروه ته‌حساب «{desk.abshode_sellers_group || "آبشده فروشان"}».
+          با ثبت پوشش، همان وزن روی کارت آبشده‌فروش در ته‌حساب هم سند می‌شود.
+        </p>
+        <div className="expert-dealers__form" style={{ marginBottom: 8 }}>
+          <button
+            type="button"
+            className="expert-btn expert-btn--ok"
+            disabled={dealerSyncBusy}
+            onClick={handleSyncDealersFromTahesab}
+          >
+            {dealerSyncBusy ? "در حال دریافت…" : "بروزرسانی از ته‌حساب"}
+          </button>
+        </div>
         <form className="expert-dealers__form" onSubmit={handleAddDealer}>
           <input
-            placeholder="نام (مثلاً فرشاد گلد)"
+            placeholder="نام دستی (اگر در ته‌حساب نیست)"
             value={dealerForm.name}
             onChange={(e) => setDealerForm((f) => ({ ...f, name: e.target.value }))}
             required
@@ -656,18 +709,23 @@ export default function AdminExpertTab({ refreshSignal }) {
             onChange={(e) => setDealerForm((f) => ({ ...f, notes: e.target.value }))}
           />
           <button type="submit" className="expert-btn expert-btn--ok" disabled={dealerBusy}>
-            افزودن
+            افزودن دستی
           </button>
         </form>
 
         <div className="expert-dealers__list">
           {dealers.length === 0 ? (
-            <p className="expert-col__empty">هنوز آبشده‌فروشی ثبت نشده</p>
+            <p className="expert-col__empty">
+              هنوز آبشده‌فروشی نیست — گروه «آبشده فروشان» را در ته‌حساب بسازید و بروزرسانی کنید
+            </p>
           ) : (
             dealers.map((d) => (
               <div key={d.id} className={`expert-dealer ${d.is_active ? "" : "is-off"}`}>
                 <div>
                   <strong>{d.name}</strong>
+                  {d.tahesab_moshtari_id != null && (
+                    <span className="expert-dealer__phone">کد ته‌حساب: {d.tahesab_moshtari_id}</span>
+                  )}
                   {d.phone && <span className="expert-dealer__phone">{d.phone}</span>}
                   {d.notes && <span className="expert-dealer__notes">{d.notes}</span>}
                 </div>
@@ -697,6 +755,7 @@ export default function AdminExpertTab({ refreshSignal }) {
               {activeDealers.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name}
+                  {d.tahesab_moshtari_id != null ? ` (#${d.tahesab_moshtari_id})` : ""}
                 </option>
               ))}
             </select>
