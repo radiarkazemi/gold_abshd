@@ -333,11 +333,24 @@ export default function AdminExpertTab({ refreshSignal }) {
       const group = result?.group || desk?.abshode_sellers_group || "آبشده فروشان";
       if (!result?.ok && result?.reason === "tahesab_disabled") {
         alert("ته‌حساب فعال نیست — لیست از کش محلی خوانده می‌شود");
-      } else {
+      } else if (result?.pending_refresh || result?.reason === "queued" || result?.reason === "already_queued") {
+        alert(
+          `درخواست لیست «${group}» به ته‌حساب صف شد. چند ثانیه صبر کنید و دوباره «بروزرسانی از ته‌حساب» را بزنید (ایجنت ویندوز باید آنلاین باشد).`
+        );
+        // Soft-poll desk so linked codes appear when the agent acks.
+        setTimeout(reload, 4000);
+        setTimeout(reload, 10000);
+      } else if (result?.ok) {
         alert(
           `لیست «${group}» از ته‌حساب به‌روز شد` +
             (n != null ? ` (${fa(n)} نفر)` : "") +
             (result?.created ? ` · جدید: ${fa(result.created)}` : "")
+        );
+      } else {
+        alert(
+          `بروزرسانی «${group}» کامل نشد` +
+            (result?.reason ? ` (${result.reason})` : "") +
+            " — دوباره تلاش کنید"
         );
       }
     } catch (err) {

@@ -857,9 +857,23 @@ def parse_moshtari_detail_rows(payload: Any) -> list[dict[str, Any]]:
     return out
 
 
+ABSHODE_SELLERS_REF = "abshode-sellers"
+
+
+def _group_name_matches(row_group: str, target: str) -> bool:
+    if not target:
+        return False
+    g = (row_group or "").strip()
+    if not g:
+        return False
+    if g == target:
+        return True
+    return target in g or g in target or g.replace(" ", "") == target.replace(" ", "")
+
+
 def list_gorooh_direct() -> list[dict[str, Any]]:
-    """DoListGorooh — live read (not queued)."""
-    if not is_configured():
+    """DoListGorooh — live read (direct mode only)."""
+    if not is_configured() or is_bridge_mode():
         return []
     data = call_method_direct("DoListGorooh", [])
     return parse_gorooh_rows(data)
@@ -873,7 +887,6 @@ def find_gorooh_gid(group_name: str | None = None) -> int | None:
     for g in groups:
         if g["name"] == target:
             return int(g["gid"])
-    # Soft match: strip spaces / contain
     compact = target.replace(" ", "")
     for g in groups:
         if g["name"].replace(" ", "") == compact or target in g["name"] or g["name"] in target:
@@ -881,14 +894,37 @@ def find_gorooh_gid(group_name: str | None = None) -> int | None:
     return None
 
 
-def list_moshtari_in_group(group_name: str | None = None) -> list[dict[str, Any]]:
-    """Members of a Tahesab group (default: آبشده فروشان).
+def sellers_from_moshtari_payload(
+    payload: Any,
+    *,
+    group_name: str | None = None,
+    gid: int | None = None,
+) -> list[dict[str, Any]]:
+    """Filter a DoListMoshtari payload down to آبشده فروشان members."""
+    target = (group_name or settings.TAHESAB_ABSHODE_SELLERS_GROUP or "").strip()
+    by_code: dict[int, dict[str, Any]] = {}
+    for row in parse_moshtari_detail_rows(payload):
+        match_gid = gid is not None and row.get("gid") == gid
+        match_name = _group_name_matches(row.get("group_name") or "", target)
+        if not (match_gid or match_name):
+            continue
+        by_code[row["code"]] = {
+            "code": row["code"],
+            "name": row.get("name") or f"کد {row['code']}",
+            "gid": row.get("gid") if row.get("gid") is not None else gid,
+            "group_name": row.get("group_name") or target,
+            "tel": row.get("tel") or "",
+        }
+    return sorted(by_code.values(), key=lambda r: (r.get("name") or "", r["code"]))
 
-    Uses GetMandeHesabByGID for codes in the group, then DoListMoshtari
-    to resolve names. Also filters a wide DoListMoshtari range by GID /
-    GoroupName so zero-balance cards are not missed when the API returns them.
+
+def list_moshtari_in_group(group_name: str | None = None) -> list[dict[str, Any]]:
+    """Members of a Tahesab group (default: آبشده فروشان) — direct mode.
+
+    Bridge mode cannot call Tahesab from the VPS; use
+    request_abshode_sellers_refresh() + apply_abshode_sellers_payload() instead.
     """
-    if not is_configured():
+    if not is_configured() or is_bridge_mode():
         return []
     target = (group_name or settings.TAHESAB_ABSHODE_SELLERS_GROUP or "").strip()
     gid = find_gorooh_gid(target)
@@ -915,17 +951,8 @@ def list_moshtari_in_group(group_name: str | None = None) -> list[dict[str, Any]
                         "tel": "",
                     }
 
-    # Wide list for names + zero-balance members (best-effort).
     listed = call_method_direct("DoListMoshtari", [1, 50000])
-    for row in parse_moshtari_detail_rows(listed):
-        match_gid = gid is not None and row.get("gid") == gid
-        match_name = bool(target) and (
-            row.get("group_name") == target
-            or target in (row.get("group_name") or "")
-            or (row.get("group_name") or "") in target
-        )
-        if not (match_gid or match_name):
-            continue
+    for row in sellers_from_moshtari_payload(listed, group_name=target, gid=gid):
         prev = by_code.get(row["code"], {})
         by_code[row["code"]] = {
             "code": row["code"],
@@ -935,7 +962,6 @@ def list_moshtari_in_group(group_name: str | None = None) -> list[dict[str, Any]
             "tel": row.get("tel") or prev.get("tel") or "",
         }
 
-    # Fill missing names one-by-one for GetMandeHesabByGID-only codes.
     for code, row in list(by_code.items()):
         if row.get("name"):
             continue
@@ -950,13 +976,158 @@ def list_moshtari_in_group(group_name: str | None = None) -> list[dict[str, Any]
     return sorted(by_code.values(), key=lambda r: (r.get("name") or "", r["code"]))
 
 
+def _abshode_sellers_job_pending(db: Session) -> bool:
+    from app.models_db import TahesabOutbox
+
+    return (
+        db.query(TahesabOutbox)
+        .filter(
+            TahesabOutbox.ref_type == ABSHODE_SELLERS_REF,
+            TahesabOutbox.status.in_(("pending", "claimed")),
+        )
+        .first()
+        is not None
+    )
+
+
+def request_abshode_sellers_refresh(db: Session, *, force: bool = False) -> dict[str, Any]:
+    """Queue DoListMoshtari for bridge mode (Windows agent pulls & acks)."""
+    if not is_configured():
+        return {"ok": False, "reason": "tahesab_disabled", "pending_refresh": False}
+    if _abshode_sellers_job_pending(db) and not force:
+        return {
+            "ok": True,
+            "reason": "already_queued",
+            "pending_refresh": True,
+            "group": settings.TAHESAB_ABSHODE_SELLERS_GROUP,
+        }
+    # Wide list; apply_abshode_sellers_payload filters by group name.
+    oid = enqueue_method(
+        db,
+        "DoListMoshtari",
+        [1, 50000],
+        ref_type=ABSHODE_SELLERS_REF,
+        ref_id="sync",
+    )
+    return {
+        "ok": bool(oid),
+        "reason": "queued" if oid else "enqueue_failed",
+        "pending_refresh": bool(oid),
+        "outbox_id": oid,
+        "group": settings.TAHESAB_ABSHODE_SELLERS_GROUP,
+    }
+
+
+def upsert_abshode_sellers(db: Session, sellers: list[dict[str, Any]]) -> dict[str, Any]:
+    """Write parsed sellers into tehran_dealers."""
+    from app.models_db import TehranDealer
+
+    now = datetime.utcnow()
+    seen_codes: set[int] = set()
+    created = updated = 0
+
+    for s in sellers:
+        code = int(s["code"])
+        seen_codes.add(code)
+        name = (s.get("name") or f"کد {code}").strip()
+        tel = (s.get("tel") or "").strip() or None
+        row = (
+            db.query(TehranDealer)
+            .filter(TehranDealer.tahesab_moshtari_id == code)
+            .first()
+        )
+        if not row:
+            row = db.query(TehranDealer).filter(TehranDealer.name == name).first()
+        if row:
+            row.name = name
+            if tel:
+                row.phone = tel
+            row.tahesab_moshtari_id = code
+            row.is_active = True
+            row.tahesab_synced_at = now
+            db.add(row)
+            updated += 1
+        else:
+            clash = db.query(TehranDealer).filter(TehranDealer.name == name).first()
+            if clash and clash.tahesab_moshtari_id not in (None, code):
+                name = f"{name} ({code})"
+            db.add(
+                TehranDealer(
+                    name=name,
+                    phone=tel,
+                    notes=f"گروه {settings.TAHESAB_ABSHODE_SELLERS_GROUP}",
+                    is_active=True,
+                    tahesab_moshtari_id=code,
+                    tahesab_synced_at=now,
+                )
+            )
+            created += 1
+
+    deactivated = 0
+    if seen_codes:
+        linked = (
+            db.query(TehranDealer)
+            .filter(TehranDealer.tahesab_moshtari_id.isnot(None))
+            .all()
+        )
+        for row in linked:
+            if int(row.tahesab_moshtari_id) not in seen_codes:
+                if row.is_active:
+                    row.is_active = False
+                    deactivated += 1
+                row.tahesab_synced_at = now
+                db.add(row)
+
+    db.commit()
+    logger.info(
+        "[tahesab] upserted آبشده فروشان: created=%s updated=%s deactivated=%s total=%s",
+        created,
+        updated,
+        deactivated,
+        len(seen_codes),
+    )
+    return {
+        "ok": True,
+        "reason": "synced",
+        "created": created,
+        "updated": updated,
+        "deactivated": deactivated,
+        "total": len(seen_codes),
+        "group": settings.TAHESAB_ABSHODE_SELLERS_GROUP,
+    }
+
+
+def apply_abshode_sellers_payload(db: Session, payload: Any) -> dict[str, Any]:
+    """Apply a bridged DoListMoshtari ack into tehran_dealers."""
+    sellers = sellers_from_moshtari_payload(payload)
+    if not sellers:
+        logger.warning(
+            "[tahesab] abshode-sellers ack had 0 rows matching %r",
+            settings.TAHESAB_ABSHODE_SELLERS_GROUP,
+        )
+        return {
+            "ok": False,
+            "reason": "no_members",
+            "created": 0,
+            "updated": 0,
+            "deactivated": 0,
+            "total": 0,
+            "group": settings.TAHESAB_ABSHODE_SELLERS_GROUP,
+        }
+    return upsert_abshode_sellers(db, sellers)
+
+
 # Soft-refresh backoff when Tahesab is unreachable (avoid hammering every desk poll).
 _abshode_sellers_last_attempt: datetime | None = None
 _ABSHODE_SELLERS_FAIL_BACKOFF = 120.0
 
 
 def sync_abshode_sellers_from_tahesab(db: Session, *, force: bool = False) -> dict[str, Any]:
-    """Upsert tehran_dealers from Tahesab group آبشده فروشان."""
+    """Upsert tehran_dealers from Tahesab group آبشده فروشان.
+
+    Direct mode: call Tahesab API from the VPS.
+    Bridge mode: queue DoListMoshtari for the Windows agent; result applied on ack.
+    """
     global _abshode_sellers_last_attempt
     from app.models_db import TehranDealer
 
@@ -997,13 +1168,27 @@ def sync_abshode_sellers_from_tahesab(db: Session, *, force: bool = False) -> di
                 }
 
     _abshode_sellers_last_attempt = now
+
+    # Bridge: VPS cannot reach Tahesab loopback — queue for Windows agent.
+    if is_bridge_mode():
+        queued = request_abshode_sellers_refresh(db, force=force)
+        return {
+            "ok": bool(queued.get("ok")),
+            "reason": queued.get("reason") or "queued",
+            "pending_refresh": bool(queued.get("pending_refresh")),
+            "created": 0,
+            "updated": 0,
+            "deactivated": 0,
+            "group": settings.TAHESAB_ABSHODE_SELLERS_GROUP,
+            "outbox_id": queued.get("outbox_id"),
+        }
+
     try:
         sellers = list_moshtari_in_group()
     except Exception:
         logger.exception("[tahesab] list_moshtari_in_group failed")
         return {"ok": False, "reason": "unreachable", "created": 0, "updated": 0, "deactivated": 0}
 
-    # Empty list with no GID usually means group missing or API offline — don't wipe dealers.
     if not sellers:
         gid = find_gorooh_gid()
         if gid is None:
@@ -1019,82 +1204,19 @@ def sync_abshode_sellers_from_tahesab(db: Session, *, force: bool = False) -> di
                 "deactivated": 0,
                 "group": settings.TAHESAB_ABSHODE_SELLERS_GROUP,
             }
+        return {
+            "ok": False,
+            "reason": "no_members",
+            "created": 0,
+            "updated": 0,
+            "deactivated": 0,
+            "group": settings.TAHESAB_ABSHODE_SELLERS_GROUP,
+            "gid": gid,
+        }
 
-    seen_codes: set[int] = set()
-    created = updated = 0
-
-    for s in sellers:
-        code = int(s["code"])
-        seen_codes.add(code)
-        name = (s.get("name") or f"کد {code}").strip()
-        tel = (s.get("tel") or "").strip() or None
-        row = (
-            db.query(TehranDealer)
-            .filter(TehranDealer.tahesab_moshtari_id == code)
-            .first()
-        )
-        if not row:
-            # Reuse a manual dealer with the same name if present.
-            row = db.query(TehranDealer).filter(TehranDealer.name == name).first()
-        if row:
-            row.name = name
-            if tel:
-                row.phone = tel
-            row.tahesab_moshtari_id = code
-            row.is_active = True
-            row.tahesab_synced_at = now
-            db.add(row)
-            updated += 1
-        else:
-            # Avoid unique name clash with a different linked dealer.
-            clash = db.query(TehranDealer).filter(TehranDealer.name == name).first()
-            if clash and clash.tahesab_moshtari_id not in (None, code):
-                name = f"{name} ({code})"
-            db.add(
-                TehranDealer(
-                    name=name,
-                    phone=tel,
-                    notes=f"گروه {settings.TAHESAB_ABSHODE_SELLERS_GROUP}",
-                    is_active=True,
-                    tahesab_moshtari_id=code,
-                    tahesab_synced_at=now,
-                )
-            )
-            created += 1
-
-    deactivated = 0
-    if seen_codes:
-        linked = (
-            db.query(TehranDealer)
-            .filter(TehranDealer.tahesab_moshtari_id.isnot(None))
-            .all()
-        )
-        for row in linked:
-            if int(row.tahesab_moshtari_id) not in seen_codes:
-                if row.is_active:
-                    row.is_active = False
-                    deactivated += 1
-                row.tahesab_synced_at = now
-                db.add(row)
-
-    db.commit()
-    logger.info(
-        "[tahesab] synced آبشده فروشان: created=%s updated=%s deactivated=%s total=%s",
-        created,
-        updated,
-        deactivated,
-        len(seen_codes),
-    )
-    return {
-        "ok": True,
-        "reason": "synced",
-        "created": created,
-        "updated": updated,
-        "deactivated": deactivated,
-        "total": len(seen_codes),
-        "group": settings.TAHESAB_ABSHODE_SELLERS_GROUP,
-        "gid": find_gorooh_gid(),
-    }
+    result = upsert_abshode_sellers(db, sellers)
+    result["gid"] = find_gorooh_gid()
+    return result
 
 
 def sync_hedge_to_tahesab(db: Session, hedge) -> str | None:
@@ -1792,6 +1914,10 @@ def apply_bridge_result(db: Session, job, result: dict[str, Any]) -> None:
             user = db.query(User).filter(User.id == job.ref_id).first()
             if user:
                 apply_asnad_payload(db, user, result or {})
+        return
+
+    if job.ref_type == ABSHODE_SELLERS_REF:
+        apply_abshode_sellers_payload(db, result or {})
         return
 
     ok = result.get("OK")

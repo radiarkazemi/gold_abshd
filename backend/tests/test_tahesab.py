@@ -1323,3 +1323,40 @@ def test_apply_bridge_result_sets_hedge_factor():
     tahesab.apply_bridge_result(db, job, {"OK": "GHOK1"})
     assert hedge.tahesab_factor_code == "GHOK1"
     assert hedge.tahesab_sync_needed is False
+
+
+def test_sellers_from_moshtari_payload_filters_group():
+    payload = {
+        "1": {
+            "Code": 55,
+            "Name": "فرشاد گلد",
+            "GID": 21,
+            "GoroupName": "آبشده فروشان",
+            "Tel": "0912",
+        },
+        "2": {
+            "Code": 1002,
+            "Name": "ساسی",
+            "GID": 14,
+            "GoroupName": "اپلیکیشن",
+        },
+    }
+    sellers = tahesab.sellers_from_moshtari_payload(payload)
+    assert len(sellers) == 1
+    assert sellers[0]["code"] == 55
+    assert sellers[0]["name"] == "فرشاد گلد"
+
+
+@patch("app.services.tahesab.enqueue_method", return_value="outbox-1")
+def test_sync_abshode_sellers_bridge_queues(mock_enqueue):
+    tahesab.settings.TAHESAB_MODE = "bridge"
+    db = MagicMock()
+    # No pending job
+    db.query.return_value.filter.return_value.first.return_value = None
+    out = tahesab.sync_abshode_sellers_from_tahesab(db, force=True)
+    assert out["ok"] is True
+    assert out["pending_refresh"] is True
+    assert out["reason"] == "queued"
+    mock_enqueue.assert_called_once()
+    assert mock_enqueue.call_args[0][1] == "DoListMoshtari"
+    assert mock_enqueue.call_args.kwargs["ref_type"] == "abshode-sellers"

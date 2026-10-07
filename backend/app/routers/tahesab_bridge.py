@@ -92,6 +92,14 @@ def bridge_next(db: Session = Depends(get_db), _auth=Depends(_require_bridge)):
         .order_by(TahesabOutbox.created_at.asc())
         .first()
     )
+    # Then آبشده فروشان dealer-list refresh (DoListMoshtari).
+    if not job:
+        job = (
+            db.query(TahesabOutbox)
+            .filter(ready, TahesabOutbox.ref_type == tahesab.ABSHODE_SELLERS_REF)
+            .order_by(TahesabOutbox.created_at.asc())
+            .first()
+        )
     if not job:
         tahesab.maybe_enqueue_online_mande_refresh(db)
         db.commit()

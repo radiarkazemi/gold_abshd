@@ -27,6 +27,8 @@ class TehranDealersSyncOut(BaseModel):
     total: Optional[int] = None
     group: Optional[str] = None
     gid: Optional[int] = None
+    pending_refresh: bool = False
+    outbox_id: Optional[str] = None
     dealers: list[TehranDealerOut] = []
 
 
