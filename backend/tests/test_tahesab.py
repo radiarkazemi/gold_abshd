@@ -31,9 +31,12 @@ def setup_function():
     tahesab.settings.TAHESAB_VERIFY_SSL = False
     tahesab.settings.TAHESAB_AMOUNT_SCALE = 10
     tahesab.settings.TAHESAB_DEFAULT_GROUP = "اپلیکیشن"
+    tahesab.settings.TAHESAB_ABSHODE_SELLERS_GROUP = "آبشده فروشان"
+    tahesab.settings.TAHESAB_ABSHODE_SELLERS_STALE_SECONDS = 900
     tahesab.settings.TAHESAB_SABTE_KOL = 1
     tahesab.settings.TAHESAB_IS_ABSHODE = 1
     tahesab.settings.TAHESAB_TIMEOUT = 5
+    tahesab._abshode_sellers_last_attempt = None
 
 
 def test_is_configured_requires_enabled_and_token():
