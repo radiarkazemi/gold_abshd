@@ -381,12 +381,10 @@ def parse_asnad_rows(payload: Any) -> list[dict[str, Any]]:
         ang = _nullish(raw.get("Sh_Sharti") or raw.get("ShSharti"))
         is_abshode = bool(raw.get("IsAbshode") or raw.get("IsAbshodeh"))
         api_user = str(_nullish(raw.get("User")) or "")
-        # App-written sanads: keep شرح short. Shop-entered docs keep Tahesab Sharh1.
-        # نقد کارتخوان has no dedicated Tahesab doc type — preserve that label in شرح.
-        if api_user.upper() == "API":
-            explanation = _app_sanad_explanation(sharh)
-        else:
-            explanation = str(sharh) if sharh else ""
+        # Keep full Sharh1 (app writes detailed شرح; shop-entered docs keep theirs).
+        explanation = str(sharh).strip() if sharh else ""
+        if api_user.upper() == "API" and not explanation:
+            explanation = "اپ"
         mazaneh_val = (
             _unscale_amount(_to_float(mazaneh_raw)) if mazaneh_raw is not None else None
         )
@@ -743,21 +741,55 @@ def _factor_code_for_order(order_id: str) -> str:
     return code[:40]
 
 
-def _app_sanad_explanation(sharh: Any) -> str:
-    """Short شرح for app-written sanads when reading DoListAsnad back."""
-    text = str(sharh).strip() if sharh else ""
-    if "نقد کارتخوان" in text:
-        return "نقد کارتخوان"
-    return "اپ"
+def _order_sharh(order, user) -> str:
+    """Full شرح written into Tahesab for accepted app orders."""
+    from app.services.price_cards import is_motaferaghe_card, is_naghd_kartkhan_card
+
+    side_fa = "خرید" if getattr(order.side, "value", order.side) == "buy" else "فروش"
+    is_coin = getattr(order.amount_type, "value", order.amount_type) == "count"
+    code = getattr(user, "user_code", None) or ""
+    oid = str(getattr(order, "id", "") or "")[:8]
+    item_id = getattr(order, "goldbridge_item_id", None)
+
+    if is_naghd_kartkhan_card(item_id):
+        return f"اپ نقد کارتخوان {side_fa} طلا کد مشتری {code} سفارش {oid}".strip()
+    if is_motaferaghe_card(item_id):
+        return f"اپ خرید متفرقه(بدون تسویه) عیار 740 کد مشتری {code} سفارش {oid}".strip()
+    kind = "سکه" if is_coin else "طلا"
+    return f"اپ {side_fa} {kind} کد مشتری {code} سفارش {oid}".strip()
 
 
-def _order_sharh(order) -> str:
-    """شرح written into Tahesab. نقد کارتخوان has no native doc type."""
-    from app.services.price_cards import is_naghd_kartkhan_card
+def _hedge_sharh(hedge, dealer, *, order=None, user=None) -> str:
+    """Full شرح for پوشش تهران sanads on آبشده‌فروش cards."""
+    from app.models_db import ExpertHedgeSideEnum
 
-    if is_naghd_kartkhan_card(getattr(order, "goldbridge_item_id", None)):
-        return "نقد کارتخوان"
-    return "اپ"
+    side = hedge.side
+    side_val = side.value if hasattr(side, "value") else str(side)
+    dealer_name = (getattr(dealer, "name", None) or "تهران").strip()
+    if side_val == ExpertHedgeSideEnum.buy_from_dealer.value:
+        action = f"خرید از {dealer_name}"
+    else:
+        action = f"فروش به {dealer_name}"
+    try:
+        w = float(hedge.weight_gram18 or 0)
+        w_txt = f"{w:g}"
+    except (TypeError, ValueError):
+        w_txt = str(hedge.weight_gram18 or "")
+    parts = [f"پوشش تهران {action} {w_txt} گرم"]
+    if order is not None:
+        oid = str(getattr(order, "id", "") or "")[:8]
+        code = getattr(user, "user_code", None) if user is not None else None
+        if code:
+            parts.append(f"کد مشتری {code} سفارش {oid}")
+        elif oid:
+            parts.append(f"سفارش {oid}")
+    try:
+        price = float(hedge.price_mesghal17 or 0)
+    except (TypeError, ValueError):
+        price = 0.0
+    if price > 0:
+        parts.append(f"فی {int(round(price))}")
+    return " ".join(parts).strip()
 
 
 def _factor_code_for_hedge(hedge_id: str) -> str:
@@ -1280,7 +1312,20 @@ def sync_hedge_to_tahesab(db: Session, hedge) -> str | None:
     mablagh = _scale_amount(vazn * gram_price)
     mazaneh = _scale_amount(mazaneh_mesghal)
     factor_code = _factor_code_for_hedge(str(hedge.id))
-    sharh = "پوشش تهران"
+    related_order = getattr(hedge, "order", None)
+    related_user = None
+    if related_order is None and getattr(hedge, "related_order_id", None):
+        from app.models_db import Order
+
+        related_order = db.query(Order).filter(Order.id == hedge.related_order_id).first()
+    if related_order is not None and getattr(related_order, "user_id", None):
+        from app.models_db import User
+
+        related_user = (
+            getattr(related_order, "user", None)
+            or db.query(User).filter(User.id == related_order.user_id).first()
+        )
+    sharh = _hedge_sharh(hedge, dealer, order=related_order, user=related_user)
 
     ok = create_sanad_buy_sale_gold(
         moshtari_code=int(moshtari),
@@ -1824,8 +1869,8 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
     total = _scale_amount(_order_total_toman(order))
     factor_code = _factor_code_for_order(order.id)
     is_coin = order.amount_type.value == "count"
-    # Short marker — نقد کارتخوان has no Tahesab doc type, so label it in شرح.
-    sharh = _order_sharh(order)
+    # Full شرح: side / kind / customer code / order id (and special cards).
+    sharh = _order_sharh(order, user)
 
     if is_coin:
         mazaneh_mesghal = order.mesghal17_price_at_submit

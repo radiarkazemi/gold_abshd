@@ -246,6 +246,7 @@ def test_sync_accepted_order_gold(mock_sync_user, mock_sanad):
     assert kwargs["mazaneh_is_gram"] == 0
     assert kwargs["moshtari_code"] == 1043
     assert kwargs["mablagh_kol"] == 2.0 * 6_800_000 * 10  # toman * scale
+    assert kwargs["sharh"] == "اپ خرید طلا کد مشتری 1043 سفارش aaaaaaaa"
 
 
 @patch("app.services.tahesab.create_sanad_buy_sale_gold")
@@ -372,7 +373,9 @@ def test_sync_motaferaghe_sell_is_shop_buy_ayar_740(mock_sync_user, mock_sanad):
     assert kwargs["vazn"] == 2.0  # physical grams unchanged
     assert kwargs["mablagh_kol"] == 2.0 * 10_000_000 * 10  # وزن × قیمت گرم × scale
     assert kwargs["mazaneh"] == 43_900_000 * 10  # مثقال۱۷ = گرم × 4.39
-    assert kwargs["sharh"] == "اپ"
+    assert "متفرقه" in kwargs["sharh"]
+    assert "1043" in kwargs["sharh"]
+    assert "cccccccc" in kwargs["sharh"]
 
 
 @patch("app.services.tahesab.create_sanad_buy_sale_gold")
@@ -417,14 +420,16 @@ def test_sync_naghd_kartkhan_sharh_and_final_mazaneh(mock_sync_user, mock_sanad)
     code = tahesab.sync_accepted_order_to_tahesab(db, order)
     assert code == "GAKARTKHANFACTOR0000001"
     kwargs = mock_sanad.call_args.kwargs
-    assert kwargs["sharh"] == "نقد کارتخوان"
+    assert "نقد کارتخوان" in kwargs["sharh"]
+    assert "1043" in kwargs["sharh"]
+    assert "eeeeeeee" in kwargs["sharh"]
     assert kwargs["buy_or_sale"] == 1  # shop sells to customer
     assert kwargs["mazaneh"] == final_mesghal * 10
     assert kwargs["mazaneh_is_gram"] == 0
     assert kwargs["is_abshode"] == 1
 
 
-def test_parse_asnad_rows_preserves_naghd_kartkhan_sharh():
+def test_parse_asnad_rows_keeps_full_app_sharh():
     payload = {
         "41": {
             "ID": 41,
@@ -436,7 +441,7 @@ def test_parse_asnad_rows_preserves_naghd_kartkhan_sharh():
             "Mali": -104000000,
             "TahesabVazni": 1.5,
             "TahesabMali": -104000000,
-            "Sharh1": "نقد کارتخوان",
+            "Sharh1": "اپ نقد کارتخوان خرید طلا کد مشتری 1043 سفارش eeeeeeee",
             "User": "API",
             "IsAbshode": True,
             "Ayar": 750,
@@ -444,7 +449,7 @@ def test_parse_asnad_rows_preserves_naghd_kartkhan_sharh():
     }
     rows = tahesab.parse_asnad_rows(payload)
     assert len(rows) == 1
-    assert rows[0]["explanation"] == "نقد کارتخوان"
+    assert rows[0]["explanation"] == "اپ نقد کارتخوان خرید طلا کد مشتری 1043 سفارش eeeeeeee"
     assert rows[0]["mazaneh"] == 301_500_000.0
     assert rows[0]["doc_type"] == "فروش طلا"
 
@@ -935,7 +940,7 @@ def test_reset_all_app_remainings_zeros_cache_and_ledger(mock_cancel, mock_hold)
     assert offset.cash_change == -419_476_551.3
 
 
-def test_parse_asnad_rows_running_balance_and_short_app_sharh():
+def test_parse_asnad_rows_running_balance_and_full_app_sharh():
     payload = {
         "17": {
             "ID": 17,
@@ -969,7 +974,7 @@ def test_parse_asnad_rows_running_balance_and_short_app_sharh():
     rows = tahesab.parse_asnad_rows(payload)
     assert len(rows) == 2
     assert rows[0]["doc_type"] == "فروش طلا"
-    assert rows[0]["explanation"] == "اپ"
+    assert rows[0]["explanation"] == "اپ خرید طلا کد مشتری 1002 سفارش a183e7af"
     assert rows[0]["money"] == -53409668.0  # unscaled /10
     assert rows[0]["mazaneh"] == 115680000.0  # unscaled /10
     assert rows[1]["doc_type"] == "ورود متفرقه"
@@ -1283,7 +1288,9 @@ def test_sync_hedge_to_tahesab_buy_from_dealer(mock_sanad):
     assert kwargs["buy_or_sale"] == 0  # shop buys FROM فرشاد
     assert kwargs["vazn"] == 5.0
     assert kwargs["ayar"] == 750.0
-    assert kwargs["sharh"] == "پوشش تهران"
+    assert "پوشش تهران" in kwargs["sharh"]
+    assert "فرشاد گلد" in kwargs["sharh"]
+    assert "5" in kwargs["sharh"]
     assert kwargs["ref_type"] == "hedge"
     assert kwargs["mazaneh"] == 30_150_000 * 10
     expected_mablagh = 5.0 * mesghal17_to_gram18(30_150_000) * 10

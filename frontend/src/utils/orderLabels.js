@@ -48,13 +48,23 @@ export function orderLedgerGoldWeight(order) {
 }
 
 /**
- * Short app شرح سند — no customer/order/ayar dump.
- * Tahesab form fields already carry عیار / بدون تسویه.
- * نقد کارتخوان has no native Tahesab type → label it in شرح.
+ * Full app شرح سند — mirrors what we write into Tahesab Sharh1.
  */
 export function orderExplanationFull(order) {
-  if (orderKindKey(order) === "kartkhan") return "نقد کارتخوان";
-  return "اپ";
+  const side = order?.side === "buy" ? "خرید" : "فروش";
+  const kind = orderKindKey(order);
+  const code = order?.customer_code || order?.user_code || "";
+  const oid = String(order?.id || "").slice(0, 8);
+  if (kind === "kartkhan") {
+    return `اپ نقد کارتخوان ${side} طلا کد مشتری ${code} سفارش ${oid}`.trim();
+  }
+  if (kind === "motaferaghe") {
+    return `اپ خرید متفرقه(بدون تسویه) عیار 740 کد مشتری ${code} سفارش ${oid}`.trim();
+  }
+  if (kind === "coin") {
+    return `اپ ${side} سکه کد مشتری ${code} سفارش ${oid}`.trim();
+  }
+  return `اپ ${side} طلا کد مشتری ${code} سفارش ${oid}`.trim();
 }
 
 /** Tahesab doc type label (shop-centric, like the Windows books). */
@@ -67,8 +77,10 @@ export function orderTahesabDocType(order) {
   return order?.side === "buy" ? "فروش طلا" : "خرید طلا";
 }
 
-export function paymentExplanationFull(_order) {
-  return "اپ";
+export function paymentExplanationFull(order) {
+  const code = order?.customer_code || order?.user_code || "";
+  const oid = String(order?.id || "").slice(0, 8);
+  return `اپ پرداخت کد مشتری ${code} سفارش ${oid}`.trim();
 }
 
 /**
