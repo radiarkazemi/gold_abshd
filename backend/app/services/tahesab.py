@@ -1009,6 +1009,9 @@ def request_abshode_sellers_refresh(db: Session, *, force: bool = False) -> dict
         ref_type=ABSHODE_SELLERS_REF,
         ref_id="sync",
     )
+    # enqueue_method only flushes — commit so the agent /next can see the job.
+    if oid:
+        db.commit()
     return {
         "ok": bool(oid),
         "reason": "queued" if oid else "enqueue_failed",
