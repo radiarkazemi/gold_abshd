@@ -12,12 +12,18 @@ Buy/sell cards (گرم۱۸) show PENDING (waiting) orders only.
     cards read 0.
   - Yesterday's accepted weight does NOT carry into today's مانده after
     Tehran midnight (use گزارش روزهای قبل for prior days).
+
+Tehran dealers are loaded from Tahesab group «آبشده فروشان». Applying a
+پوشش / همپوشانی also queues a gold sanad on that dealer's Tahesab card.
 """
+import logging
 from datetime import datetime, timedelta, date, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
+
+logger = logging.getLogger(__name__)
 
 from app.models_db import (
     Order,
@@ -33,6 +39,7 @@ from app.services.orders import (
     order_total_toman,
     order_customer_fields,
 )
+from app.services import tahesab
 
 TEHRAN_TZ = ZoneInfo("Asia/Tehran")
 
@@ -163,11 +170,26 @@ def _related_order_brief(db: Session, order: Order | None) -> dict | None:
     }
 
 
+def _dealer_out(d: TehranDealer) -> dict:
+    return {
+        "id": d.id,
+        "name": d.name,
+        "phone": d.phone,
+        "notes": d.notes,
+        "is_active": bool(d.is_active),
+        "sort_order": int(d.sort_order or 0),
+        "tahesab_moshtari_id": d.tahesab_moshtari_id,
+        "tahesab_synced_at": d.tahesab_synced_at,
+        "created_at": d.created_at,
+    }
+
+
 def _hedge_out(db: Session, h: ExpertHedge) -> dict:
     return {
         "id": h.id,
         "dealer_id": h.dealer_id,
         "dealer_name": h.dealer.name if h.dealer else "—",
+        "dealer_moshtari_id": h.dealer.tahesab_moshtari_id if h.dealer else None,
         "side": h.side.value if hasattr(h.side, "value") else h.side,
         "weight_gram18": float(h.weight_gram18),
         "price_mesghal17": float(h.price_mesghal17) if h.price_mesghal17 is not None else None,
@@ -176,6 +198,8 @@ def _hedge_out(db: Session, h: ExpertHedge) -> dict:
         "note": h.note,
         "created_by": h.created_by,
         "created_at": h.created_at,
+        "tahesab_factor_code": h.tahesab_factor_code,
+        "tahesab_sync_needed": bool(h.tahesab_sync_needed),
     }
 
 
@@ -275,6 +299,13 @@ def get_desk(db: Session) -> dict:
     uncovered_buy = [o for o in pending_buy if float(o.get("open_hedge_weight") or 0) > 1e-6]
     uncovered_sell = [o for o in pending_sell if float(o.get("open_hedge_weight") or 0) > 1e-6]
 
+    # Soft-refresh آبشده فروشان from Tahesab when cache is stale (never blocks desk).
+    dealers_sync = {"ok": False, "reason": "skipped"}
+    try:
+        dealers_sync = tahesab.sync_abshode_sellers_from_tahesab(db, force=False)
+    except Exception:
+        logger.exception("[expert] soft sync آبشده فروشان failed")
+
     return {
         "buy_orders": pending_buy,
         "sell_orders": pending_sell,
@@ -312,9 +343,13 @@ def get_desk(db: Session) -> dict:
                 "sell_count": len(uncovered_sell),
             },
         },
-        "dealers": list_dealers(db, active_only=False),
+        "dealers": [_dealer_out(d) for d in list_dealers(db, active_only=False)],
         "hedges": [_hedge_out(db, h) for h in hedges],
         "session_day": datetime.now(TEHRAN_TZ).date().isoformat(),
+        "dealers_sync": dealers_sync,
+        "abshode_sellers_group": getattr(
+            tahesab.settings, "TAHESAB_ABSHODE_SELLERS_GROUP", "آبشده فروشان"
+        ),
     }
 
 
@@ -376,6 +411,7 @@ def create_hedge(
         related_order_id=related_order_id,
         note=note or None,
         created_by=created_by,
+        tahesab_sync_needed=True,
     )
     db.add(row)
     db.commit()
@@ -388,7 +424,22 @@ def create_hedge(
             .filter(Order.id == related_order_id)
             .first()
         )
+
+    # Mirror the hedge onto the dealer card in Tahesab (گروه آبشده فروشان).
+    try:
+        tahesab.sync_hedge_to_tahesab(db, row)
+        db.refresh(row)
+    except Exception:
+        logger.exception("[expert] Tahesab hedge sync failed for %s", row.id)
+
     return _hedge_out(db, row)
+
+
+def sync_dealers_from_tahesab(db: Session) -> dict:
+    """Force-refresh آبشده فروشان → tehran_dealers."""
+    result = tahesab.sync_abshode_sellers_from_tahesab(db, force=True)
+    result["dealers"] = [_dealer_out(d) for d in list_dealers(db, active_only=False)]
+    return result
 
 
 def delete_hedge(db: Session, hedge_id: str) -> None:

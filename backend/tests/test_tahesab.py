@@ -1178,3 +1178,145 @@ def test_moshtari_codes_from_numbered_payload():
     )
     assert codes == [88]
 
+
+
+def test_parse_gorooh_and_moshtari_detail_rows():
+    groups = tahesab.parse_gorooh_rows(
+        [{"Name": "آبشده فروشان", "GID": 21}, {"Name": "اپلیکیشن", "GID": 14}]
+    )
+    assert groups[0]["gid"] == 21
+    assert groups[0]["name"] == "آبشده فروشان"
+
+    rows = tahesab.parse_moshtari_detail_rows(
+        {
+            "1": {
+                "Code": 55,
+                "Name": "فرشاد گلد",
+                "GID": "21",
+                "GoroupName": "آبشده فروشان",
+                "Tel": "09120000000",
+            },
+            "2": {
+                "Code": 56,
+                "Name": "منیری",
+                "GID": "21",
+                "GoroupName": "آبشده فروشان",
+                "Tel": "",
+            },
+        }
+    )
+    assert len(rows) == 2
+    assert rows[0]["name"] == "فرشاد گلد"
+    assert rows[0]["gid"] == 21
+
+
+@patch("app.services.tahesab.call_method_direct")
+def test_list_moshtari_in_group_filters_abshode_sellers(mock_direct):
+    tahesab.settings.TAHESAB_ABSHODE_SELLERS_GROUP = "آبشده فروشان"
+
+    def _side_effect(method, params):
+        if method == "DoListGorooh":
+            return [{"Name": "آبشده فروشان", "GID": 21}]
+        if method == "GetMandeHesabByGID":
+            return {"MandeHesab": [{"Code": "55"}, {"Code": "56"}]}
+        if method == "DoListMoshtari":
+            if params == [1, 50000]:
+                return {
+                    "1": {
+                        "Code": 55,
+                        "Name": "فرشاد گلد",
+                        "GID": 21,
+                        "GoroupName": "آبشده فروشان",
+                        "Tel": "0912",
+                    },
+                    "2": {
+                        "Code": 56,
+                        "Name": "منیری",
+                        "GID": 21,
+                        "GoroupName": "آبشده فروشان",
+                    },
+                    "3": {
+                        "Code": 1002,
+                        "Name": "ساسی",
+                        "GID": 14,
+                        "GoroupName": "اپلیکیشن",
+                    },
+                }
+            return {}
+        return {}
+
+    mock_direct.side_effect = _side_effect
+    sellers = tahesab.list_moshtari_in_group()
+    codes = {s["code"] for s in sellers}
+    assert codes == {55, 56}
+    names = {s["name"] for s in sellers}
+    assert "فرشاد گلد" in names
+    assert "منیری" in names
+
+
+@patch("app.services.tahesab.create_sanad_buy_sale_gold")
+def test_sync_hedge_to_tahesab_buy_from_dealer(mock_sanad):
+    from app.gold_conversion import mesghal17_to_gram18
+    from app.models_db import ExpertHedgeSideEnum
+
+    mock_sanad.return_value = "GHFACTOR00000000001"
+    dealer = SimpleNamespace(id="d1", name="فرشاد گلد", tahesab_moshtari_id=55)
+    hedge = SimpleNamespace(
+        id="ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee",
+        dealer=dealer,
+        dealer_id="d1",
+        side=ExpertHedgeSideEnum.buy_from_dealer,
+        weight_gram18=5.0,
+        price_mesghal17=30_150_000,
+        created_at=datetime(2025, 10, 5, 12, 0, 0),
+        tahesab_factor_code=None,
+        tahesab_sync_needed=False,
+    )
+    db = MagicMock()
+    code = tahesab.sync_hedge_to_tahesab(db, hedge)
+    assert code == "GHFACTOR00000000001"
+    kwargs = mock_sanad.call_args.kwargs
+    assert kwargs["moshtari_code"] == 55
+    assert kwargs["buy_or_sale"] == 0  # shop buys FROM فرشاد
+    assert kwargs["vazn"] == 5.0
+    assert kwargs["ayar"] == 750.0
+    assert kwargs["sharh"] == "پوشش تهران"
+    assert kwargs["ref_type"] == "hedge"
+    assert kwargs["mazaneh"] == 30_150_000 * 10
+    expected_mablagh = 5.0 * mesghal17_to_gram18(30_150_000) * 10
+    assert kwargs["mablagh_kol"] == expected_mablagh
+    assert hedge.tahesab_sync_needed is True
+
+
+@patch("app.services.tahesab.create_sanad_buy_sale_gold")
+def test_sync_hedge_to_tahesab_sell_to_dealer(mock_sanad):
+    from app.models_db import ExpertHedgeSideEnum
+
+    mock_sanad.return_value = "GHFACTOR00000000002"
+    dealer = SimpleNamespace(id="d2", name="منیری", tahesab_moshtari_id=56)
+    hedge = SimpleNamespace(
+        id="aaaaaaaa-bbbb-cccc-dddd-ffffffffffff",
+        dealer=dealer,
+        dealer_id="d2",
+        side=ExpertHedgeSideEnum.sell_to_dealer,
+        weight_gram18=2.0,
+        price_mesghal17=29_000_000,
+        created_at=datetime(2025, 10, 5, 12, 0, 0),
+        tahesab_factor_code=None,
+        tahesab_sync_needed=False,
+    )
+    db = MagicMock()
+    tahesab.sync_hedge_to_tahesab(db, hedge)
+    kwargs = mock_sanad.call_args.kwargs
+    assert kwargs["buy_or_sale"] == 1
+    assert kwargs["moshtari_code"] == 56
+
+
+def test_apply_bridge_result_sets_hedge_factor():
+    hedge = SimpleNamespace(id="h1", tahesab_factor_code=None, tahesab_sync_needed=True)
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = hedge
+    job = SimpleNamespace(ref_type="hedge", ref_id="h1", method="DoNewSanadBuySaleGOLD")
+    tahesab.apply_bridge_result(db, job, {"OK": "GHOK1"})
+    assert hedge.tahesab_factor_code == "GHOK1"
+    assert hedge.tahesab_sync_needed is False

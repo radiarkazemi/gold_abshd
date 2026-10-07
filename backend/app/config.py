@@ -189,6 +189,14 @@ class Settings:
     # App amounts are Toman; Tahesab usually expects Rial → multiply by 10.
     TAHESAB_AMOUNT_SCALE: float = float(os.getenv("GOLDAPP_TAHESAB_AMOUNT_SCALE", "10"))
     TAHESAB_DEFAULT_GROUP: str = os.getenv("GOLDAPP_TAHESAB_DEFAULT_GROUP", "اپلیکیشن")
+    # Tahesab group that holds آبشده‌فروش‌های تهران (فرشاد گلد، منیری، …).
+    TAHESAB_ABSHODE_SELLERS_GROUP: str = os.getenv(
+        "GOLDAPP_TAHESAB_ABSHODE_SELLERS_GROUP", "آبشده فروشان"
+    )
+    # Soft-refresh interval for the expert-desk dealer list from that group.
+    TAHESAB_ABSHODE_SELLERS_STALE_SECONDS: float = float(
+        os.getenv("GOLDAPP_TAHESAB_ABSHODE_SELLERS_STALE_SECONDS", "900")
+    )
     # 1 = ثبت کل, 0 = ثبت موقت
     TAHESAB_SABTE_KOL: int = int(os.getenv("GOLDAPP_TAHESAB_SABTE_KOL", "1"))
     # 0 = متفرقه, 1 = آبشده

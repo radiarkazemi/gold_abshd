@@ -574,6 +574,8 @@ class TehranDealer(Base):
     """
     آبشده‌فروش‌های تهران - counterparties the expert desk hedges
     unmatched customer buy/sell weight with (e.g. فرشاد گلد، منیری).
+
+    Preferred source: Tahesab group «آبشده فروشان» (tahesab_moshtari_id).
     """
 
     __tablename__ = "tehran_dealers"
@@ -584,6 +586,9 @@ class TehranDealer(Base):
     notes = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     sort_order = Column(Integer, default=0, nullable=False)
+    # Tahesab moshtari Code from group آبشده فروشان (None = manual-only).
+    tahesab_moshtari_id = Column(Integer, nullable=True, unique=True, index=True)
+    tahesab_synced_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -611,6 +616,9 @@ class ExpertHedge(Base):
     note = Column(Text, nullable=True)
     created_by = Column(String, nullable=True)  # admin username
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    # Tahesab Factor_Code for the dealer sanad (خرید/فروش روی کارت آبشده‌فروش).
+    tahesab_factor_code = Column(String, nullable=True)
+    tahesab_sync_needed = Column(Boolean, default=False, nullable=False)
 
     dealer = relationship("TehranDealer")
     order = relationship("Order")

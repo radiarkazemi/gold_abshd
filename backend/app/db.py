@@ -301,11 +301,40 @@ def _patch_amount_type_enum():
 
 
 def _patch_expert_hedges_table():
-    """Add Tehran deal-price column to existing expert_hedges installs."""
+    """Add Tehran deal-price / Tahesab sync columns to expert_hedges."""
     from sqlalchemy import text
     with engine.connect() as conn:
         conn.execute(
             text("ALTER TABLE expert_hedges ADD COLUMN IF NOT EXISTS price_mesghal17 DOUBLE PRECISION")
+        )
+        conn.execute(
+            text("ALTER TABLE expert_hedges ADD COLUMN IF NOT EXISTS tahesab_factor_code VARCHAR")
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE expert_hedges ADD COLUMN IF NOT EXISTS "
+                "tahesab_sync_needed BOOLEAN NOT NULL DEFAULT false"
+            )
+        )
+        conn.commit()
+
+
+def _patch_tehran_dealers_table():
+    """Link آبشده‌فروش rows to Tahesab moshtari codes."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(
+            text("ALTER TABLE tehran_dealers ADD COLUMN IF NOT EXISTS tahesab_moshtari_id INTEGER")
+        )
+        conn.execute(
+            text("ALTER TABLE tehran_dealers ADD COLUMN IF NOT EXISTS tahesab_synced_at TIMESTAMP")
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_tehran_dealers_tahesab_moshtari_id "
+                "ON tehran_dealers (tahesab_moshtari_id) "
+                "WHERE tahesab_moshtari_id IS NOT NULL"
+            )
         )
         conn.commit()
 
@@ -356,6 +385,7 @@ def init_db():
     _patch_balance_transactions_table()
     _patch_price_cards_table()
     _patch_expert_hedges_table()
+    _patch_tehran_dealers_table()
     _patch_amount_type_enum()
     _patch_tahesab_outbox_table()
     _backfill_user_devices()

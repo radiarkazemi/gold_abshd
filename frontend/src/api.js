@@ -531,6 +531,23 @@ export async function createTehranDealer({ name, phone, notes, sortOrder = 0 }) 
   return res.json();
 }
 
+/** Force-pull آبشده فروشان group from Tahesab into the expert desk dealer list. */
+export async function syncTehranDealersFromTahesab() {
+  const res = await fetch(`${API_BASE}/api/admin/expert/dealers/sync-tahesab`, {
+    method: "POST",
+    headers: { ...adminAuthHeaders() },
+  });
+  if (res.status === 401 || res.status === 403) {
+    clearAdminToken();
+    throw new Error("ADMIN_SESSION_EXPIRED");
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "بروزرسانی از ته‌حساب ناموفق بود");
+  }
+  return res.json();
+}
+
 export async function updateTehranDealer(dealerId, payload) {
   const res = await fetch(`${API_BASE}/api/admin/expert/dealers/${dealerId}`, {
     method: "PATCH",

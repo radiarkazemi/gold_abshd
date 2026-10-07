@@ -10,6 +10,7 @@ from app.schemas.expert import (
     TehranDealerOut,
     TehranDealerCreateIn,
     TehranDealerUpdateIn,
+    TehranDealersSyncOut,
     ExpertHedgeOut,
     ExpertHedgeCreateIn,
     ExpertDeskOut,
@@ -45,6 +46,15 @@ async def get_dealers(
     _admin=Depends(require_permission("expert")),
 ):
     return expert_desk.list_dealers(db)
+
+
+@router.post("/dealers/sync-tahesab", response_model=TehranDealersSyncOut)
+async def sync_dealers_from_tahesab(
+    db: Session = Depends(get_db),
+    _admin=Depends(require_permission("expert")),
+):
+    """Force-pull آبشده فروشان group members from Tahesab into the desk list."""
+    return expert_desk.sync_dealers_from_tahesab(db)
 
 
 @router.post("/dealers", response_model=TehranDealerOut)

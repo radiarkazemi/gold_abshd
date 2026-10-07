@@ -760,6 +760,443 @@ def _order_sharh(order) -> str:
     return "اپ"
 
 
+def _factor_code_for_hedge(hedge_id: str) -> str:
+    compact = (hedge_id or "").replace("-", "")
+    code = f"GH{compact}"
+    if len(code) < 20:
+        code = code.ljust(20, "0")
+    return code[:40]
+
+
+def parse_gorooh_rows(payload: Any) -> list[dict[str, Any]]:
+    """Normalize DoListGorooh into [{gid, name}, ...]."""
+    rows: list[Any] = []
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        if _error_text(payload):
+            return []
+        for key, val in payload.items():
+            if str(key).lower() in {"ok", "error", "api_status", "dbname", "dbtype"}:
+                continue
+            if isinstance(val, list):
+                rows.extend(val)
+            elif isinstance(val, dict) and ("GID" in val or "Name" in val):
+                rows.append(val)
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        gid_raw = row.get("GID", row.get("gid"))
+        name = str(row.get("Name") or row.get("name") or "").strip()
+        if gid_raw is None or not name:
+            continue
+        try:
+            gid = int(str(gid_raw).translate(_PERSIAN_DIGITS).strip())
+        except (TypeError, ValueError):
+            continue
+        out.append({"gid": gid, "name": name})
+    return out
+
+
+def parse_moshtari_detail_rows(payload: Any) -> list[dict[str, Any]]:
+    """Normalize DoListMoshtari into detail dicts (Code/Name/GID/Tel)."""
+    if not payload:
+        return []
+    rows: list[Any] = []
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        if _error_text(payload):
+            return []
+        for key, val in payload.items():
+            if str(key).lower() in {"ok", "error", "api_status", "dbname", "dbtype"}:
+                continue
+            if isinstance(val, list):
+                rows.extend(val)
+            elif isinstance(val, dict):
+                rows.append(val)
+    out: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        code_raw = row.get("Code", row.get("code"))
+        if code_raw is None:
+            continue
+        try:
+            code = int(str(code_raw).translate(_PERSIAN_DIGITS).strip())
+        except (TypeError, ValueError):
+            continue
+        if code in seen:
+            continue
+        seen.add(code)
+        gid_raw = row.get("GID", row.get("gid"))
+        gid = None
+        if gid_raw is not None and str(gid_raw).strip().lower() not in {"", "null", "none"}:
+            try:
+                gid = int(str(gid_raw).translate(_PERSIAN_DIGITS).strip())
+            except (TypeError, ValueError):
+                gid = None
+        group_name = str(
+            row.get("GoroupName")
+            or row.get("GroupName")
+            or row.get("GoroohName")
+            or row.get("group_name")
+            or ""
+        ).strip()
+        out.append(
+            {
+                "code": code,
+                "name": str(row.get("Name") or row.get("name") or "").strip(),
+                "gid": gid,
+                "group_name": group_name,
+                "tel": str(row.get("Tel") or row.get("tel") or "").strip(),
+            }
+        )
+    return out
+
+
+def list_gorooh_direct() -> list[dict[str, Any]]:
+    """DoListGorooh — live read (not queued)."""
+    if not is_configured():
+        return []
+    data = call_method_direct("DoListGorooh", [])
+    return parse_gorooh_rows(data)
+
+
+def find_gorooh_gid(group_name: str | None = None) -> int | None:
+    target = (group_name or settings.TAHESAB_ABSHODE_SELLERS_GROUP or "").strip()
+    if not target:
+        return None
+    groups = list_gorooh_direct()
+    for g in groups:
+        if g["name"] == target:
+            return int(g["gid"])
+    # Soft match: strip spaces / contain
+    compact = target.replace(" ", "")
+    for g in groups:
+        if g["name"].replace(" ", "") == compact or target in g["name"] or g["name"] in target:
+            return int(g["gid"])
+    return None
+
+
+def list_moshtari_in_group(group_name: str | None = None) -> list[dict[str, Any]]:
+    """Members of a Tahesab group (default: آبشده فروشان).
+
+    Uses GetMandeHesabByGID for codes in the group, then DoListMoshtari
+    to resolve names. Also filters a wide DoListMoshtari range by GID /
+    GoroupName so zero-balance cards are not missed when the API returns them.
+    """
+    if not is_configured():
+        return []
+    target = (group_name or settings.TAHESAB_ABSHODE_SELLERS_GROUP or "").strip()
+    gid = find_gorooh_gid(target)
+    by_code: dict[int, dict[str, Any]] = {}
+
+    if gid is not None:
+        mande = call_method_direct("GetMandeHesabByGID", [str(gid)])
+        if isinstance(mande, dict) and not _error_text(mande):
+            rows = mande.get("MandeHesab") or mande.get("mandehesab") or []
+            if isinstance(rows, list):
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    code_raw = row.get("Code", row.get("code"))
+                    try:
+                        code = int(str(code_raw).translate(_PERSIAN_DIGITS).strip())
+                    except (TypeError, ValueError):
+                        continue
+                    by_code[code] = {
+                        "code": code,
+                        "name": "",
+                        "gid": gid,
+                        "group_name": target,
+                        "tel": "",
+                    }
+
+    # Wide list for names + zero-balance members (best-effort).
+    listed = call_method_direct("DoListMoshtari", [1, 50000])
+    for row in parse_moshtari_detail_rows(listed):
+        match_gid = gid is not None and row.get("gid") == gid
+        match_name = bool(target) and (
+            row.get("group_name") == target
+            or target in (row.get("group_name") or "")
+            or (row.get("group_name") or "") in target
+        )
+        if not (match_gid or match_name):
+            continue
+        prev = by_code.get(row["code"], {})
+        by_code[row["code"]] = {
+            "code": row["code"],
+            "name": row.get("name") or prev.get("name") or f"کد {row['code']}",
+            "gid": row.get("gid") if row.get("gid") is not None else gid,
+            "group_name": row.get("group_name") or target,
+            "tel": row.get("tel") or prev.get("tel") or "",
+        }
+
+    # Fill missing names one-by-one for GetMandeHesabByGID-only codes.
+    for code, row in list(by_code.items()):
+        if row.get("name"):
+            continue
+        detail = call_method_direct("DoListMoshtari", [code])
+        parsed = parse_moshtari_detail_rows(detail)
+        if parsed:
+            row["name"] = parsed[0].get("name") or f"کد {code}"
+            row["tel"] = parsed[0].get("tel") or ""
+        else:
+            row["name"] = f"کد {code}"
+
+    return sorted(by_code.values(), key=lambda r: (r.get("name") or "", r["code"]))
+
+
+# Soft-refresh backoff when Tahesab is unreachable (avoid hammering every desk poll).
+_abshode_sellers_last_attempt: datetime | None = None
+_ABSHODE_SELLERS_FAIL_BACKOFF = 120.0
+
+
+def sync_abshode_sellers_from_tahesab(db: Session, *, force: bool = False) -> dict[str, Any]:
+    """Upsert tehran_dealers from Tahesab group آبشده فروشان."""
+    global _abshode_sellers_last_attempt
+    from app.models_db import TehranDealer
+
+    if not is_configured():
+        return {"ok": False, "reason": "tahesab_disabled", "created": 0, "updated": 0, "deactivated": 0}
+
+    stale = float(settings.TAHESAB_ABSHODE_SELLERS_STALE_SECONDS or 900)
+    now = datetime.utcnow()
+    if not force:
+        latest = (
+            db.query(TehranDealer.tahesab_synced_at)
+            .filter(TehranDealer.tahesab_moshtari_id.isnot(None))
+            .order_by(TehranDealer.tahesab_synced_at.desc())
+            .first()
+        )
+        at = latest[0] if latest else None
+        if at is not None:
+            age = (now - at).total_seconds()
+            if age < stale:
+                return {
+                    "ok": True,
+                    "reason": "fresh",
+                    "created": 0,
+                    "updated": 0,
+                    "deactivated": 0,
+                    "age_seconds": age,
+                }
+        if _abshode_sellers_last_attempt is not None:
+            since_attempt = (now - _abshode_sellers_last_attempt).total_seconds()
+            if since_attempt < _ABSHODE_SELLERS_FAIL_BACKOFF:
+                return {
+                    "ok": False,
+                    "reason": "backoff",
+                    "created": 0,
+                    "updated": 0,
+                    "deactivated": 0,
+                    "age_seconds": since_attempt,
+                }
+
+    _abshode_sellers_last_attempt = now
+    try:
+        sellers = list_moshtari_in_group()
+    except Exception:
+        logger.exception("[tahesab] list_moshtari_in_group failed")
+        return {"ok": False, "reason": "unreachable", "created": 0, "updated": 0, "deactivated": 0}
+
+    # Empty list with no GID usually means group missing or API offline — don't wipe dealers.
+    if not sellers:
+        gid = find_gorooh_gid()
+        if gid is None:
+            logger.warning(
+                "[tahesab] group %r not found — keep existing dealers",
+                settings.TAHESAB_ABSHODE_SELLERS_GROUP,
+            )
+            return {
+                "ok": False,
+                "reason": "group_not_found",
+                "created": 0,
+                "updated": 0,
+                "deactivated": 0,
+                "group": settings.TAHESAB_ABSHODE_SELLERS_GROUP,
+            }
+
+    seen_codes: set[int] = set()
+    created = updated = 0
+
+    for s in sellers:
+        code = int(s["code"])
+        seen_codes.add(code)
+        name = (s.get("name") or f"کد {code}").strip()
+        tel = (s.get("tel") or "").strip() or None
+        row = (
+            db.query(TehranDealer)
+            .filter(TehranDealer.tahesab_moshtari_id == code)
+            .first()
+        )
+        if not row:
+            # Reuse a manual dealer with the same name if present.
+            row = db.query(TehranDealer).filter(TehranDealer.name == name).first()
+        if row:
+            row.name = name
+            if tel:
+                row.phone = tel
+            row.tahesab_moshtari_id = code
+            row.is_active = True
+            row.tahesab_synced_at = now
+            db.add(row)
+            updated += 1
+        else:
+            # Avoid unique name clash with a different linked dealer.
+            clash = db.query(TehranDealer).filter(TehranDealer.name == name).first()
+            if clash and clash.tahesab_moshtari_id not in (None, code):
+                name = f"{name} ({code})"
+            db.add(
+                TehranDealer(
+                    name=name,
+                    phone=tel,
+                    notes=f"گروه {settings.TAHESAB_ABSHODE_SELLERS_GROUP}",
+                    is_active=True,
+                    tahesab_moshtari_id=code,
+                    tahesab_synced_at=now,
+                )
+            )
+            created += 1
+
+    deactivated = 0
+    if seen_codes:
+        linked = (
+            db.query(TehranDealer)
+            .filter(TehranDealer.tahesab_moshtari_id.isnot(None))
+            .all()
+        )
+        for row in linked:
+            if int(row.tahesab_moshtari_id) not in seen_codes:
+                if row.is_active:
+                    row.is_active = False
+                    deactivated += 1
+                row.tahesab_synced_at = now
+                db.add(row)
+
+    db.commit()
+    logger.info(
+        "[tahesab] synced آبشده فروشان: created=%s updated=%s deactivated=%s total=%s",
+        created,
+        updated,
+        deactivated,
+        len(seen_codes),
+    )
+    return {
+        "ok": True,
+        "reason": "synced",
+        "created": created,
+        "updated": updated,
+        "deactivated": deactivated,
+        "total": len(seen_codes),
+        "group": settings.TAHESAB_ABSHODE_SELLERS_GROUP,
+        "gid": find_gorooh_gid(),
+    }
+
+
+def sync_hedge_to_tahesab(db: Session, hedge) -> str | None:
+    """Queue DoNewSanadBuySaleGOLD on the Tehran dealer's moshtari card.
+
+    buy_from_dealer → shop buys FROM dealer (buy_or_sale=0)
+    sell_to_dealer  → shop sells TO dealer (buy_or_sale=1)
+    """
+    from app.gold_conversion import mesghal17_to_gram18
+    from app.models_db import ExpertHedgeSideEnum, TehranDealer
+
+    if not is_configured():
+        return None
+    if getattr(hedge, "tahesab_factor_code", None):
+        return str(hedge.tahesab_factor_code)
+
+    dealer = getattr(hedge, "dealer", None)
+    if dealer is None and getattr(hedge, "dealer_id", None):
+        dealer = db.query(TehranDealer).filter(TehranDealer.id == hedge.dealer_id).first()
+    if not dealer:
+        logger.error("[tahesab] hedge %s has no dealer", getattr(hedge, "id", "?"))
+        return None
+
+    moshtari = getattr(dealer, "tahesab_moshtari_id", None)
+    if moshtari is None:
+        # Best-effort: refresh group and retry by name.
+        try:
+            sync_abshode_sellers_from_tahesab(db, force=True)
+            db.refresh(dealer)
+            moshtari = getattr(dealer, "tahesab_moshtari_id", None)
+        except Exception:
+            logger.exception("[tahesab] dealer refresh failed for hedge %s", hedge.id)
+    if moshtari is None:
+        logger.warning(
+            "[tahesab] dealer %s has no tahesab_moshtari_id — skip hedge sanad",
+            dealer.name,
+        )
+        hedge.tahesab_sync_needed = True
+        db.add(hedge)
+        db.commit()
+        return None
+
+    side = hedge.side
+    side_val = side.value if hasattr(side, "value") else str(side)
+    # Shop-centric: 0 = buy from counterparty, 1 = sell to counterparty.
+    buy_or_sale = 0 if side_val == ExpertHedgeSideEnum.buy_from_dealer.value else 1
+
+    when = getattr(hedge, "created_at", None) or datetime.utcnow()
+    j = _to_jalali(when)
+    vazn = float(hedge.weight_gram18 or 0)
+    if vazn <= 0:
+        return None
+    mazaneh_mesghal = float(hedge.price_mesghal17 or 0)
+    if mazaneh_mesghal <= 0:
+        logger.warning("[tahesab] hedge %s missing price — skip sanad", hedge.id)
+        return None
+    gram_price = mesghal17_to_gram18(mazaneh_mesghal)
+    mablagh = _scale_amount(vazn * gram_price)
+    mazaneh = _scale_amount(mazaneh_mesghal)
+    factor_code = _factor_code_for_hedge(str(hedge.id))
+    sharh = "پوشش تهران"
+
+    ok = create_sanad_buy_sale_gold(
+        moshtari_code=int(moshtari),
+        shamsi_year=j.year,
+        shamsi_month=j.month,
+        shamsi_day=j.day,
+        vazn=vazn,
+        ayar=750.0,
+        buy_or_sale=buy_or_sale,
+        mazaneh=mazaneh,
+        mazaneh_is_gram=0,
+        is_abshode=int(settings.TAHESAB_IS_ABSHODE),
+        mablagh_kol=mablagh,
+        sharh=sharh,
+        factor_code=factor_code,
+        zaman_tasvie="",
+        db=db,
+        ref_id=str(hedge.id),
+        ref_type="hedge",
+    )
+    if not ok:
+        hedge.tahesab_sync_needed = True
+        db.add(hedge)
+        db.commit()
+        return None
+
+    hedge.tahesab_sync_needed = True  # cleared on outbox ack
+    db.add(hedge)
+    db.commit()
+    logger.info(
+        "[tahesab] queued hedge sanad hedge=%s dealer=%s moshtari=%s vazn=%s side=%s factor=%s",
+        hedge.id,
+        dealer.name,
+        moshtari,
+        vazn,
+        side_val,
+        ok,
+    )
+    return str(ok)
+
+
 def enqueue_method(
     db: Session,
     method: str,
@@ -967,6 +1404,7 @@ def create_sanad_buy_sale_gold(
     arz_name: str = "",
     db: Session | None = None,
     ref_id: str | None = None,
+    ref_type: str | None = None,
 ) -> str | None:
     params = [
         int(settings.TAHESAB_SABTE_KOL),
@@ -993,11 +1431,12 @@ def create_sanad_buy_sale_gold(
         zaman_tasvie or "",
         arz_name or "",
     ]
+    resolved_ref = ref_type or ("order" if ref_id else None)
     payload = call_method(
         "DoNewSanadBuySaleGOLD",
         params,
         db=db,
-        ref_type="order" if ref_id else None,
+        ref_type=resolved_ref,
         ref_id=ref_id,
     )
     if not payload:
@@ -1340,8 +1779,8 @@ def sync_accepted_order_to_tahesab(db: Session, order) -> str | None:
 
 
 def apply_bridge_result(db: Session, job, result: dict[str, Any]) -> None:
-    """Apply successful response onto User / Order rows."""
-    from app.models_db import Order, User
+    """Apply successful response onto User / Order / ExpertHedge rows."""
+    from app.models_db import ExpertHedge, Order, User
 
     method = (getattr(job, "method", None) or "").lower()
     if method == MANDE_METHOD or job.ref_type in ("mande", "mande-day"):
@@ -1379,6 +1818,12 @@ def apply_bridge_result(db: Session, job, result: dict[str, Any]) -> None:
                 if user:
                     enqueue_mande_for_user(db, user, ref_suffix=str(order.id))
                     request_asnad_refresh(db, user, force=True)
+    if job.ref_type == "hedge" and job.ref_id and ok is not None:
+        hedge = db.query(ExpertHedge).filter(ExpertHedge.id == job.ref_id).first()
+        if hedge:
+            hedge.tahesab_factor_code = str(ok)
+            hedge.tahesab_sync_needed = False
+            db.add(hedge)
 
 
 def _error_text(data: dict[str, Any] | None) -> str:
