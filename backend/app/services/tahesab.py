@@ -1445,16 +1445,69 @@ def delete_sanad(
     return str(deleted) if deleted is not None else code
 
 
+def _factor_code_from_hedge_outbox(db: Session, hedge_id: str) -> str | None:
+    """Recover Factor_Code from a hedge create outbox job (params or ack result)."""
+    from app.models_db import TahesabOutbox
+
+    if not hedge_id:
+        return None
+    rows = (
+        db.query(TahesabOutbox)
+        .filter(
+            TahesabOutbox.ref_type == "hedge",
+            TahesabOutbox.ref_id == str(hedge_id),
+            TahesabOutbox.method == "DoNewSanadBuySaleGOLD",
+        )
+        .order_by(TahesabOutbox.created_at.desc())
+        .all()
+    )
+    for row in rows:
+        # Prefer ack result — matches what Tahesab actually stored.
+        try:
+            result = json.loads(row.result_json or "{}")
+        except json.JSONDecodeError:
+            result = {}
+        if isinstance(result, dict):
+            for key in ("Factor_Code", "OK", "DELETED"):
+                val = result.get(key)
+                if val is not None and str(val).strip():
+                    return str(val).strip()
+        try:
+            params = json.loads(row.params_json or "[]")
+        except json.JSONDecodeError:
+            params = []
+        # DoNewSanadBuySaleGOLD packs Factor_Code near the end of the param list.
+        if isinstance(params, list):
+            for item in reversed(params):
+                if isinstance(item, str) and item.strip().upper().startswith("GH") and len(item.strip()) >= 20:
+                    return item.strip()
+    return None
+
+
+def resolve_hedge_factor_code(db: Session, hedge) -> str | None:
+    """Best-effort Factor_Code for a hedge: row → outbox → deterministic GH{id}."""
+    factor = (getattr(hedge, "tahesab_factor_code", None) or "").strip()
+    if factor:
+        return factor
+    hid = str(getattr(hedge, "id", "") or "")
+    from_outbox = _factor_code_from_hedge_outbox(db, hid) if hid else None
+    if from_outbox:
+        return from_outbox
+    if hid:
+        return _factor_code_for_hedge(hid)
+    return None
+
+
 def void_hedge_in_tahesab(db: Session, hedge) -> dict[str, Any]:
     """Cancel unsent create jobs and queue DoDeleteSanad for the dealer factor.
 
-    Always attempts delete when a Factor_Code is known — covers acked sanads and
-    in-flight creates the agent may already have posted. Missing-sanad errors on
-    delete are treated as success in apply_bridge_result.
+    Always attempts delete when a Factor_Code can be resolved — covers acked
+    sanads, in-flight creates, and rows that never persisted tahesab_factor_code.
+    Missing-sanad errors on delete are treated as success in apply_bridge_result.
     """
     hid = str(getattr(hedge, "id", "") or "")
     cancelled = cancel_pending_hedge_create_jobs(db, hid) if hid else 0
-    factor = (getattr(hedge, "tahesab_factor_code", None) or "").strip()
+    factor = resolve_hedge_factor_code(db, hedge)
     deleted = delete_sanad(db, factor, ref_id=hid or None) if factor else None
     logger.info(
         "[tahesab] void hedge %s cancelled=%s factor=%s delete_queued=%s",

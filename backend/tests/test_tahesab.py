@@ -1363,10 +1363,16 @@ def test_void_hedge_cancels_pending_and_deletes(mock_delete):
         status="pending",
         last_error=None,
         updated_at=None,
+        result_json=None,
+        params_json="[]",
+        created_at=datetime(2025, 10, 5, 12, 0, 0),
     )
 
     class _Q:
         def filter(self, *a, **k):
+            return self
+
+        def order_by(self, *a, **k):
             return self
 
         def all(self):
@@ -1380,6 +1386,79 @@ def test_void_hedge_cancels_pending_and_deletes(mock_delete):
     assert pending.status == "cancelled"
     assert out["delete_queued"] is True
     mock_delete.assert_called_once_with(db, "GHOK1", ref_id="h-void")
+
+
+@patch("app.services.tahesab.delete_sanad", return_value="ghfromack")
+def test_void_hedge_resolves_factor_from_outbox_when_row_blank(mock_delete):
+    done = SimpleNamespace(
+        ref_type="hedge",
+        ref_id="h-blank",
+        method="DoNewSanadBuySaleGOLD",
+        status="done",
+        last_error=None,
+        updated_at=None,
+        result_json='{"OK":"ghfromack","Factor_Code":"ghfromack"}',
+        params_json='[1,55,"GHPLACEHOLDER00000001"]',
+        created_at=datetime(2025, 10, 5, 12, 0, 0),
+    )
+
+    class _Q:
+        def filter(self, *a, **k):
+            return self
+
+        def order_by(self, *a, **k):
+            return self
+
+        def all(self):
+            # cancel query first, then resolve query — both use .all()
+            return [] if not hasattr(self, "_n") else [done]
+
+        def __init__(self):
+            pass
+
+    calls = {"n": 0}
+
+    class _Q2:
+        def filter(self, *a, **k):
+            return self
+
+        def order_by(self, *a, **k):
+            return self
+
+        def all(self):
+            calls["n"] += 1
+            # 1st = cancel pending (empty), 2nd = resolve factor (done job)
+            return [] if calls["n"] == 1 else [done]
+
+    db = MagicMock()
+    db.query.return_value = _Q2()
+    hedge = SimpleNamespace(id="h-blank", tahesab_factor_code=None)
+    out = tahesab.void_hedge_in_tahesab(db, hedge)
+    assert out["factor_code"] == "ghfromack"
+    assert out["delete_queued"] is True
+    mock_delete.assert_called_once_with(db, "ghfromack", ref_id="h-blank")
+
+
+@patch("app.services.tahesab.delete_sanad", return_value="GHfallback")
+def test_void_hedge_falls_back_to_deterministic_factor(mock_delete):
+    class _Q:
+        def filter(self, *a, **k):
+            return self
+
+        def order_by(self, *a, **k):
+            return self
+
+        def all(self):
+            return []
+
+    db = MagicMock()
+    db.query.return_value = _Q()
+    hid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    hedge = SimpleNamespace(id=hid, tahesab_factor_code=None)
+    out = tahesab.void_hedge_in_tahesab(db, hedge)
+    expected = tahesab._factor_code_for_hedge(hid)
+    assert out["factor_code"] == expected
+    mock_delete.assert_called_once_with(db, expected, ref_id=hid)
 
 
 @patch("app.services.tahesab.call_method")
