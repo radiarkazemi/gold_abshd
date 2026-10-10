@@ -2,11 +2,23 @@ import { useEffect, useMemo, useState } from "react";
 import { orderGoldWeight } from "../utils/orderCalc";
 import { formatTehranDateTime, serverDateMs, tehranDayKey } from "../utils/tehranTime";
 
-const SIDE_LABEL = { buy: "خرید مشتری از ما", sell: "فروش مشتری به ما" };
+/** Shop-centric labels (what we did), not customer-centric. */
+const SIDE_LABEL = {
+  buy: "فروش به مشتری", // customer bought from us
+  sell: "خرید از مشتری", // we bought from customer
+};
 const HEDGE_LABEL = {
   buy_from_dealer: "خرید از آبشده تهران",
   sell_to_dealer: "فروش به آبشده تهران",
 };
+
+/** One-line flow: خرید از مشتری → فروش به تهران */
+function flowLabel(orderSide, hedgeSide) {
+  const left = SIDE_LABEL[orderSide] || orderSide || "—";
+  const right = HEDGE_LABEL[hedgeSide] || hedgeSide || "—";
+  if (!orderSide) return right;
+  return `${left} → ${right}`;
+}
 
 const PAGE_SIZE = 12;
 
@@ -17,23 +29,28 @@ function fa(n, opts) {
 
 export function buildTehranLedger({ hedges = [], acceptedOrders = [], dayKey = null } = {}) {
   const rows = [];
-  for (const o of acceptedOrders) {
-    const at = o.updated_at || o.created_at;
-    if (dayKey && tehranDayKey(at) !== dayKey) continue;
-    rows.push({
-      kind: "accepted",
-      sortAt: serverDateMs(at),
-      key: `accepted-${o.id}`,
-      order: o,
-    });
-  }
+  const hedgedOrderIds = new Set();
   for (const h of hedges) {
     if (dayKey && tehranDayKey(h.created_at) !== dayKey) continue;
+    if (h.related_order_id) hedgedOrderIds.add(h.related_order_id);
     rows.push({
       kind: "hedge",
       sortAt: serverDateMs(h.created_at),
       key: `hedge-${h.id}`,
       hedge: h,
+    });
+  }
+  for (const o of acceptedOrders) {
+    const at = o.updated_at || o.created_at;
+    if (dayKey && tehranDayKey(at) !== dayKey) continue;
+    // Fully covered orders already appear as تخصیص rows — skip duplicate «تایید» line.
+    const open = Math.max(0, Number(o.open_hedge_weight ?? 0));
+    if (open <= 1e-6 && hedgedOrderIds.has(o.id)) continue;
+    rows.push({
+      kind: "accepted",
+      sortAt: serverDateMs(at),
+      key: `accepted-${o.id}`,
+      order: o,
     });
   }
   rows.sort((a, b) => b.sortAt - a.sortAt || String(b.key).localeCompare(String(a.key)));
@@ -82,16 +99,16 @@ export default function ExpertTehranLedger({
         <thead>
           <tr>
             <th>زمان</th>
-            <th>رویداد / سفارش</th>
+            <th>رویداد / جریان</th>
             <th className="expert-hedges__th--buy">
               وزن سفارش
               <br />
-              (خرید مشتری از ما)
+              (فروش به مشتری)
             </th>
             <th className="expert-hedges__th--sell">
               وزن سفارش
               <br />
-              (فروش مشتری به ما)
+              (خرید از مشتری)
             </th>
             <th>فی مشتری</th>
             <th>معامله تهران</th>
@@ -158,7 +175,7 @@ export default function ExpertTehranLedger({
                         {o.customer_name || "بدون نام"} #{o.customer_code}
                       </strong>
                       <span>
-                        تخصیص تهران · {SIDE_LABEL[o.side] || o.side}
+                        پوشش تهران · {flowLabel(o.side, h.side)}
                         {o.status === "accepted"
                           ? " · تاییدشده"
                           : o.status === "pending"
@@ -167,7 +184,10 @@ export default function ExpertTehranLedger({
                       </span>
                     </div>
                   ) : (
-                    <span className="expert-hedges__free">پوشش آزاد (بدون سفارش)</span>
+                    <div className="expert-hedges__order">
+                      <strong>پوشش آزاد</strong>
+                      <span>{HEDGE_LABEL[h.side] || h.side}</span>
+                    </div>
                   )}
                 </td>
                 <td className="expert-hedges__w--buy">{o?.side === "buy" && ow ? ow : "—"}</td>
