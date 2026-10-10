@@ -1419,18 +1419,19 @@ def cancel_pending_hedge_create_jobs(db: Session, hedge_id: str) -> int:
 
 
 def _factor_code_variants(factor_code: str) -> list[str]:
-    """Tahesab may store Factor_Code in the case we sent (GH…) or lowercased (gh…)."""
+    """Tahesab may store Factor_Code as sent (GH + hex) or fully lowercased (gh…)."""
     code = (factor_code or "").strip()
     if not code:
         return []
     out = [code]
-    swapped = code.swapcase()
-    if swapped != code:
-        out.append(swapped)
-    lower, upper = code.lower(), code.upper()
-    for alt in (lower, upper):
-        if alt not in out:
-            out.append(alt)
+    lower = code.lower()
+    # Canonical app spelling: GH + lowercase hex body.
+    if lower.startswith("gh") and len(lower) >= 20:
+        canonical = "GH" + lower[2:]
+        if canonical not in out:
+            out.append(canonical)
+    if lower not in out:
+        out.append(lower)
     return out
 
 

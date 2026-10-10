@@ -1448,10 +1448,11 @@ def test_void_hedge_falls_back_to_deterministic_factor(mock_delete):
     assert mock_delete.call_args_list[0].args[:2] == (db, expected)
 
 
-def test_factor_code_variants_include_case_swap():
-    variants = tahesab._factor_code_variants("GHABC000000000000001")
-    assert "GHABC000000000000001" in variants
+def test_factor_code_variants_include_gh_and_lower():
+    variants = tahesab._factor_code_variants("ghabc000000000000001")
     assert "ghabc000000000000001" in variants
+    assert "GHABC000000000000001".replace("ABC", "abc") in variants
+    assert "GHabc000000000000001" in variants
 
 
 @patch("app.services.tahesab.call_method")
