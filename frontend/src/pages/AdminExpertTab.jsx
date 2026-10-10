@@ -4,7 +4,6 @@ import {
   fetchExpertTehranReport,
   fetchPrice,
   decideOrder,
-  createTehranDealer,
   updateTehranDealer,
   syncTehranDealersFromTahesab,
   createExpertHedge,
@@ -43,7 +42,9 @@ function DealerAssignInline({ order, dealers, busy, onAssign }) {
   const [weight, setWeight] = useState("");
   const [price, setPrice] = useState("");
   const [open, setOpen] = useState(false);
-  const activeDealers = (dealers || []).filter((d) => d.is_active);
+  const activeDealers = (dealers || []).filter(
+    (d) => d.is_active && d.tahesab_moshtari_id != null
+  );
   const remaining = Math.max(0, Number(order.open_hedge_weight ?? orderGoldWeight(order)));
   const label = order.side === "buy" ? "خرید از تهران" : "فروش به تهران";
 
@@ -214,8 +215,6 @@ export default function AdminExpertTab({ refreshSignal }) {
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [liveCard, setLiveCard] = useState(null);
-  const [dealerForm, setDealerForm] = useState({ name: "", phone: "", notes: "" });
-  const [dealerBusy, setDealerBusy] = useState(false);
   const [dealerSyncBusy, setDealerSyncBusy] = useState(false);
   const [freeHedge, setFreeHedge] = useState({
     dealerId: "",
@@ -306,21 +305,6 @@ export default function AdminExpertTab({ refreshSignal }) {
       alert(e.message || "تخصیص ناموفق بود");
     } finally {
       setBusyId(null);
-    }
-  }
-
-  async function handleAddDealer(e) {
-    e.preventDefault();
-    if (!dealerForm.name.trim()) return;
-    setDealerBusy(true);
-    try {
-      await createTehranDealer(dealerForm);
-      setDealerForm({ name: "", phone: "", notes: "" });
-      reload();
-    } catch (err) {
-      alert(err.message || "ثبت آبشده‌فروش ناموفق بود");
-    } finally {
-      setDealerBusy(false);
     }
   }
 
@@ -512,7 +496,7 @@ export default function AdminExpertTab({ refreshSignal }) {
   const buy = desk.buy_orders || [];
   const sell = desk.sell_orders || [];
   const dealers = desk.dealers || [];
-  const activeDealers = dealers.filter((d) => d.is_active);
+  const activeDealers = dealers.filter((d) => d.is_active && d.tahesab_moshtari_id != null);
   const coverSideLabel =
     suggestedCover?.side === "buy_from_dealer" ? "خرید از آبشده تهران" : "فروش به آبشده تهران";
 
@@ -678,7 +662,7 @@ export default function AdminExpertTab({ refreshSignal }) {
       <section className="expert-dealers">
         <h3 className="dashboard__section-title">آبشده‌فروش‌های تهران</h3>
         <p className="expert__hint">
-          منبع اصلی: گروه ته‌حساب «{desk.abshode_sellers_group || "آبشده فروشان"}».
+          فقط از گروه ته‌حساب «{desk.abshode_sellers_group || "آبشده فروشان"}» — افزودن دستی حذف شده.
           با ثبت پوشش، همان وزن روی کارت آبشده‌فروش در ته‌حساب هم سند می‌شود.
         </p>
         <div className="expert-dealers__form" style={{ marginBottom: 8 }}>
@@ -691,27 +675,6 @@ export default function AdminExpertTab({ refreshSignal }) {
             {dealerSyncBusy ? "در حال دریافت…" : "بروزرسانی از ته‌حساب"}
           </button>
         </div>
-        <form className="expert-dealers__form" onSubmit={handleAddDealer}>
-          <input
-            placeholder="نام دستی (اگر در ته‌حساب نیست)"
-            value={dealerForm.name}
-            onChange={(e) => setDealerForm((f) => ({ ...f, name: e.target.value }))}
-            required
-          />
-          <input
-            placeholder="تلفن"
-            value={dealerForm.phone}
-            onChange={(e) => setDealerForm((f) => ({ ...f, phone: e.target.value }))}
-          />
-          <input
-            placeholder="یادداشت"
-            value={dealerForm.notes}
-            onChange={(e) => setDealerForm((f) => ({ ...f, notes: e.target.value }))}
-          />
-          <button type="submit" className="expert-btn expert-btn--ok" disabled={dealerBusy}>
-            افزودن دستی
-          </button>
-        </form>
 
         <div className="expert-dealers__list">
           {dealers.length === 0 ? (

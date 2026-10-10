@@ -30,12 +30,21 @@ function formatWeight(n) {
   return Number(n).toLocaleString("en-US", { maximumFractionDigits: 3 });
 }
 
-/** When دسته بندی caps follow weight, refresh تومان from live card buy unit. */
-function limitsWithLiveAmounts(limits, card) {
-  if (!limits || !limits.amount_limits_follow_weight || !card) return limits;
-  const unit = Math.round(Number(card.gram18_buy_price));
+/**
+ * مبلغ (تومان) min/max tracks وزن × live گرم۱۸ for this card/side so the
+ * money floor moves with realtime price (default 1g).
+ */
+function limitsWithLiveAmounts(limits, card, side) {
+  if (!limits || !card) return limits;
+  const follow =
+    limits.amount_limits_follow_weight ||
+    (limits.min_weight != null && Number(limits.min_weight) > 0) ||
+    (limits.max_weight != null && Number(limits.max_weight) > 0);
+  if (!follow) return limits;
+  const rawUnit = side === "sell" ? card.gram18_sell_price : card.gram18_buy_price;
+  const unit = Math.round(Number(rawUnit));
   if (!Number.isFinite(unit) || unit <= 0) return limits;
-  const next = { ...limits };
+  const next = { ...limits, amount_limits_follow_weight: true };
   if (limits.min_weight != null && Number(limits.min_weight) > 0) {
     next.min_amount = Math.round(Number(limits.min_weight) * unit);
   }
@@ -73,7 +82,7 @@ export default function OrderModal({ card, side, onClose, onSubmit, submitting, 
   // "قیمت تغییر کرد" tag if the live feed moves before submit.
   const baselinePriceRef = useRef(null);
   const meta = SIDE_META[side];
-  const effectiveLimits = limitsWithLiveAmounts(limits, card);
+  const effectiveLimits = limitsWithLiveAmounts(limits, card, side);
 
   if (baselinePriceRef.current == null && card) {
     baselinePriceRef.current = {

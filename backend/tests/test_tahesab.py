@@ -1367,3 +1367,102 @@ def test_sync_abshode_sellers_bridge_queues(mock_enqueue):
     mock_enqueue.assert_called_once()
     assert mock_enqueue.call_args[0][1] == "DoListMoshtari"
     assert mock_enqueue.call_args.kwargs["ref_type"] == "abshode-sellers"
+
+
+def test_upsert_abshode_sellers_deactivates_manual_dealers():
+    """App-only dealers (no tahesab code) are turned off when Tahesab list syncs."""
+    from app.models_db import TehranDealer
+
+    manual = SimpleNamespace(
+        name="دستی قدیمی",
+        tahesab_moshtari_id=None,
+        is_active=True,
+        phone=None,
+        notes=None,
+        tahesab_synced_at=None,
+    )
+    linked = SimpleNamespace(
+        name="فرشاد گلد",
+        tahesab_moshtari_id=55,
+        is_active=True,
+        phone="0912",
+        notes=None,
+        tahesab_synced_at=None,
+    )
+    stale_linked = SimpleNamespace(
+        name="قدیمی ته‌حساب",
+        tahesab_moshtari_id=99,
+        is_active=True,
+        phone=None,
+        notes=None,
+        tahesab_synced_at=None,
+    )
+
+    added = []
+
+    class _Q:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def filter(self, *args, **kwargs):
+            return self
+
+        def first(self):
+            return self._rows[0] if self._rows else None
+
+        def all(self):
+            return list(self._rows)
+
+    def query(model):
+        assert model is TehranDealer
+        # Sequence of queries inside upsert + deactivate_manual:
+        # 1) by tahesab_moshtari_id == 55 → linked
+        # 2) linked dealers with code
+        # 3) manuals with null code
+        # We use a call counter.
+        n = query.calls
+        query.calls += 1
+        if n == 0:
+            return _Q([linked])  # match by code
+        if n == 1:
+            return _Q([linked, stale_linked])  # all linked
+        if n == 2:
+            return _Q([manual])  # manuals active
+        return _Q([])
+
+    query.calls = 0
+    db = MagicMock()
+    db.query.side_effect = query
+    db.add.side_effect = lambda r: added.append(r)
+
+    out = tahesab.upsert_abshode_sellers(
+        db,
+        [{"code": 55, "name": "فرشاد گلد", "tel": "0912", "gid": 21}],
+    )
+    assert out["ok"] is True
+    assert linked.is_active is True
+    assert linked.tahesab_moshtari_id == 55
+    assert stale_linked.is_active is False
+    assert manual.is_active is False
+    assert out["deactivated"] >= 2
+    db.commit.assert_called()
+
+
+def test_deactivate_manual_abshode_sellers_alone():
+    from app.models_db import TehranDealer
+
+    manual = SimpleNamespace(tahesab_moshtari_id=None, is_active=True)
+    db = MagicMock()
+
+    class _Q:
+        def filter(self, *a, **k):
+            return self
+
+        def all(self):
+            return [manual]
+
+    db.query.return_value = _Q()
+    n = tahesab.deactivate_manual_abshode_sellers(db)
+    assert n == 1
+    assert manual.is_active is False
+    db.commit.assert_called_once()
