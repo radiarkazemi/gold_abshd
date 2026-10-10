@@ -1376,6 +1376,9 @@ def sync_hedge_to_tahesab(db: Session, hedge) -> str | None:
         return None
 
     hedge.tahesab_sync_needed = True  # cleared on outbox ack
+    # Remember the Factor_Code we sent so delete can void even before ack lands.
+    if not getattr(hedge, "tahesab_factor_code", None):
+        hedge.tahesab_factor_code = str(ok)
     db.add(hedge)
     db.commit()
     logger.info(
@@ -1388,6 +1391,83 @@ def sync_hedge_to_tahesab(db: Session, hedge) -> str | None:
         ok,
     )
     return str(ok)
+
+
+def cancel_pending_hedge_create_jobs(db: Session, hedge_id: str) -> int:
+    """Drop unsent DoNewSanadBuySaleGOLD jobs for this hedge so a delete can't race a create."""
+    from app.models_db import TahesabOutbox
+
+    rows = (
+        db.query(TahesabOutbox)
+        .filter(
+            TahesabOutbox.ref_type == "hedge",
+            TahesabOutbox.ref_id == str(hedge_id),
+            TahesabOutbox.method == "DoNewSanadBuySaleGOLD",
+            TahesabOutbox.status.in_(("pending", "claimed")),
+        )
+        .all()
+    )
+    for row in rows:
+        row.status = "cancelled"
+        row.last_error = "hedge deleted in app"
+        row.updated_at = datetime.utcnow()
+        db.add(row)
+    if rows:
+        db.flush()
+        logger.info("[tahesab] cancelled %s pending hedge create job(s) for %s", len(rows), hedge_id)
+    return len(rows)
+
+
+def delete_sanad(
+    db: Session,
+    factor_code: str,
+    *,
+    ref_id: str | None = None,
+) -> str | None:
+    """Queue DoDeleteSanad for a previously posted Factor_Code."""
+    code = (factor_code or "").strip()
+    if not code:
+        return None
+    if not is_configured():
+        return None
+    payload = call_method(
+        "DoDeleteSanad",
+        [code],
+        db=db,
+        ref_type="hedge-delete",
+        ref_id=ref_id,
+    )
+    if not payload:
+        return None
+    if payload.get("queued"):
+        return code
+    deleted = payload.get("DELETED") or payload.get("OK")
+    return str(deleted) if deleted is not None else code
+
+
+def void_hedge_in_tahesab(db: Session, hedge) -> dict[str, Any]:
+    """Cancel unsent create jobs and queue DoDeleteSanad for the dealer factor.
+
+    Always attempts delete when a Factor_Code is known — covers acked sanads and
+    in-flight creates the agent may already have posted. Missing-sanad errors on
+    delete are treated as success in apply_bridge_result.
+    """
+    hid = str(getattr(hedge, "id", "") or "")
+    cancelled = cancel_pending_hedge_create_jobs(db, hid) if hid else 0
+    factor = (getattr(hedge, "tahesab_factor_code", None) or "").strip()
+    deleted = delete_sanad(db, factor, ref_id=hid or None) if factor else None
+    logger.info(
+        "[tahesab] void hedge %s cancelled=%s factor=%s delete_queued=%s",
+        hid,
+        cancelled,
+        factor or "-",
+        bool(deleted),
+    )
+    return {
+        "cancelled_jobs": cancelled,
+        "factor_code": factor or None,
+        "delete_queued": bool(deleted),
+    }
 
 
 def enqueue_method(
@@ -1991,6 +2071,14 @@ def apply_bridge_result(db: Session, job, result: dict[str, Any]) -> None:
         apply_abshode_sellers_payload(db, result or {})
         return
 
+    if job.ref_type == "hedge-delete" or (getattr(job, "method", None) == "DoDeleteSanad"):
+        logger.info(
+            "[tahesab] DoDeleteSanad ok ref=%s deleted=%s",
+            job.ref_id,
+            result.get("DELETED") or result.get("OK"),
+        )
+        return
+
     ok = result.get("OK")
     if job.ref_type == "user" and job.ref_id and ok is not None:
         user = db.query(User).filter(User.id == job.ref_id).first()
@@ -2021,6 +2109,16 @@ def apply_bridge_result(db: Session, job, result: dict[str, Any]) -> None:
             hedge.tahesab_factor_code = str(ok)
             hedge.tahesab_sync_needed = False
             db.add(hedge)
+        else:
+            # Hedge was removed in the app while create was in-flight — void the sanad.
+            factor = str(ok).strip()
+            if factor:
+                logger.info(
+                    "[tahesab] hedge %s gone after create ack — queueing DoDeleteSanad %s",
+                    job.ref_id,
+                    factor,
+                )
+                delete_sanad(db, factor, ref_id=str(job.ref_id))
 
 
 def _error_text(data: dict[str, Any] | None) -> str:
@@ -2203,6 +2301,20 @@ def process_outbox_job(db: Session, job) -> str:
             logger.info("[tahesab] Factor_Code already exists → %s", factor)
             return "done"
 
+        # DoDeleteSanad: missing / already-gone factor is a successful void.
+        if job.method == "DoDeleteSanad" and any(
+            x in err for x in ("پیدا نشد", "یافت نشد", "وجود ندارد", "not found", "Not Found", "نامعتبر")
+        ):
+            result = {"DELETED": params[0] if params else "missing", "note": err}
+            job.status = "done"
+            job.result_json = json.dumps(result, ensure_ascii=False)
+            job.last_error = None
+            apply_bridge_result(db, job, result)
+            db.add(job)
+            db.commit()
+            logger.info("[tahesab] DoDeleteSanad already absent → %s", params[0] if params else "?")
+            return "done"
+
         job.last_error = err[:2000]
         # Permanent business errors stop retrying; transient keep pending.
         if any(x in err for x in ("تکراری", "نامعتبر", "مجاز نیست")) and job.attempts >= 3:
@@ -2215,11 +2327,12 @@ def process_outbox_job(db: Session, job) -> str:
         db.commit()
         return job.status
 
-    # Success shapes: {"OK": ...}, CheckHealth {"Api_Status": "OK"},
+    # Success shapes: {"OK": ...}, {"DELETED": ...}, CheckHealth {"Api_Status": "OK"},
     # getmandehesabbycode {"MandeHesab": [...]}, DoListAsnad {id: {...}, ...}.
     method_l = (job.method or "").lower()
     if (
         "OK" not in data
+        and "DELETED" not in data
         and "Api_Status" not in data
         and not payload_is_mande_success(data)
         and method_l != MANDE_METHOD

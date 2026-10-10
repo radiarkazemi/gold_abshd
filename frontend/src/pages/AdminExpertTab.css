@@ -355,6 +355,36 @@
   overflow: hidden;
 }
 
+/* Calendar popup in گزارش روزهای قبل must escape the panel clip. */
+.expert-panel.expert-history {
+  overflow: visible;
+}
+
+.expert-history .expert-panel__heading {
+  position: relative;
+  z-index: 6;
+  overflow: visible;
+}
+
+.expert-history .expert-report-date {
+  position: relative;
+  z-index: 7;
+  overflow: visible;
+}
+
+.expert-history .jalali-cal {
+  position: relative;
+  z-index: 8;
+  min-width: 180px;
+}
+
+.expert-history .jalali-cal__popup {
+  z-index: 80;
+  /* Prefer opening into the panel body so days stay in the visible grid area. */
+  top: calc(100% + 6px);
+  bottom: auto;
+}
+
 .expert-panel__heading {
   display: flex;
   justify-content: space-between;

@@ -458,9 +458,19 @@ def sync_dealers_from_tahesab(db: Session) -> dict:
 
 
 def delete_hedge(db: Session, hedge_id: str) -> None:
-    row = db.query(ExpertHedge).filter(ExpertHedge.id == hedge_id).first()
+    row = (
+        db.query(ExpertHedge)
+        .options(joinedload(ExpertHedge.dealer), joinedload(ExpertHedge.order))
+        .filter(ExpertHedge.id == hedge_id)
+        .first()
+    )
     if not row:
         raise HTTPException(status_code=404, detail="تراکنش پیدا نشد")
+    # Void the dealer sanad in Tahesab (or cancel a still-queued create).
+    try:
+        tahesab.void_hedge_in_tahesab(db, row)
+    except Exception:
+        logger.exception("[expert] Tahesab void failed for hedge %s — deleting locally anyway", hedge_id)
     db.delete(row)
     db.commit()
 

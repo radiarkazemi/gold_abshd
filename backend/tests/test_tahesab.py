@@ -1332,6 +1332,103 @@ def test_apply_bridge_result_sets_hedge_factor():
     assert hedge.tahesab_sync_needed is False
 
 
+@patch("app.services.tahesab.create_sanad_buy_sale_gold", return_value="GHFACTOR00000000009")
+def test_sync_hedge_stores_factor_code_early(mock_sanad):
+    from app.models_db import ExpertHedgeSideEnum
+
+    dealer = SimpleNamespace(id="d1", name="فرشاد", tahesab_moshtari_id=55)
+    hedge = SimpleNamespace(
+        id="h-early",
+        dealer=dealer,
+        dealer_id="d1",
+        side=ExpertHedgeSideEnum.buy_from_dealer,
+        weight_gram18=1.0,
+        price_mesghal17=30_000_000,
+        created_at=datetime(2025, 10, 5, 12, 0, 0),
+        tahesab_factor_code=None,
+        tahesab_sync_needed=False,
+    )
+    db = MagicMock()
+    code = tahesab.sync_hedge_to_tahesab(db, hedge)
+    assert code == "GHFACTOR00000000009"
+    assert hedge.tahesab_factor_code == "GHFACTOR00000000009"
+
+
+@patch("app.services.tahesab.delete_sanad", return_value="GHOK1")
+def test_void_hedge_cancels_pending_and_deletes(mock_delete):
+    pending = SimpleNamespace(
+        ref_type="hedge",
+        ref_id="h-void",
+        method="DoNewSanadBuySaleGOLD",
+        status="pending",
+        last_error=None,
+        updated_at=None,
+    )
+
+    class _Q:
+        def filter(self, *a, **k):
+            return self
+
+        def all(self):
+            return [pending]
+
+    db = MagicMock()
+    db.query.return_value = _Q()
+    hedge = SimpleNamespace(id="h-void", tahesab_factor_code="GHOK1")
+    out = tahesab.void_hedge_in_tahesab(db, hedge)
+    assert out["cancelled_jobs"] == 1
+    assert pending.status == "cancelled"
+    assert out["delete_queued"] is True
+    mock_delete.assert_called_once_with(db, "GHOK1", ref_id="h-void")
+
+
+@patch("app.services.tahesab.call_method")
+def test_delete_sanad_queues_dodeletesanad(mock_call):
+    mock_call.return_value = {"queued": True, "id": "ob1"}
+    db = MagicMock()
+    code = tahesab.delete_sanad(db, "GHFACTORX", ref_id="h1")
+    assert code == "GHFACTORX"
+    mock_call.assert_called_once_with(
+        "DoDeleteSanad",
+        ["GHFACTORX"],
+        db=db,
+        ref_type="hedge-delete",
+        ref_id="h1",
+    )
+
+
+@patch("app.services.tahesab.delete_sanad")
+def test_apply_bridge_result_voids_orphan_hedge_create(mock_delete):
+    """If hedge row was deleted before create ack, queue DoDeleteSanad."""
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = None
+    job = SimpleNamespace(ref_type="hedge", ref_id="gone-h", method="DoNewSanadBuySaleGOLD")
+    tahesab.apply_bridge_result(db, job, {"OK": "GHORPHAN1"})
+    mock_delete.assert_called_once_with(db, "GHORPHAN1", ref_id="gone-h")
+
+
+@patch("app.services.tahesab.call_method_direct")
+def test_process_outbox_missing_delete_is_success(mock_direct):
+    mock_direct.return_value = {"ERROR": "سند پیدا نشد"}
+    job = SimpleNamespace(
+        id="j-del",
+        method="DoDeleteSanad",
+        params_json='["GHMISSING"]',
+        status="pending",
+        attempts=0,
+        last_error=None,
+        result_json=None,
+        ref_type="hedge-delete",
+        ref_id="h1",
+    )
+    db = MagicMock()
+    with patch("app.services.tahesab.apply_bridge_result") as apply:
+        status = tahesab.process_outbox_job(db, job)
+    assert status == "done"
+    apply.assert_called_once()
+    assert job.status == "done"
+
+
 def test_sellers_from_moshtari_payload_filters_group():
     payload = {
         "1": {
