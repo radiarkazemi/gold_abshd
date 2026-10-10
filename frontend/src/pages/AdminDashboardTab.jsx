@@ -277,7 +277,7 @@ export default function AdminDashboardTab({ onGoToOrders, refreshSignal }) {
                 onChange={(e) => setLimitsDraft({ ...limitsDraft, max_weight: e.target.value })} />
             </label>
             <label className="order-limits-box__field">
-              <span>حداقل مبلغ (تومان، ۰ = بدون حداقل)</span>
+              <span>حداقل مبلغ (تومان — اگر وزن حداقل دارید، مبلغ با قیمت لحظه‌ای × وزن به‌روز می‌شود)</span>
               <input type="number" value={limitsDraft.min_amount}
                 onChange={(e) => setLimitsDraft({ ...limitsDraft, min_amount: e.target.value })} />
             </label>

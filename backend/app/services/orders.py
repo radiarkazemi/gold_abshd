@@ -241,15 +241,31 @@ def create_order(db: Session, user: User, side: str, amount_type: str, value: fl
                     detail=f"حداکثر مقدار سفارش {limits['max_weight']} گرم ۱۸ است",
                 )
         else:
+            # مبلغ mode: enforce the same 1g (etc.) floor via converted weight at
+            # this order's live side price, plus the live تومان min when available.
+            if weight < limits["min_weight"]:
+                min_toman = limits.get("min_amount") or round(limits["min_weight"] * price_at_submit)
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"حداقل مبلغ سفارش معادل {limits['min_weight']} گرم ۱۸ "
+                        f"({int(min_toman):,} تومان) است"
+                    ),
+                )
+            if weight > limits["max_weight"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"حداکثر مقدار سفارش معادل {limits['max_weight']} گرم ۱۸ است",
+                )
             if limits["min_amount"] and value < limits["min_amount"]:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"حداقل مبلغ سفارش {limits['min_amount']} تومان است",
+                    detail=f"حداقل مبلغ سفارش {int(limits['min_amount']):,} تومان است",
                 )
             if limits["max_amount"] and value > limits["max_amount"]:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"حداکثر مبلغ سفارش {limits['max_amount']} تومان است",
+                    detail=f"حداکثر مبلغ سفارش {int(limits['max_amount']):,} تومان است",
                 )
 
     order = Order(

@@ -153,20 +153,22 @@ def get_effective_limits(db: Session, user) -> dict:
         result["commission_type"] = role.commission_type.value if hasattr(role.commission_type, "value") else role.commission_type
         result["commission_value"] = role.commission_value
 
-        role_min_w = getattr(role, "min_weight", None)
-        role_max_w = getattr(role, "max_weight", None)
-        if role_min_w is not None or role_max_w is not None:
-            result["amount_limits_follow_weight"] = True
-            live_min, live_max = live_amount_limits_from_weights(
-                db,
-                user,
-                min_weight=role_min_w,
-                max_weight=role_max_w,
-            )
-            if role_min_w is not None and live_min is not None:
-                result["min_amount"] = float(live_min)
-            if role_max_w is not None and live_max is not None:
-                result["max_amount"] = float(live_max)
+    # مبلغ (تومان) floor/ceiling always tracks weight × live گرم۱۸ — including the
+    # global 1g default — so "سفارش با مبلغ" cannot go below 1g of gold.
+    min_w = float(result.get("min_weight") or 0)
+    max_w = float(result.get("max_weight") or 0)
+    if min_w > 0 or max_w > 0:
+        result["amount_limits_follow_weight"] = True
+        live_min, live_max = live_amount_limits_from_weights(
+            db,
+            user,
+            min_weight=min_w if min_w > 0 else None,
+            max_weight=max_w if max_w > 0 else None,
+        )
+        if live_min is not None:
+            result["min_amount"] = float(live_min)
+        if live_max is not None:
+            result["max_amount"] = float(live_max)
 
     result["card_commissions"] = price_cards_service.card_commissions_for_user(db, user)
     return result
