@@ -44,25 +44,26 @@ from app.services import tahesab
 TEHRAN_TZ = ZoneInfo("Asia/Tehran")
 
 
-def list_dealers(db: Session, active_only: bool = False) -> list[TehranDealer]:
+def list_dealers(
+    db: Session,
+    active_only: bool = False,
+    *,
+    tahesab_only: bool = True,
+) -> list[TehranDealer]:
+    """List آبشده‌فروش‌ها. Default: only rows linked to Tahesab (manual app rows hidden)."""
     q = db.query(TehranDealer)
+    if tahesab_only:
+        q = q.filter(TehranDealer.tahesab_moshtari_id.isnot(None))
     if active_only:
         q = q.filter(TehranDealer.is_active == True)  # noqa: E712
     return q.order_by(TehranDealer.sort_order, TehranDealer.name).all()
 
 
 def create_dealer(db: Session, name: str, phone: str | None, notes: str | None, sort_order: int = 0) -> TehranDealer:
-    name = (name or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="نام آبشده‌فروش الزامی است")
-    exists = db.query(TehranDealer).filter(TehranDealer.name == name).first()
-    if exists:
-        raise HTTPException(status_code=400, detail="این نام قبلا ثبت شده است")
-    row = TehranDealer(name=name, phone=phone or None, notes=notes or None, sort_order=sort_order or 0)
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    return row
+    raise HTTPException(
+        status_code=400,
+        detail="افزودن دستی غیرفعال است — آبشده‌فروش فقط از گروه ته‌حساب «آبشده فروشان» می‌آید",
+    )
 
 
 def update_dealer(
@@ -305,6 +306,11 @@ def get_desk(db: Session) -> dict:
         dealers_sync = tahesab.sync_abshode_sellers_from_tahesab(db, force=False)
     except Exception:
         logger.exception("[expert] soft sync آبشده فروشان failed")
+    # Drop leftover app-only dealers even if Tahesab pull is pending/offline.
+    try:
+        tahesab.deactivate_manual_abshode_sellers(db)
+    except Exception:
+        logger.exception("[expert] deactivate manual آبشده‌فروش failed")
 
     return {
         "buy_orders": pending_buy,
@@ -367,6 +373,11 @@ def create_hedge(
     dealer = db.query(TehranDealer).filter(TehranDealer.id == dealer_id).first()
     if not dealer or not dealer.is_active:
         raise HTTPException(status_code=404, detail="آبشده‌فروش فعال پیدا نشد")
+    if getattr(dealer, "tahesab_moshtari_id", None) is None:
+        raise HTTPException(
+            status_code=400,
+            detail="این آبشده‌فروش از ته‌حساب نیست — فقط اعضای گروه «آبشده فروشان» مجازند",
+        )
 
     if price_mesghal17 is None or float(price_mesghal17) <= 0:
         raise HTTPException(status_code=400, detail="فی مثقال معامله با تهران الزامی است")
@@ -438,6 +449,10 @@ def create_hedge(
 def sync_dealers_from_tahesab(db: Session) -> dict:
     """Force-refresh آبشده فروشان → tehran_dealers."""
     result = tahesab.sync_abshode_sellers_from_tahesab(db, force=True)
+    try:
+        tahesab.deactivate_manual_abshode_sellers(db)
+    except Exception:
+        logger.exception("[expert] deactivate manual آبشده‌فروش failed")
     result["dealers"] = [_dealer_out(d) for d in list_dealers(db, active_only=False)]
     return result
 

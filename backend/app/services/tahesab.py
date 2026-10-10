@@ -1113,6 +1113,10 @@ def upsert_abshode_sellers(db: Session, sellers: list[dict[str, Any]]) -> dict[s
                 row.tahesab_synced_at = now
                 db.add(row)
 
+    # Manual app-only dealers are not allowed — Tahesab group is the sole source.
+    manual_off = deactivate_manual_abshode_sellers(db, commit=False)
+    deactivated += manual_off
+
     db.commit()
     logger.info(
         "[tahesab] upserted آبشده فروشان: created=%s updated=%s deactivated=%s total=%s",
@@ -1130,6 +1134,25 @@ def upsert_abshode_sellers(db: Session, sellers: list[dict[str, Any]]) -> dict[s
         "total": len(seen_codes),
         "group": settings.TAHESAB_ABSHODE_SELLERS_GROUP,
     }
+
+
+def deactivate_manual_abshode_sellers(db: Session, *, commit: bool = True) -> int:
+    """Turn off dealers that were added in the app (no Tahesab moshtari code)."""
+    from app.models_db import TehranDealer
+
+    rows = (
+        db.query(TehranDealer)
+        .filter(TehranDealer.tahesab_moshtari_id.is_(None), TehranDealer.is_active == True)  # noqa: E712
+        .all()
+    )
+    for row in rows:
+        row.is_active = False
+        db.add(row)
+    if commit and rows:
+        db.commit()
+    if rows:
+        logger.info("[tahesab] deactivated %s manual آبشده‌فروش (no tahesab code)", len(rows))
+    return len(rows)
 
 
 def apply_abshode_sellers_payload(db: Session, payload: Any) -> dict[str, Any]:
