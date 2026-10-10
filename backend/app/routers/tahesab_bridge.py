@@ -85,13 +85,21 @@ def bridge_next(db: Session = Depends(get_db), _auth=Depends(_require_bridge)):
             TahesabOutbox.updated_at < stale_before,
         ),
     )
-    # Serve DoListAsnad first so PDF ledger refresh is never starved by مانده.
+    # Voids first — deleting a همپوشانی must not wait behind مانده / PDF refresh.
     job = (
         db.query(TahesabOutbox)
-        .filter(ready, TahesabOutbox.method == tahesab.ASNAD_METHOD)
+        .filter(ready, TahesabOutbox.method == "DoDeleteSanad")
         .order_by(TahesabOutbox.created_at.asc())
         .first()
     )
+    # Then DoListAsnad so PDF ledger refresh is never starved by مانده.
+    if not job:
+        job = (
+            db.query(TahesabOutbox)
+            .filter(ready, TahesabOutbox.method == tahesab.ASNAD_METHOD)
+            .order_by(TahesabOutbox.created_at.asc())
+            .first()
+        )
     # Then آبشده فروشان dealer-list refresh (DoListMoshtari).
     if not job:
         job = (

@@ -404,13 +404,13 @@ export default function AdminExpertTab({ refreshSignal }) {
   }
 
   async function removeHedge(id) {
-    if (!confirm("این تخصیص حذف شود؟")) return;
+    if (!confirm("این تخصیص از گزارش و از سند ته‌حساب آبشده‌فروش حذف شود؟")) return;
     try {
       await deleteExpertHedge(id);
       reload();
       setReportTick((n) => n + 1);
-    } catch {
-      alert("حذف ناموفق بود");
+    } catch (err) {
+      alert(err?.message || "حذف ناموفق بود — سند ممکن است هنوز در ته‌حساب باشد");
     }
   }
 

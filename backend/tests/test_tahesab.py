@@ -1385,7 +1385,8 @@ def test_void_hedge_cancels_pending_and_deletes(mock_delete):
     assert out["cancelled_jobs"] == 1
     assert pending.status == "cancelled"
     assert out["delete_queued"] is True
-    mock_delete.assert_called_once_with(db, "GHOK1", ref_id="h-void")
+    assert mock_delete.call_args_list[0].args[:2] == (db, "GHOK1")
+    assert mock_delete.call_args_list[0].kwargs.get("ref_id") == "h-void"
 
 
 @patch("app.services.tahesab.delete_sanad", return_value="ghfromack")
@@ -1402,20 +1403,6 @@ def test_void_hedge_resolves_factor_from_outbox_when_row_blank(mock_delete):
         created_at=datetime(2025, 10, 5, 12, 0, 0),
     )
 
-    class _Q:
-        def filter(self, *a, **k):
-            return self
-
-        def order_by(self, *a, **k):
-            return self
-
-        def all(self):
-            # cancel query first, then resolve query — both use .all()
-            return [] if not hasattr(self, "_n") else [done]
-
-        def __init__(self):
-            pass
-
     calls = {"n": 0}
 
     class _Q2:
@@ -1427,7 +1414,7 @@ def test_void_hedge_resolves_factor_from_outbox_when_row_blank(mock_delete):
 
         def all(self):
             calls["n"] += 1
-            # 1st = cancel pending (empty), 2nd = resolve factor (done job)
+            # 1st = cancel pending (empty), later = resolve factor (done job)
             return [] if calls["n"] == 1 else [done]
 
     db = MagicMock()
@@ -1436,7 +1423,7 @@ def test_void_hedge_resolves_factor_from_outbox_when_row_blank(mock_delete):
     out = tahesab.void_hedge_in_tahesab(db, hedge)
     assert out["factor_code"] == "ghfromack"
     assert out["delete_queued"] is True
-    mock_delete.assert_called_once_with(db, "ghfromack", ref_id="h-blank")
+    assert mock_delete.call_args_list[0].args[:2] == (db, "ghfromack")
 
 
 @patch("app.services.tahesab.delete_sanad", return_value="GHfallback")
@@ -1458,7 +1445,13 @@ def test_void_hedge_falls_back_to_deterministic_factor(mock_delete):
     out = tahesab.void_hedge_in_tahesab(db, hedge)
     expected = tahesab._factor_code_for_hedge(hid)
     assert out["factor_code"] == expected
-    mock_delete.assert_called_once_with(db, expected, ref_id=hid)
+    assert mock_delete.call_args_list[0].args[:2] == (db, expected)
+
+
+def test_factor_code_variants_include_case_swap():
+    variants = tahesab._factor_code_variants("GHABC000000000000001")
+    assert "GHABC000000000000001" in variants
+    assert "ghabc000000000000001" in variants
 
 
 @patch("app.services.tahesab.call_method")

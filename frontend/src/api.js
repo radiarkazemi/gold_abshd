@@ -592,7 +592,10 @@ export async function deleteExpertHedge(hedgeId) {
     method: "DELETE",
     headers: { ...adminAuthHeaders() },
   });
-  if (!res.ok) throw new Error("Failed to delete hedge");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "حذف تخصیص / سند ته‌حساب ناموفق بود");
+  }
   return res.json();
 }
 

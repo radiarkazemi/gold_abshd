@@ -1418,6 +1418,22 @@ def cancel_pending_hedge_create_jobs(db: Session, hedge_id: str) -> int:
     return len(rows)
 
 
+def _factor_code_variants(factor_code: str) -> list[str]:
+    """Tahesab may store Factor_Code in the case we sent (GH…) or lowercased (gh…)."""
+    code = (factor_code or "").strip()
+    if not code:
+        return []
+    out = [code]
+    swapped = code.swapcase()
+    if swapped != code:
+        out.append(swapped)
+    lower, upper = code.lower(), code.upper()
+    for alt in (lower, upper):
+        if alt not in out:
+            out.append(alt)
+    return out
+
+
 def delete_sanad(
     db: Session,
     factor_code: str,
@@ -1445,12 +1461,12 @@ def delete_sanad(
     return str(deleted) if deleted is not None else code
 
 
-def _factor_code_from_hedge_outbox(db: Session, hedge_id: str) -> str | None:
-    """Recover Factor_Code from a hedge create outbox job (params or ack result)."""
+def _factor_codes_from_hedge_outbox(db: Session, hedge_id: str) -> list[str]:
+    """Recover Factor_Code candidates from a hedge create outbox job."""
     from app.models_db import TahesabOutbox
 
     if not hedge_id:
-        return None
+        return []
     rows = (
         db.query(TahesabOutbox)
         .filter(
@@ -1461,8 +1477,8 @@ def _factor_code_from_hedge_outbox(db: Session, hedge_id: str) -> str | None:
         .order_by(TahesabOutbox.created_at.desc())
         .all()
     )
+    found: list[str] = []
     for row in rows:
-        # Prefer ack result — matches what Tahesab actually stored.
         try:
             result = json.loads(row.result_json or "{}")
         except json.JSONDecodeError:
@@ -1471,7 +1487,9 @@ def _factor_code_from_hedge_outbox(db: Session, hedge_id: str) -> str | None:
             for key in ("Factor_Code", "OK", "DELETED"):
                 val = result.get(key)
                 if val is not None and str(val).strip():
-                    return str(val).strip()
+                    code = str(val).strip()
+                    if code not in found:
+                        found.append(code)
         try:
             params = json.loads(row.params_json or "[]")
         except json.JSONDecodeError:
@@ -1480,8 +1498,16 @@ def _factor_code_from_hedge_outbox(db: Session, hedge_id: str) -> str | None:
         if isinstance(params, list):
             for item in reversed(params):
                 if isinstance(item, str) and item.strip().upper().startswith("GH") and len(item.strip()) >= 20:
-                    return item.strip()
-    return None
+                    code = item.strip()
+                    if code not in found:
+                        found.append(code)
+                    break
+    return found
+
+
+def _factor_code_from_hedge_outbox(db: Session, hedge_id: str) -> str | None:
+    codes = _factor_codes_from_hedge_outbox(db, hedge_id)
+    return codes[0] if codes else None
 
 
 def resolve_hedge_factor_code(db: Session, hedge) -> str | None:
@@ -1498,6 +1524,29 @@ def resolve_hedge_factor_code(db: Session, hedge) -> str | None:
     return None
 
 
+def resolve_hedge_factor_codes(db: Session, hedge) -> list[str]:
+    """All plausible Factor_Code spellings for voiding a hedge sanad."""
+    hid = str(getattr(hedge, "id", "") or "")
+    codes: list[str] = []
+    row_code = (getattr(hedge, "tahesab_factor_code", None) or "").strip()
+    if row_code:
+        codes.append(row_code)
+    for code in _factor_codes_from_hedge_outbox(db, hid) if hid else []:
+        if code not in codes:
+            codes.append(code)
+    if hid:
+        det = _factor_code_for_hedge(hid)
+        if det not in codes:
+            codes.append(det)
+    # Expand case variants while preserving preference order.
+    expanded: list[str] = []
+    for code in codes:
+        for variant in _factor_code_variants(code):
+            if variant not in expanded:
+                expanded.append(variant)
+    return expanded
+
+
 def void_hedge_in_tahesab(db: Session, hedge) -> dict[str, Any]:
     """Cancel unsent create jobs and queue DoDeleteSanad for the dealer factor.
 
@@ -1507,20 +1556,76 @@ def void_hedge_in_tahesab(db: Session, hedge) -> dict[str, Any]:
     """
     hid = str(getattr(hedge, "id", "") or "")
     cancelled = cancel_pending_hedge_create_jobs(db, hid) if hid else 0
-    factor = resolve_hedge_factor_code(db, hedge)
-    deleted = delete_sanad(db, factor, ref_id=hid or None) if factor else None
+    factors = resolve_hedge_factor_codes(db, hedge)
+    deleted_code = None
+    # Queue the primary spelling; bridge dedupes identical pending deletes per ref.
+    if factors:
+        deleted_code = delete_sanad(db, factors[0], ref_id=hid or None)
+        # If primary already claimed/done under another casing, still queue alts
+        # with a distinct ref suffix so Tahesab gets every spelling once.
+        for alt in factors[1:]:
+            alt_ref = f"{hid}:alt" if hid else None
+            delete_sanad(db, alt, ref_id=alt_ref)
     logger.info(
-        "[tahesab] void hedge %s cancelled=%s factor=%s delete_queued=%s",
+        "[tahesab] void hedge %s cancelled=%s factors=%s delete_queued=%s",
         hid,
         cancelled,
-        factor or "-",
-        bool(deleted),
+        factors[:3] or "-",
+        bool(deleted_code),
     )
     return {
         "cancelled_jobs": cancelled,
-        "factor_code": factor or None,
-        "delete_queued": bool(deleted),
+        "factor_code": factors[0] if factors else None,
+        "factor_codes": factors,
+        "delete_queued": bool(deleted_code),
     }
+
+
+def enqueue_orphan_hedge_deletes(db: Session, *, limit: int = 40) -> int:
+    """Queue DoDeleteSanad for hedge creates whose ExpertHedge row is already gone."""
+    from app.models_db import ExpertHedge, TahesabOutbox
+
+    if not is_configured():
+        return 0
+    live_ids = {str(r[0]) for r in db.query(ExpertHedge.id).all()}
+    creates = (
+        db.query(TahesabOutbox)
+        .filter(
+            TahesabOutbox.ref_type == "hedge",
+            TahesabOutbox.method == "DoNewSanadBuySaleGOLD",
+            TahesabOutbox.status == "done",
+        )
+        .order_by(TahesabOutbox.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    queued = 0
+    for job in creates:
+        hid = str(job.ref_id or "")
+        if not hid or hid in live_ids:
+            continue
+        existing = (
+            db.query(TahesabOutbox)
+            .filter(
+                TahesabOutbox.method == "DoDeleteSanad",
+                TahesabOutbox.ref_id.in_((hid, f"{hid}:alt")),
+                TahesabOutbox.status.in_(("pending", "claimed", "done")),
+            )
+            .first()
+        )
+        if existing:
+            continue
+        codes = _factor_codes_from_hedge_outbox(db, hid)
+        if not codes:
+            codes = [_factor_code_for_hedge(hid)]
+        if delete_sanad(db, codes[0], ref_id=hid):
+            queued += 1
+            for alt in _factor_code_variants(codes[0])[1:]:
+                delete_sanad(db, alt, ref_id=f"{hid}:alt")
+    if queued:
+        db.flush()
+        logger.info("[tahesab] queued %s orphan hedge DoDeleteSanad job(s)", queued)
+    return queued
 
 
 def enqueue_method(

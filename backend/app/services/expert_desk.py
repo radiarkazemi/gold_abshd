@@ -42,6 +42,7 @@ from app.services.orders import (
 from app.services import tahesab
 
 TEHRAN_TZ = ZoneInfo("Asia/Tehran")
+_last_orphan_void_at: datetime | None = None
 
 
 def list_dealers(
@@ -311,6 +312,17 @@ def get_desk(db: Session) -> dict:
         tahesab.deactivate_manual_abshode_sellers(db)
     except Exception:
         logger.exception("[expert] deactivate manual آبشده‌فروش failed")
+    # Re-queue DoDeleteSanad for hedges removed from the app before void shipped.
+    global _last_orphan_void_at
+    now = datetime.utcnow()
+    if _last_orphan_void_at is None or (now - _last_orphan_void_at).total_seconds() >= 120:
+        try:
+            n = tahesab.enqueue_orphan_hedge_deletes(db)
+            if n:
+                db.commit()
+            _last_orphan_void_at = now
+        except Exception:
+            logger.exception("[expert] orphan hedge void sweep failed")
 
     return {
         "buy_orders": pending_buy,
@@ -467,10 +479,26 @@ def delete_hedge(db: Session, hedge_id: str) -> None:
     if not row:
         raise HTTPException(status_code=404, detail="تراکنش پیدا نشد")
     # Void the dealer sanad in Tahesab (or cancel a still-queued create).
+    # Do not drop the local row if a known Factor_Code failed to queue — otherwise
+    # the sanad stays on the آبشده‌فروش card with no way to retry from the report.
     try:
-        tahesab.void_hedge_in_tahesab(db, row)
-    except Exception:
-        logger.exception("[expert] Tahesab void failed for hedge %s — deleting locally anyway", hedge_id)
+        voided = tahesab.void_hedge_in_tahesab(db, row)
+    except Exception as exc:
+        logger.exception("[expert] Tahesab void failed for hedge %s", hedge_id)
+        raise HTTPException(
+            status_code=502,
+            detail="حذف از ته‌حساب ناموفق بود — عامل ویندوز/API را بررسی کنید و دوباره تلاش کنید",
+        ) from exc
+    if (
+        tahesab.is_configured()
+        and voided.get("factor_code")
+        and not voided.get("delete_queued")
+        and not voided.get("cancelled_jobs")
+    ):
+        raise HTTPException(
+            status_code=502,
+            detail="حذف سند ته‌حساب در صف قرار نگرفت — عامل پل ته‌حساب را روشن کنید",
+        )
     db.delete(row)
     db.commit()
 
