@@ -69,7 +69,11 @@ export default function ExpertTehranLedger({
   }, [page, pageCount]);
 
   if (ledger.length === 0) {
-    return <p className="expert-col__empty">{emptyText || "ردیفی برای این روز نیست"}</p>;
+    return (
+      <div className="expert-empty expert-empty--inline">
+        <strong>{emptyText || "ردیفی برای این روز نیست"}</strong>
+      </div>
+    );
   }
 
   return (
