@@ -4,9 +4,16 @@ function normalizeMinus(value) {
   return String(value ?? "").replace(/[−–—]/g, "-");
 }
 
+// fa-IR / Arabic keyboards often insert Eastern digits; \d only matches ASCII.
+function toAsciiDigits(value) {
+  return String(value ?? "")
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+}
+
 function formatDisplay(raw) {
   if (raw === "" || raw == null) return "";
-  const s = normalizeMinus(raw).trim();
+  const s = normalizeMinus(toAsciiDigits(raw)).trim();
   if (s === "-") return "-";
   const negative = s.startsWith("-");
   const cleaned = s.replace(/^-/, "");
@@ -19,12 +26,12 @@ function formatDisplay(raw) {
 }
 
 function stripToRaw(display, allowNegative) {
-  let s = normalizeMinus(display).trim();
-  // Commas are thousand separators from formatDisplay (and user paste).
+  let s = normalizeMinus(toAsciiDigits(display)).trim();
+  // Commas / Persian thousands (٬) are separators from formatDisplay (and paste).
   // Never treat them as decimals here — that breaks toman amounts like
   // "2,167,000" mid-typing into "2.167000". Order weight fields that need
   // iPhone decimal-comma handling do it outside this component.
-  s = s.replace(/,/g, "");
+  s = s.replace(/[,٬]/g, "");
   s = s.replace(/٫/g, ".");
   let negative = false;
   if (allowNegative) {
@@ -70,6 +77,7 @@ export default function FormattedNumberInput({
   required,
   disabled,
   allowNegative = false,
+  "aria-label": ariaLabel,
 }) {
   const [display, setDisplay] = useState(formatDisplay(value));
 
@@ -103,6 +111,7 @@ export default function FormattedNumberInput({
       required={required}
       disabled={disabled}
       dir="ltr"
+      aria-label={ariaLabel}
     />
   );
 
