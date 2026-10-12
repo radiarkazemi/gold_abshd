@@ -462,10 +462,12 @@ function UserDetail({ userId, onClose, onChanged }) {
                 {(() => {
                   const goldStatus = formatGoldStatus(detail.gold_balance);
                   return (
-                    <span className={`balance-card__value cash-status ${goldStatus.className}`}>
+                    <span className="balance-card__value cash-status">
                       {goldStatus.amount}
                       <span className="balance-card__unit"> گرم ۱۸</span>
-                      {goldStatus.label && <span className="cash-status__label">{goldStatus.label}</span>}
+                      {goldStatus.label && (
+                        <span className={`cash-status__label ${goldStatus.className}`}>{goldStatus.label}</span>
+                      )}
                     </span>
                   );
                 })()}
@@ -476,10 +478,10 @@ function UserDetail({ userId, onClose, onChanged }) {
                 {(() => {
                   const status = formatCashStatus(detail.cash_balance);
                   return (
-                    <span className={`balance-card__value cash-status ${status.className}`}>
+                    <span className="balance-card__value cash-status">
                       {status.amount}
                       <span className="balance-card__unit"> تومان</span>
-                      <span className="cash-status__label">{status.label}</span>
+                      <span className={`cash-status__label ${status.className}`}>{status.label}</span>
                     </span>
                   );
                 })()}

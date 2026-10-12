@@ -1,11 +1,9 @@
 // Cash balance formatting shared between the admin panel and the user's
 // own account view.
 //
-// Convention (as specified): negative balance = بدهکار (customer owes
-// the shop) -> shown GREEN. Positive balance = بستانکار (shop owes the
-// customer) -> shown RED. This is intentionally the reverse of the
-// "debt=red" convention you might expect from general accounting -
-// it's what was explicitly requested.
+// Negative balance = بدهکار (customer owes the shop) -> label RED.
+// Positive balance = بستانکار (shop owes the customer) -> label GREEN.
+// Amount numbers stay blue in the UI; only the status word is colored.
 
 export function formatCashStatus(cashBalance) {
   const amount = Math.abs(Math.round(cashBalance));
@@ -20,10 +18,7 @@ export function formatCashStatus(cashBalance) {
   return { label: "تسویه", amount: "۰", className: "cash-status--settled" };
 }
 
-// Same بدهکار / بستانکار concept applied to gold weight, mirroring
-// formatCashStatus exactly: negative = بدهکار (green), positive =
-// بستانکار (red), zero = تسویه. (See the note above formatCashStatus
-// for why debtor is green and creditor is red here.)
+// Same بدهکار / بستانکار labels for gold weight (بدهکار red, بستانکار green).
 export function formatGoldStatus(goldBalance) {
   const amount = Math.abs(goldBalance).toLocaleString("en-US", { maximumFractionDigits: 3 });
 

@@ -52,24 +52,28 @@ export default function RefreshBar({ onRefresh, refreshSignal }) {
         <div className="refresh-bar__balances">
           <div className="refresh-bar__balance">
             <span className="refresh-bar__balance-label">مانده طلا</span>
-            <span className={`refresh-bar__balance-value ${goldStatus ? goldStatus.className : ""}`}>
+            <span className="refresh-bar__balance-value">
               {goldStatus ? goldStatus.amount : "—"}
-              <span className="refresh-bar__balance-unit">
-                {" "}
-                گرم ۱۸{goldStatus?.label ? ` · ${goldStatus.label}` : ""}
-              </span>
+              <span className="refresh-bar__balance-unit"> گرم ۱۸</span>
             </span>
+            {goldStatus?.label && (
+              <span className={`refresh-bar__balance-status ${goldStatus.className}`}>
+                {goldStatus.label}
+              </span>
+            )}
           </div>
           <div className="refresh-bar__balance-divider" />
           <div className="refresh-bar__balance">
             <span className="refresh-bar__balance-label">مانده نقدی</span>
-            <span className={`refresh-bar__balance-value ${cashStatus ? cashStatus.className : ""}`}>
+            <span className="refresh-bar__balance-value">
               {cashStatus ? cashStatus.amount : "—"}
-              <span className="refresh-bar__balance-unit">
-                {" "}
-                تومان{cashStatus?.label ? ` · ${cashStatus.label}` : ""}
-              </span>
+              <span className="refresh-bar__balance-unit"> تومان</span>
             </span>
+            {cashStatus?.label && (
+              <span className={`refresh-bar__balance-status ${cashStatus.className}`}>
+                {cashStatus.label}
+              </span>
+            )}
           </div>
         </div>
         <span className="refresh-bar__time">

@@ -67,7 +67,7 @@
   font-family: var(--font-display);
   font-size: clamp(16px, 4.5vw, 22px);
   font-weight: 600;
-  color: var(--gold-bright);
+  color: var(--amount-blue);
   font-variant-numeric: tabular-nums;
   display: flex;
   flex-wrap: wrap;
@@ -253,11 +253,11 @@
 }
 
 .cash-status--debtor {
-  color: var(--buy-bright);
+  color: var(--sell-bright);
 }
 
 .cash-status--creditor {
-  color: var(--sell-bright);
+  color: var(--buy-bright);
 }
 
 .cash-status--settled {
@@ -265,8 +265,25 @@
 }
 
 .cash-status__label {
-  font-size: 11px;
+  flex-basis: 100%;
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 700;
   font-family: var(--font-fa);
+  line-height: 1.2;
+  text-align: center;
+}
+
+.cash-status__label.cash-status--debtor {
+  color: var(--sell-bright);
+}
+
+.cash-status__label.cash-status--creditor {
+  color: var(--buy-bright);
+}
+
+.cash-status__label.cash-status--settled {
+  color: var(--text-faint);
 }
 
 .date-filter {

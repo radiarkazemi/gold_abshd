@@ -3,10 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { fetchMyBalance } from "../api";
 import { formatCashStatus, formatGoldStatus } from "../utils/balanceFormat";
 
-function fa(n, opts) {
-  return Number(n).toLocaleString("en-US", opts);
-}
-
 export default function BalanceStrip({ refreshSignal }) {
   const [balance, setBalance] = useState(null);
   const navigate = useNavigate();
@@ -39,24 +35,24 @@ export default function BalanceStrip({ refreshSignal }) {
     <button className="balance-strip" onClick={() => navigate("/balance")}>
       <div className="balance-strip__item">
         <span className="balance-strip__label">موجودی طلا</span>
-        <span className={`balance-strip__value ${goldStatus ? goldStatus.className : ""}`}>
+        <span className="balance-strip__value">
           {goldStatus ? goldStatus.amount : "—"}
-          <span className="balance-strip__unit">
-            {" "}
-            گرم ۱۸{goldStatus?.label ? ` · ${goldStatus.label}` : ""}
-          </span>
+          <span className="balance-strip__unit"> گرم ۱۸</span>
         </span>
+        {goldStatus?.label && (
+          <span className={`balance-strip__status ${goldStatus.className}`}>{goldStatus.label}</span>
+        )}
       </div>
       <div className="balance-strip__divider" />
       <div className="balance-strip__item">
         <span className="balance-strip__label">وضعیت نقدی</span>
-        <span className={`balance-strip__value ${cashStatus ? cashStatus.className : ""}`}>
+        <span className="balance-strip__value">
           {cashStatus ? cashStatus.amount : "—"}
-          <span className="balance-strip__unit">
-            {" "}
-            تومان{cashStatus ? ` · ${cashStatus.label}` : ""}
-          </span>
+          <span className="balance-strip__unit"> تومان</span>
         </span>
+        {cashStatus?.label && (
+          <span className={`balance-strip__status ${cashStatus.className}`}>{cashStatus.label}</span>
+        )}
       </div>
       <span className="balance-strip__chevron">‹</span>
     </button>

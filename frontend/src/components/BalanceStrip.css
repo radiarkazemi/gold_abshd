@@ -34,22 +34,36 @@
   font-family: var(--font-display);
   font-size: 19px;
   font-weight: 600;
-  color: var(--gold-bright);
+  color: var(--amount-blue);
   font-variant-numeric: tabular-nums;
-}
-
-.balance-strip__value.cash-status--debtor {
-  color: var(--buy-bright);
-}
-
-.balance-strip__value.cash-status--creditor {
-  color: var(--sell-bright);
 }
 
 .balance-strip__unit {
   font-family: var(--font-fa);
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.balance-strip__status {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-fa);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.balance-strip__status.cash-status--debtor {
+  color: var(--sell-bright);
+}
+
+.balance-strip__status.cash-status--creditor {
+  color: var(--buy-bright);
+}
+
+.balance-strip__status.cash-status--settled {
+  color: var(--text-faint);
+  font-weight: 600;
 }
 
 .balance-strip__divider {

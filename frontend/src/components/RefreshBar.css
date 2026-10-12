@@ -54,17 +54,34 @@
   text-align: center;
 }
 
-.refresh-bar__balance-value.cash-status--debtor,
-.refresh-bar__balance-value.cash-status--creditor,
-.refresh-bar__balance-value.cash-status--settled {
-  color: var(--amount-blue);
-}
-
 .refresh-bar__balance-unit {
   font-family: var(--font-fa);
   font-size: 10px;
   font-weight: 500;
   color: var(--text-muted);
+}
+
+.refresh-bar__balance-status {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-fa);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+}
+
+.refresh-bar__balance-status.cash-status--debtor {
+  color: var(--sell-bright);
+}
+
+.refresh-bar__balance-status.cash-status--creditor {
+  color: var(--buy-bright);
+}
+
+.refresh-bar__balance-status.cash-status--settled {
+  color: var(--text-faint);
+  font-weight: 600;
 }
 
 .refresh-bar__balance-divider {
@@ -114,6 +131,10 @@
 
   .refresh-bar__balance-value {
     font-size: 13px;
+  }
+
+  .refresh-bar__balance-status {
+    font-size: 12px;
   }
 
   .refresh-bar__time {

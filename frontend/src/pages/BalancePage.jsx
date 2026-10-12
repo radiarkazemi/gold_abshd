@@ -61,10 +61,12 @@ export default function BalancePage() {
               (() => {
                 const gStatus = formatGoldStatus(balance.gold_balance);
                 return (
-                  <span className={`balance-card__value cash-status ${gStatus.className}`}>
+                  <span className="balance-card__value cash-status">
                     {gStatus.amount}
                     <span className="balance-card__unit"> گرم ۱۸</span>
-                    {gStatus.label && <span className="cash-status__label">{gStatus.label}</span>}
+                    {gStatus.label && (
+                      <span className={`cash-status__label ${gStatus.className}`}>{gStatus.label}</span>
+                    )}
                   </span>
                 );
               })()
@@ -79,10 +81,10 @@ export default function BalancePage() {
               (() => {
                 const status = formatCashStatus(balance.cash_balance);
                 return (
-                  <span className={`balance-card__value cash-status ${status.className}`}>
+                  <span className="balance-card__value cash-status">
                     {status.amount}
                     <span className="balance-card__unit"> تومان</span>
-                    <span className="cash-status__label">{status.label}</span>
+                    <span className={`cash-status__label ${status.className}`}>{status.label}</span>
                   </span>
                 );
               })()
