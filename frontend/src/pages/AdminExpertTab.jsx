@@ -13,6 +13,7 @@ import { orderGoldWeight, orderTotalMoney } from "../utils/orderCalc";
 import PendingCountdown from "../components/PendingCountdown";
 import ExpertTehranLedger from "../components/ExpertTehranLedger";
 import JalaliDateInput from "../components/JalaliDateInput";
+import FormattedNumberInput from "../components/FormattedNumberInput";
 import { formatTehranTime, tehranTodayKey, tehranYesterdayKey } from "../utils/tehranTime";
 import "./AdminExpertTab.css";
 
@@ -109,11 +110,9 @@ function DealerAssignInline({ order, dealers, busy, onAssign }) {
             onChange={(e) => setWeight(e.target.value)}
             placeholder="گرم"
           />
-          <input
-            type="number"
-            step="1"
+          <FormattedNumberInput
             value={price}
-            onChange={(e) => setPrice(e.target.value)}
+            onChange={setPrice}
             placeholder="فی مثقال تهران"
           />
           <button
@@ -844,12 +843,10 @@ export default function AdminExpertTab({ refreshSignal }) {
             <label>
               فی مثقال تهران
               <div className="expert-input-unit">
-                <input
-                  type="number"
-                  step="1"
-                  placeholder="فی مثقال تهران"
+                <FormattedNumberInput
+                  placeholder="۱۴٬۵۰۰٬۰۰۰"
                   value={freeHedge.price}
-                  onChange={(e) => setFreeHedge((f) => ({ ...f, price: e.target.value }))}
+                  onChange={(raw) => setFreeHedge((f) => ({ ...f, price: raw }))}
                   required
                   aria-label="فی مثقال تهران"
                 />
