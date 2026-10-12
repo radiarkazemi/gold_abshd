@@ -133,6 +133,10 @@
     font-size: 13px;
   }
 
+  .refresh-bar__balance-status {
+    font-size: 12px;
+  }
+
   .refresh-bar__time {
     font-size: 10px;
   }
