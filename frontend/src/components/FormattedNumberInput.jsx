@@ -11,6 +11,12 @@ function toAsciiDigits(value) {
     .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660));
 }
 
+// Use Arabic thousands separator (٬) — matches fa-IR UI and stays visible in
+// Vazirmatn. ASCII "," is still accepted on paste/strip. Prefer this over ","
+// because some mobile browsers with inputMode=decimal strip ASCII commas from
+// type=text controlled inputs even when we re-insert them.
+const THOUSANDS_SEP = "\u066C"; // ٬
+
 function formatDisplay(raw) {
   if (raw === "" || raw == null) return "";
   const s = normalizeMinus(toAsciiDigits(raw)).trim();
@@ -20,7 +26,7 @@ function formatDisplay(raw) {
   if (!cleaned) return negative ? "-" : "";
   const [intPart, ...decParts] = cleaned.split(".");
   const decPart = decParts.length ? decParts.join("") : undefined;
-  const groupedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const groupedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, THOUSANDS_SEP);
   const grouped = decPart !== undefined ? `${groupedInt}.${decPart}` : groupedInt;
   return negative ? `-${grouped}` : grouped;
 }
@@ -101,8 +107,10 @@ export default function FormattedNumberInput({
   const input = (
     <input
       type="text"
-      // "decimal" pads often omit "-" on mobile; use text when negatives matter.
-      inputMode={allowNegative ? "text" : "decimal"}
+      // Always "text": inputMode=decimal/numeric lets Chrome/Android strip
+      // thousand separators from the visible value of controlled inputs.
+      // We already filter to digits in handleChange.
+      inputMode="text"
       className={className}
       value={display}
       onChange={handleChange}
@@ -112,6 +120,8 @@ export default function FormattedNumberInput({
       disabled={disabled}
       dir="ltr"
       aria-label={ariaLabel}
+      autoComplete="off"
+      data-formatted-number="1"
     />
   );
 
