@@ -4,27 +4,36 @@ function normalizeMinus(value) {
   return String(value ?? "").replace(/[−–—]/g, "-");
 }
 
+// fa-IR / Arabic keyboards often insert Eastern digits; \d only matches ASCII.
+function toAsciiDigits(value) {
+  return String(value ?? "")
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+}
+
 function formatDisplay(raw) {
   if (raw === "" || raw == null) return "";
-  const s = normalizeMinus(raw).trim();
+  const s = normalizeMinus(toAsciiDigits(raw)).trim();
   if (s === "-") return "-";
   const negative = s.startsWith("-");
   const cleaned = s.replace(/^-/, "");
   if (!cleaned) return negative ? "-" : "";
   const [intPart, ...decParts] = cleaned.split(".");
   const decPart = decParts.length ? decParts.join("") : undefined;
+  // ASCII comma — clear "3-digit separator" in the admin panel. inputMode is
+  // forced to "text" below so mobile Chrome does not strip these commas.
   const groupedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const grouped = decPart !== undefined ? `${groupedInt}.${decPart}` : groupedInt;
   return negative ? `-${grouped}` : grouped;
 }
 
 function stripToRaw(display, allowNegative) {
-  let s = normalizeMinus(display).trim();
-  // Commas are thousand separators from formatDisplay (and user paste).
+  let s = normalizeMinus(toAsciiDigits(display)).trim();
+  // Commas / Persian thousands (٬) are separators from formatDisplay (and paste).
   // Never treat them as decimals here — that breaks toman amounts like
   // "2,167,000" mid-typing into "2.167000". Order weight fields that need
   // iPhone decimal-comma handling do it outside this component.
-  s = s.replace(/,/g, "");
+  s = s.replace(/[,٬]/g, "");
   s = s.replace(/٫/g, ".");
   let negative = false;
   if (allowNegative) {
@@ -70,6 +79,7 @@ export default function FormattedNumberInput({
   required,
   disabled,
   allowNegative = false,
+  "aria-label": ariaLabel,
 }) {
   const [display, setDisplay] = useState(formatDisplay(value));
 
@@ -93,8 +103,10 @@ export default function FormattedNumberInput({
   const input = (
     <input
       type="text"
-      // "decimal" pads often omit "-" on mobile; use text when negatives matter.
-      inputMode={allowNegative ? "text" : "decimal"}
+      // Always "text": inputMode=decimal/numeric lets Chrome/Android strip
+      // thousand separators from the visible value of controlled inputs.
+      // We already filter to digits in handleChange.
+      inputMode="text"
       className={className}
       value={display}
       onChange={handleChange}
@@ -103,6 +115,9 @@ export default function FormattedNumberInput({
       required={required}
       disabled={disabled}
       dir="ltr"
+      aria-label={ariaLabel}
+      autoComplete="off"
+      data-formatted-number="1"
     />
   );
 
