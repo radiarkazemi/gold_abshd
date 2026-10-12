@@ -11,12 +11,6 @@ function toAsciiDigits(value) {
     .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660));
 }
 
-// Use Arabic thousands separator (٬) — matches fa-IR UI and stays visible in
-// Vazirmatn. ASCII "," is still accepted on paste/strip. Prefer this over ","
-// because some mobile browsers with inputMode=decimal strip ASCII commas from
-// type=text controlled inputs even when we re-insert them.
-const THOUSANDS_SEP = "\u066C"; // ٬
-
 function formatDisplay(raw) {
   if (raw === "" || raw == null) return "";
   const s = normalizeMinus(toAsciiDigits(raw)).trim();
@@ -26,7 +20,9 @@ function formatDisplay(raw) {
   if (!cleaned) return negative ? "-" : "";
   const [intPart, ...decParts] = cleaned.split(".");
   const decPart = decParts.length ? decParts.join("") : undefined;
-  const groupedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, THOUSANDS_SEP);
+  // ASCII comma — clear "3-digit separator" in the admin panel. inputMode is
+  // forced to "text" below so mobile Chrome does not strip these commas.
+  const groupedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const grouped = decPart !== undefined ? `${groupedInt}.${decPart}` : groupedInt;
   return negative ? `-${grouped}` : grouped;
 }
