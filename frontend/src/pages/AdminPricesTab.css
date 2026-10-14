@@ -648,11 +648,11 @@
 }
 
 .price-desk__switch {
-  width: 36px;
+  width: 38px;
   height: 22px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--pd-ink) 22%, var(--pd-soft));
-  border: 1px solid color-mix(in srgb, var(--pd-ink) 18%, var(--pd-line));
+  background: #9aa193;
+  border: 1px solid #6f7668;
   padding: 2px;
   display: inline-flex;
   align-items: center;
@@ -661,12 +661,15 @@
 }
 
 .price-desk__switch.is-off {
-  background: color-mix(in srgb, var(--pd-ink) 28%, var(--pd-soft));
+  background: #8b9284;
+  border-color: #cfd4c6;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
 .price-desk__switch.is-on {
   background: var(--buy);
-  border-color: color-mix(in srgb, var(--buy) 55%, var(--pd-line));
+  border-color: color-mix(in srgb, var(--buy) 70%, #fff);
+  box-shadow: none;
 }
 
 .price-desk__switch::after {
@@ -675,22 +678,28 @@
   height: 16px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 3px color-mix(in srgb, #000 35%, transparent);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   transition: margin 0.15s ease;
 }
 
 .price-desk__switch.is-on::after {
-  margin-right: 14px;
+  margin-right: 16px;
 }
 
 .price-desk__switch:disabled {
-  opacity: 0.55;
+  opacity: 0.65;
   cursor: default;
 }
 
+.price-desk__switch:disabled.is-off {
+  background: #7e8578;
+  border-color: #d7dccf;
+}
+
 .price-desk__switch:disabled::after {
-  background: #f3f3f3;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--pd-ink) 20%, transparent);
+  background: #fff;
+  border-color: rgba(0, 0, 0, 0.2);
 }
 
 .price-desk__cardbottom {
@@ -1063,9 +1072,9 @@
   gap: 6px;
   padding: 6px 9px;
   border-radius: 8px;
-  border: 1px solid var(--pd-line);
-  background: var(--pd-soft);
-  color: var(--pd-muted);
+  border: 1px solid #b7bdae;
+  background: #e7eadf;
+  color: #3f463a;
   font-size: 11px;
   cursor: pointer;
   min-height: 34px;
@@ -1080,18 +1089,18 @@
 }
 
 .price-desk__radio-dot {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--pd-ink) 45%, var(--pd-line));
+  border: 2px solid #5f6758;
   background: #fff;
-  box-shadow: inset 0 0 0 2px var(--pd-soft);
+  box-shadow: inset 0 0 0 2px #e7eadf;
   flex: none;
 }
 
 .price-desk__radio.is-on {
-  border-color: color-mix(in srgb, var(--gold) 45%, var(--pd-line));
-  background: color-mix(in srgb, var(--gold) 12%, var(--pd-card));
+  border-color: color-mix(in srgb, var(--gold) 55%, #8a8058);
+  background: color-mix(in srgb, var(--gold) 18%, var(--pd-card));
   color: var(--pd-ink);
 }
 
@@ -1101,19 +1110,45 @@
   box-shadow: inset 0 0 0 3px #fff;
 }
 
+.price-desk__radio.is-off {
+  border-color: #c2c8b8;
+  background: #f2f4ec;
+  color: #2f362c;
+}
+
 .price-desk__radio.is-off .price-desk__radio-dot {
-  border-color: color-mix(in srgb, var(--pd-ink) 55%, var(--pd-line));
+  border-color: #4d5548;
   background: #fff;
 }
 
 .price-desk__radio.is-disabled {
-  opacity: 0.7;
+  opacity: 0.78;
   cursor: default;
 }
 
+.price-desk__radio.is-disabled.is-off {
+  background: #dfe3d6;
+  border-color: #aeb5a2;
+  color: #2f362c;
+}
+
 .price-desk__radio.is-disabled .price-desk__radio-dot {
-  border-color: color-mix(in srgb, var(--pd-ink) 40%, var(--pd-line));
-  background: color-mix(in srgb, #fff 70%, var(--pd-muted));
+  border-color: #4d5548;
+  background: #fff;
+}
+
+:root[data-theme="dark"] .price-desk__radio.is-off,
+:root:not([data-theme="light"]) .price-desk__radio.is-off {
+  background: color-mix(in srgb, #f2f4ec 18%, var(--pd-card));
+  border-color: color-mix(in srgb, #f2f4ec 42%, var(--pd-line));
+  color: color-mix(in srgb, #fff 82%, var(--pd-muted));
+}
+
+:root[data-theme="dark"] .price-desk__radio.is-off .price-desk__radio-dot,
+:root:not([data-theme="light"]) .price-desk__radio.is-off .price-desk__radio-dot {
+  border-color: #e6eadc;
+  background: #fff;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--pd-card) 70%, #000);
 }
 
 .price-desk__commission {
