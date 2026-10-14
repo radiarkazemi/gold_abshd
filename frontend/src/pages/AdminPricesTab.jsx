@@ -16,12 +16,20 @@ import {
   motaferagheToGram18,
   personalizePrice,
 } from "../utils/priceCommission";
+import {
+  MAIN_CASH_ITEM_ID,
+  UNPINNED_SORT_ORDER,
+  isMainCashCard,
+  isPinnedCard,
+  nextPinSortOrder,
+  sortPriceCards,
+} from "../utils/priceCardIds";
 import "./AdminPricesTab.css";
 
 const SPECIAL_MOTAFEREGHE_ID = MOTAFEREGHE_ITEM_ID;
 const SPECIAL_NAGHD_KARTKHAN_ID = NAGHD_KARTKHAN_ITEM_ID;
 /** Fallback only when a special card has no price_source_item_id set. */
-const SOURCE_MIRROR_ITEM_ID = 900000;
+const SOURCE_MIRROR_ITEM_ID = MAIN_CASH_ITEM_ID;
 
 function fa(n, opts) {
   if (n == null || Number.isNaN(Number(n))) return "—";
@@ -122,10 +130,12 @@ function adminDisplayQuotes(card) {
     );
     const gram18 = personalized?.gram18_sell_price ?? (baseBuy != null ? motaferagheToGram18(Number(baseBuy)) : null);
     return {
+      sourceBuy: baseBuy,
+      sourceSell: baseBuy,
       buy: null,
       sell: gram18,
       buyLabel: null,
-      sellLabel: "فروش · گرم ۱۸",
+      sellLabel: "فروش مشتری · گرم ۱۸",
       unitNote: roleName ? `با کارمزد «${roleName}» · پایه ÷ ۴٫۳۹` : "پایه کارت روزانه ÷ ۴٫۳۹",
       single: true,
     };
@@ -148,9 +158,11 @@ function adminDisplayQuotes(card) {
       personalized?.buy_price
       ?? (baseBuy != null ? Number(baseBuy) + NAGHD_KARTKHAN_MARKUP_TOMAN : null);
     return {
+      sourceBuy: baseBuy,
+      sourceSell: baseBuy,
       buy: mesghal,
       sell: null,
-      buyLabel: "خرید · مثقال ۱۷",
+      buyLabel: "خرید مشتری · مثقال ۱۷",
       sellLabel: null,
       unitNote: roleName
         ? `با کارمزد «${roleName}» · پایه + ${faMoney(NAGHD_KARTKHAN_MARKUP_TOMAN)}`
@@ -172,10 +184,12 @@ function adminDisplayQuotes(card) {
     commissionSell
   );
   return {
+    sourceBuy: baseBuy,
+    sourceSell: baseSell,
     buy: personalized?.buy_price ?? baseBuy,
     sell: personalized?.sell_price ?? baseSell,
-    buyLabel: "خرید",
-    sellLabel: "فروش",
+    buyLabel: "خرید مشتری",
+    sellLabel: "فروش مشتری",
     unitNote: roleName ? `با کارمزد «${roleName}»` : null,
     single: false,
   };
@@ -692,7 +706,7 @@ export default function AdminPricesTab() {
   const filtered = useMemo(() => {
     const list = cards || [];
     const q = search.trim();
-    return list.filter((c) => {
+    const matched = list.filter((c) => {
       const blocked = isBlocked(c) && !c.override_source_restriction;
       if (filter === "gold" && cardTypeKey(c) !== "gold") return false;
       if (filter === "coin" && cardTypeKey(c) !== "coin") return false;
@@ -702,7 +716,13 @@ export default function AdminPricesTab() {
       const hay = `${c.display_name || ""} ${sourceLabel(c)} ${c.goldbridge_item_id}`;
       return hay.includes(q);
     });
+    return sortPriceCards(matched);
   }, [cards, filter, search]);
+
+  const mainCashCard = useMemo(
+    () => (cards || []).find((c) => isMainCashCard(c)) || null,
+    [cards]
+  );
 
   const stats = useMemo(() => {
     const list = cards || [];
@@ -710,6 +730,7 @@ export default function AdminPricesTab() {
       total: list.length,
       visible: list.filter((c) => c.is_enabled).length,
       review: list.filter((c) => isBlocked(c) && !c.override_source_restriction).length,
+      pinned: list.filter((c) => isPinnedCard(c)).length,
     };
   }, [cards]);
 
@@ -723,6 +744,28 @@ export default function AdminPricesTab() {
       showToast("تنظیمات کارت ذخیره شد");
     } catch (e) {
       alert(e.message || "خطا در تغییر وضعیت نمایش");
+    } finally {
+      busyIdRef.current = null;
+      setBusyId(null);
+    }
+  }
+
+  async function togglePin(card) {
+    if (isMainCashCard(card)) {
+      showToast("کارت اصلی روز همیشه اول فهرست است");
+      return;
+    }
+    busyIdRef.current = card.goldbridge_item_id;
+    setBusyId(card.goldbridge_item_id);
+    const pinned = isPinnedCard(card);
+    const sortOrder = pinned ? UNPINNED_SORT_ORDER : nextPinSortOrder(cards || []);
+    try {
+      const updated = await setPriceCardEnabled(card.goldbridge_item_id, !!card.is_enabled, { sortOrder });
+      setCards(syncMirroredCardQuotes(updated));
+      fetchGenRef.current += 1;
+      showToast(pinned ? "پین کارت برداشته شد" : "کارت پین شد");
+    } catch (e) {
+      alert(e.message || "خطا در پین کردن کارت");
     } finally {
       busyIdRef.current = null;
       setBusyId(null);
@@ -825,9 +868,19 @@ export default function AdminPricesTab() {
     }
   }
 
-  function openDrawer(card) {
+  function openDrawer(card, tab) {
     setDrawerCardId(card.goldbridge_item_id);
-    setDrawerTab("price");
+    // Specials: jump to commission groups — their main admin job is fee tuning.
+    if (tab) {
+      setDrawerTab(tab);
+    } else if (
+      Number(card.goldbridge_item_id) === SPECIAL_MOTAFEREGHE_ID
+      || Number(card.goldbridge_item_id) === SPECIAL_NAGHD_KARTKHAN_ID
+    ) {
+      setDrawerTab("groups");
+    } else {
+      setDrawerTab("price");
+    }
   }
 
   function closeDrawer() {
@@ -849,7 +902,7 @@ export default function AdminPricesTab() {
       <div className="price-desk__title">
         <div>
           <h1>مرکز قیمت</h1>
-          <p>همه منابع قیمت، با کنترل دقیق و یک نگاه روشن.</p>
+          <p>کارت اصلی روز اول فهرست است؛ پین و کمیسیون هر کارت از تنظیمات.</p>
         </div>
         <button
           type="button"
@@ -859,9 +912,35 @@ export default function AdminPricesTab() {
             showToast("قیمت‌ها بازخوانی شدند");
           }}
         >
-          ↻ &nbsp; بازخوانی
+          ↻ بازخوانی
         </button>
       </div>
+
+      {mainCashCard && (
+        <div className="price-desk__mainstrip">
+          <div className="price-desk__mainstrip-meta">
+            <strong>{mainCashCard.display_name || "کارت اصلی روز"}</strong>
+            <span>قیمت منبع آبشده · کارت اصلی (id:{MAIN_CASH_ITEM_ID})</span>
+          </div>
+          <div className="price-desk__mainstrip-prices">
+            <div className="is-buy">
+              <span>خرید منبع</span>
+              <b>{faMoney(mainCashCard.buy)}</b>
+            </div>
+            <div className="is-sell">
+              <span>فروش منبع</span>
+              <b>{faMoney(mainCashCard.sell)}</b>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="price-desk__btn"
+            onClick={() => openDrawer(mainCashCard, "price")}
+          >
+            تنظیم کارت اصلی
+          </button>
+        </div>
+      )}
 
       <div className="price-desk__overview">
         <button type="button" className="price-desk__stat" onClick={() => setFilter("all")} aria-label="همه کارت‌های قیمت">
@@ -988,14 +1067,40 @@ export default function AdminPricesTab() {
           const badge = statusBadge(c);
           const blocked = isBlocked(c) && !c.override_source_restriction;
           const quotes = adminDisplayQuotes(c);
+          const pinned = isPinnedCard(c);
+          const isMain = isMainCashCard(c);
+          const isSpecial =
+            Number(c.goldbridge_item_id) === SPECIAL_MOTAFEREGHE_ID
+            || Number(c.goldbridge_item_id) === SPECIAL_NAGHD_KARTKHAN_ID;
           return (
-            <article key={c.goldbridge_item_id} className="price-desk__card">
+            <article
+              key={c.goldbridge_item_id}
+              className={`price-desk__card ${isMain ? "is-main" : ""} ${pinned ? "is-pinned" : ""}`}
+            >
               <div className="price-desk__cardhead">
                 <div>
-                  <h2>{c.display_name}</h2>
+                  <h2>
+                    {c.display_name}
+                    {isMain && <em className="price-desk__tag">اصلی روز</em>}
+                    {pinned && <em className="price-desk__tag">پین</em>}
+                  </h2>
                   <span className="price-desk__sub">{cardSubtitle(c)}</span>
                 </div>
-                <div className="price-desk__symbol">{cardTypeKey(c) === "gold" ? "◇" : "◉"}</div>
+                <div className="price-desk__head-actions">
+                  {!isMain && (
+                    <button
+                      type="button"
+                      className={`price-desk__pin ${pinned ? "is-on" : ""}`}
+                      disabled={busy}
+                      aria-pressed={pinned}
+                      aria-label={pinned ? `برداشتن پین ${c.display_name}` : `پین ${c.display_name}`}
+                      onClick={() => togglePin(c)}
+                    >
+                      {pinned ? "برداشتن پین" : "پین"}
+                    </button>
+                  )}
+                  <div className="price-desk__symbol">{cardTypeKey(c) === "gold" ? "◇" : "◉"}</div>
+                </div>
               </div>
 
               <div className="price-desk__source">
@@ -1006,22 +1111,39 @@ export default function AdminPricesTab() {
                 <span className={`price-desk__badge ${badge.warn ? "is-warn" : ""}`}>{badge.label}</span>
               </div>
 
-              <div className={`price-desk__prices ${quotes.single ? "is-single" : ""}`}>
-                {quotes.buy != null && (
-                  <div className="price-desk__price">
-                    <span>{quotes.buyLabel || "خرید"}</span>
-                    <b>{faMoney(quotes.buy)}</b>
-                    <small>تومان</small>
-                  </div>
-                )}
-                {quotes.sell != null && (
-                  <div className="price-desk__price price-desk__price--sell">
-                    <span>{quotes.sellLabel || "فروش"}</span>
-                    <b>{faMoney(quotes.sell)}</b>
-                    <small>تومان</small>
-                  </div>
-                )}
+              <div className="price-desk__pricelabel">قیمت منبع</div>
+              <div className="price-desk__prices price-desk__prices--source">
+                <div className="price-desk__price">
+                  <span>خرید</span>
+                  <b>{faMoney(quotes.sourceBuy)}</b>
+                  <small>تومان</small>
+                </div>
+                <div className="price-desk__price price-desk__price--sell">
+                  <span>فروش</span>
+                  <b>{faMoney(quotes.sourceSell)}</b>
+                  <small>تومان</small>
+                </div>
               </div>
+
+              {(quotes.buy != null || quotes.sell != null) && (
+                <>
+                  <div className="price-desk__pricelabel">قیمت مشتری</div>
+                  <div className={`price-desk__customer ${quotes.single ? "is-single" : ""}`}>
+                    {quotes.buy != null && (
+                      <div>
+                        <span>{quotes.buyLabel || "خرید مشتری"}</span>
+                        <b>{faMoney(quotes.buy)}</b>
+                      </div>
+                    )}
+                    {quotes.sell != null && (
+                      <div>
+                        <span>{quotes.sellLabel || "فروش مشتری"}</span>
+                        <b>{faMoney(quotes.sell)}</b>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
               {quotes.unitNote && (
                 <div className="price-desk__quote-note">{quotes.unitNote}</div>
               )}
@@ -1058,14 +1180,25 @@ export default function AdminPricesTab() {
 
               <div className="price-desk__cardbottom">
                 <span>{footerStatus(c)}</span>
-                <button type="button" className="price-desk__edit" onClick={() => openDrawer(c)}>
-                  تنظیمات قیمت <span>←</span>
-                </button>
+                <div className="price-desk__cardbottom-actions">
+                  {isSpecial && (
+                    <button
+                      type="button"
+                      className="price-desk__edit"
+                      onClick={() => openDrawer(c, "groups")}
+                    >
+                      کمیسیون
+                    </button>
+                  )}
+                  <button type="button" className="price-desk__edit" onClick={() => openDrawer(c)}>
+                    تنظیمات <span>←</span>
+                  </button>
+                </div>
               </div>
 
               {blocked && (c.orderable_buy || c.orderable_sell) && (
-                <div className="price-desk__hint" style={{ margin: "0 16px 14px" }}>
-                  منبع خرید/فروش را محدود کرده؛ برای اعمال تنظیمات شما، «نادیده گرفتن محدودیت منبع» را در تنظیمات قیمت روشن کنید.
+                <div className="price-desk__hint price-desk__hint--inline">
+                  منبع خرید/فروش را محدود کرده؛ در تنظیمات «نادیده گرفتن محدودیت منبع» را روشن کنید.
                 </div>
               )}
             </article>
@@ -1102,34 +1235,50 @@ export default function AdminPricesTab() {
                 const srcId = drawerCard.price_source_item_id || SOURCE_MIRROR_ITEM_ID;
                 return (
               <div className="price-desk__panel">
-                <div className="price-desk__source" style={{ padding: 0 }}>
+                <div className="price-desk__source price-desk__source--flush">
                   <span>منبع قیمت: {sourceLabel(drawerCard)}</span>
                   <span className={`price-desk__badge ${isBlocked(drawerCard) ? "is-warn" : ""}`}>
                     {isBlocked(drawerCard) ? "محدودیت منبع" : "منبع فعال"}
                   </span>
                 </div>
-                <div className={`price-desk__two ${dq.single ? "is-single" : ""}`} style={{ marginTop: 15 }}>
-                  {dq.buy != null && (
-                    <div>
-                      <span className="price-desk__sub">{dq.buyLabel || "خرید"}</span>
-                      <h3 className="price-desk__quote price-desk__quote--buy">{faMoney(dq.buy)}</h3>
-                    </div>
-                  )}
-                  {dq.sell != null && (
-                    <div>
-                      <span className="price-desk__sub">{dq.sellLabel || "فروش"}</span>
-                      <h3 className="price-desk__quote price-desk__quote--sell">{faMoney(dq.sell)}</h3>
-                    </div>
-                  )}
+                <div className="price-desk__pricelabel">قیمت منبع</div>
+                <div className="price-desk__two">
+                  <div>
+                    <span className="price-desk__sub">خرید منبع</span>
+                    <h3 className="price-desk__quote price-desk__quote--buy">{faMoney(dq.sourceBuy)}</h3>
+                  </div>
+                  <div>
+                    <span className="price-desk__sub">فروش منبع</span>
+                    <h3 className="price-desk__quote price-desk__quote--sell">{faMoney(dq.sourceSell)}</h3>
+                  </div>
                 </div>
+                {(dq.buy != null || dq.sell != null) && (
+                  <>
+                    <div className="price-desk__pricelabel">قیمت مشتری</div>
+                    <div className={`price-desk__two ${dq.single ? "is-single" : ""}`}>
+                      {dq.buy != null && (
+                        <div>
+                          <span className="price-desk__sub">{dq.buyLabel || "خرید"}</span>
+                          <h3 className="price-desk__quote price-desk__quote--buy">{faMoney(dq.buy)}</h3>
+                        </div>
+                      )}
+                      {dq.sell != null && (
+                        <div>
+                          <span className="price-desk__sub">{dq.sellLabel || "فروش"}</span>
+                          <h3 className="price-desk__quote price-desk__quote--sell">{faMoney(dq.sell)}</h3>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
                 {isMirroredCard(drawerCard) && (
-                  <p className="price-desk__editor-note" style={{ marginTop: 10 }}>
-                    پایه خام از id:{srcId}: {faMoney(drawerCard.buy)} تومان
+                  <p className="price-desk__editor-note">
+                    پایه از کارت اصلی id:{srcId}: {faMoney(drawerCard.buy)} تومان
                     {dq.unitNote ? ` · ${dq.unitNote}` : ""}
                   </p>
                 )}
                 {!isMirroredCard(drawerCard) && dq.unitNote && (
-                  <p className="price-desk__editor-note" style={{ marginTop: 10 }}>{dq.unitNote}</p>
+                  <p className="price-desk__editor-note">{dq.unitNote}</p>
                 )}
               </div>
                 );

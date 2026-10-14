@@ -44,7 +44,8 @@ SPECIAL_MIRRORED_CARDS = (
         "price_label_mode": "gram18_only",
         "orderable_buy": False,
         "orderable_sell": True,
-        "sort_order": 100,
+        # After main daily (0) and user pins (1..50); کارتخوان before متفرقه.
+        "sort_order": 52,
     },
     {
         "goldbridge_item_id": SPECIAL_CARD_NAGHD_KARTKHAN_ID,
@@ -53,7 +54,7 @@ SPECIAL_MIRRORED_CARDS = (
         "price_label_mode": "mesghal17_only",
         "orderable_buy": True,
         "orderable_sell": False,
-        "sort_order": 101,
+        "sort_order": 51,
     },
 )
 
@@ -399,9 +400,12 @@ def ensure_special_mirrored_cards(db: Session | None = None) -> None:
             if card.use_manual_price:
                 card.use_manual_price = False
                 dirty = True
-            if card.sort_order is None or card.sort_order == 0:
-                card.sort_order = spec["sort_order"]
-                dirty = True
+            # Seed / migrate default specials ranks; leave intentional pin ranks alone.
+            legacy_special_sorts = {0, 50, 51, 52, 100, 101}
+            if card.sort_order is None or int(card.sort_order or 0) in legacy_special_sorts:
+                if int(card.sort_order or 0) != int(spec["sort_order"]):
+                    card.sort_order = spec["sort_order"]
+                    dirty = True
             found += 1
         if dirty:
             db.commit()
