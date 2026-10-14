@@ -9,27 +9,41 @@ import {
   setPriceCardRoleCommission,
 } from "../api";
 import FormattedNumberInput from "../components/FormattedNumberInput";
+import {
+  MOTAFEREGHE_ITEM_ID,
+  NAGHD_KARTKHAN_ITEM_ID,
+  NAGHD_KARTKHAN_MARKUP_TOMAN,
+  motaferagheToGram18,
+  personalizePrice,
+} from "../utils/priceCommission";
 import "./AdminPricesTab.css";
 
-const SPECIAL_MOTAFEREGHE_ID = 900001;
-const SPECIAL_NAGHD_KARTKHAN_ID = 900002;
-const SOURCE_MIRROR_ITEM_ID = 1;
+const SPECIAL_MOTAFEREGHE_ID = MOTAFEREGHE_ITEM_ID;
+const SPECIAL_NAGHD_KARTKHAN_ID = NAGHD_KARTKHAN_ITEM_ID;
+/** Fallback only when a special card has no price_source_item_id set. */
+const SOURCE_MIRROR_ITEM_ID = 900000;
 
 function fa(n, opts) {
-  if (n == null) return "—";
+  if (n == null || Number.isNaN(Number(n))) return "—";
   return Number(n).toLocaleString("fa-IR", opts);
+}
+
+function faMoney(n) {
+  if (n == null || Number.isNaN(Number(n))) return "—";
+  return Math.round(Number(n)).toLocaleString("fa-IR");
 }
 
 /** Visible quote origin for every admin card. */
 function quoteStatus(card) {
   const isMirrored = !!card.price_source_item_id || card.price_source === "mirrored";
   const missing = card.price_source === "unavailable" || (card.buy == null && card.sell == null);
+  const srcId = card.price_source_item_id || SOURCE_MIRROR_ITEM_ID;
   if (missing) {
     return { kind: "unavailable", label: "ناموجود" };
   }
   if (isMirrored) {
     if (card.mirrored_source_mode === "manual") {
-      return { kind: "manual", label: "دستی (از id:1)" };
+      return { kind: "manual", label: `دستی (از id:${srcId})` };
     }
     return { kind: "source", label: "از منبع" };
   }
@@ -39,17 +53,23 @@ function quoteStatus(card) {
   return { kind: "source", label: "از منبع" };
 }
 
+/**
+ * Keep متفرقه / نقد کارتخوان locked to their configured source card's BUY
+ * (normally main daily نقدی = 900000), not hardcoded id:1.
+ */
 function syncMirroredCardQuotes(cards) {
   if (!Array.isArray(cards)) return cards;
-  const source = cards.find((c) => Number(c.goldbridge_item_id) === SOURCE_MIRROR_ITEM_ID);
-  if (!source) return cards;
-  const buy = Number(source.buy);
-  if (!(buy > 0)) return cards;
-  const mirroredMode =
-    source.use_manual_price || source.price_source === "manual" ? "manual" : "live";
+  const byId = new Map(cards.map((c) => [Number(c.goldbridge_item_id), c]));
   return cards.map((c) => {
     const id = Number(c.goldbridge_item_id);
     if (id !== SPECIAL_MOTAFEREGHE_ID && id !== SPECIAL_NAGHD_KARTKHAN_ID) return c;
+    const sourceId = Number(c.price_source_item_id) || SOURCE_MIRROR_ITEM_ID;
+    const source = byId.get(sourceId);
+    if (!source) return c;
+    const buy = Number(source.buy);
+    if (!(buy > 0)) return c;
+    const mirroredMode =
+      source.use_manual_price || source.price_source === "manual" ? "manual" : "live";
     if (Number(c.buy) === buy && Number(c.sell) === buy && c.mirrored_source_mode === mirroredMode) {
       return c;
     }
@@ -61,6 +81,104 @@ function syncMirroredCardQuotes(cards) {
       mirrored_source_mode: mirroredMode,
     };
   });
+}
+
+/** Prefer «خودمون» as the admin preview role; else first configured role. */
+function previewRoleCommission(card) {
+  const rows = card.role_commissions || [];
+  if (!rows.length) return null;
+  return rows.find((r) => r.role_name === "خودمون") || rows[0];
+}
+
+/**
+ * Customer-facing quote the admin should see on the card face.
+ * - Normal: source buy/sell with preview-role commission (+buy / −sell)
+ * - متفرقه: (base + commission) / 4.39 as گرم۱۸ (sell-only)
+ * - نقد کارتخوان: base + commission + 100٬۰۰۰ as مثقال۱۷ (buy-only)
+ * Raw card.buy/card.sell stay the mirrored mesghal base for editors/API.
+ */
+function adminDisplayQuotes(card) {
+  const id = Number(card.goldbridge_item_id);
+  const baseBuy = card.buy;
+  const baseSell = card.sell;
+  const role = previewRoleCommission(card);
+  const commissionType = role?.commission_type || "fixed";
+  const commissionBuy = role?.commission_buy_value ?? role?.commission_value ?? 0;
+  const commissionSell = role?.commission_sell_value ?? role?.commission_value ?? 0;
+  const roleName = role?.role_name || null;
+
+  if (id === SPECIAL_MOTAFEREGHE_ID) {
+    const personalized = personalizePrice(
+      {
+        goldbridge_item_id: id,
+        pricing_mode: "motaferaghe_sell",
+        buy_price: baseBuy,
+        sell_price: baseBuy,
+        unit: "gram18",
+      },
+      commissionType,
+      commissionBuy,
+      commissionSell
+    );
+    const gram18 = personalized?.gram18_sell_price ?? (baseBuy != null ? motaferagheToGram18(Number(baseBuy)) : null);
+    return {
+      buy: null,
+      sell: gram18,
+      buyLabel: null,
+      sellLabel: "فروش · گرم ۱۸",
+      unitNote: roleName ? `با کارمزد «${roleName}» · پایه ÷ ۴٫۳۹` : "پایه کارت روزانه ÷ ۴٫۳۹",
+      single: true,
+    };
+  }
+
+  if (id === SPECIAL_NAGHD_KARTKHAN_ID) {
+    const personalized = personalizePrice(
+      {
+        goldbridge_item_id: id,
+        pricing_mode: "naghd_kartkhan_buy",
+        buy_price: baseBuy,
+        sell_price: baseBuy,
+        unit: "gram18",
+      },
+      commissionType,
+      commissionBuy,
+      commissionSell
+    );
+    const mesghal =
+      personalized?.buy_price
+      ?? (baseBuy != null ? Number(baseBuy) + NAGHD_KARTKHAN_MARKUP_TOMAN : null);
+    return {
+      buy: mesghal,
+      sell: null,
+      buyLabel: "خرید · مثقال ۱۷",
+      sellLabel: null,
+      unitNote: roleName
+        ? `با کارمزد «${roleName}» · پایه + ${faMoney(NAGHD_KARTKHAN_MARKUP_TOMAN)}`
+        : `پایه کارت روزانه + ${faMoney(NAGHD_KARTKHAN_MARKUP_TOMAN)}`,
+      single: true,
+    };
+  }
+
+  const isCoin = Number(card.type) === 2 || card.unit === "count";
+  const personalized = personalizePrice(
+    {
+      goldbridge_item_id: id,
+      buy_price: baseBuy,
+      sell_price: baseSell,
+      unit: isCoin ? "count" : "gram18",
+    },
+    commissionType,
+    commissionBuy,
+    commissionSell
+  );
+  return {
+    buy: personalized?.buy_price ?? baseBuy,
+    sell: personalized?.sell_price ?? baseSell,
+    buyLabel: "خرید",
+    sellLabel: "فروش",
+    unitNote: roleName ? `با کارمزد «${roleName}»` : null,
+    single: false,
+  };
 }
 
 /** Parse toman/percent fee from typed input (commas / Persian digits OK). */
@@ -97,7 +215,8 @@ function cardTypeKey(card) {
 function sourceLabel(card) {
   if (card.use_manual_price || card.price_source === "manual") return "قیمت دستی";
   if (isMirroredCard(card)) {
-    return `آینه id:${card.price_source_item_id || 1}${card.mirrored_source_mode === "manual" ? " (دستی)" : ""}`;
+    const srcId = card.price_source_item_id || SOURCE_MIRROR_ITEM_ID;
+    return `آینه id:${srcId}${card.mirrored_source_mode === "manual" ? " (دستی)" : ""}`;
   }
   if (card.price_source === "live") return "goldbridge";
   return "ناموجود";
@@ -113,6 +232,13 @@ function statusBadge(card) {
 }
 
 function cardSubtitle(card) {
+  const id = Number(card.goldbridge_item_id);
+  if (id === SPECIAL_MOTAFEREGHE_ID) {
+    return "طلا · گرم ۱۸  /  (پایه روزانه + کارمزد) ÷ ۴٫۳۹";
+  }
+  if (id === SPECIAL_NAGHD_KARTKHAN_ID) {
+    return "طلا · مثقال ۱۷  /  پایه روزانه + کارمزد + ۱۰۰٬۰۰۰";
+  }
   const kind = cardKind(card);
   const type = cardTypeKey(card);
   const base = type === "coin" ? "سکه · عدد" : "طلا · مثقال / عیار ۷۰۵";
@@ -324,8 +450,8 @@ function RoleCommissionEditor({ card, busy, onSave }) {
       {isSpecialMirror ? (
         <p className="price-desk__editor-note">
           {card.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
-            ? "متفرقه: کارمزد ثابت/درصدی به قیمت پایه id:1 اضافه می‌شود، سپس گرم ۱۸ با ÷ ۴٫۳۹ محاسبه می‌گردد."
-            : "نقد کارتخوان: کارمزد دسته‌بندی به بخریدِ id:1 اضافه می‌شود، سپس ثابت ۱۰۰٬۰۰۰ تومان روی قیمت نهایی اعمال می‌شود."}
+            ? `متفرقه: کارمزد ثابت/درصدی به قیمت پایه id:${card.price_source_item_id || SOURCE_MIRROR_ITEM_ID} اضافه می‌شود، سپس گرم ۱۸ با ÷ ۴٫۳۹ محاسبه می‌گردد.`
+            : `نقد کارتخوان: کارمزد دسته‌بندی به بخریدِ id:${card.price_source_item_id || SOURCE_MIRROR_ITEM_ID} اضافه می‌شود، سپس ثابت ۱۰۰٬۰۰۰ تومان روی قیمت نهایی اعمال می‌شود.`}
         </p>
       ) : splitCommission ? (
         <p className="price-desk__editor-note">
@@ -861,6 +987,7 @@ export default function AdminPricesTab() {
           const busy = busyId === c.goldbridge_item_id;
           const badge = statusBadge(c);
           const blocked = isBlocked(c) && !c.override_source_restriction;
+          const quotes = adminDisplayQuotes(c);
           return (
             <article key={c.goldbridge_item_id} className="price-desk__card">
               <div className="price-desk__cardhead">
@@ -879,18 +1006,25 @@ export default function AdminPricesTab() {
                 <span className={`price-desk__badge ${badge.warn ? "is-warn" : ""}`}>{badge.label}</span>
               </div>
 
-              <div className="price-desk__prices">
-                <div className="price-desk__price">
-                  <span>خرید</span>
-                  <b>{fa(c.buy)}</b>
-                  <small>تومان</small>
-                </div>
-                <div className="price-desk__price price-desk__price--sell">
-                  <span>فروش</span>
-                  <b>{fa(c.sell)}</b>
-                  <small>تومان</small>
-                </div>
+              <div className={`price-desk__prices ${quotes.single ? "is-single" : ""}`}>
+                {quotes.buy != null && (
+                  <div className="price-desk__price">
+                    <span>{quotes.buyLabel || "خرید"}</span>
+                    <b>{faMoney(quotes.buy)}</b>
+                    <small>تومان</small>
+                  </div>
+                )}
+                {quotes.sell != null && (
+                  <div className="price-desk__price price-desk__price--sell">
+                    <span>{quotes.sellLabel || "فروش"}</span>
+                    <b>{faMoney(quotes.sell)}</b>
+                    <small>تومان</small>
+                  </div>
+                )}
               </div>
+              {quotes.unitNote && (
+                <div className="price-desk__quote-note">{quotes.unitNote}</div>
+              )}
 
               <div className="price-desk__switchrow">
                 <span className="price-desk__swlabel">
@@ -963,6 +1097,10 @@ export default function AdminPricesTab() {
             </header>
 
             <div className="price-desk__drawerbody">
+              {(() => {
+                const dq = adminDisplayQuotes(drawerCard);
+                const srcId = drawerCard.price_source_item_id || SOURCE_MIRROR_ITEM_ID;
+                return (
               <div className="price-desk__panel">
                 <div className="price-desk__source" style={{ padding: 0 }}>
                   <span>منبع قیمت: {sourceLabel(drawerCard)}</span>
@@ -970,17 +1108,32 @@ export default function AdminPricesTab() {
                     {isBlocked(drawerCard) ? "محدودیت منبع" : "منبع فعال"}
                   </span>
                 </div>
-                <div className="price-desk__two" style={{ marginTop: 15 }}>
-                  <div>
-                    <span className="price-desk__sub">خرید</span>
-                    <h3 className="price-desk__quote price-desk__quote--buy">{fa(drawerCard.buy)}</h3>
-                  </div>
-                  <div>
-                    <span className="price-desk__sub">فروش</span>
-                    <h3 className="price-desk__quote price-desk__quote--sell">{fa(drawerCard.sell)}</h3>
-                  </div>
+                <div className={`price-desk__two ${dq.single ? "is-single" : ""}`} style={{ marginTop: 15 }}>
+                  {dq.buy != null && (
+                    <div>
+                      <span className="price-desk__sub">{dq.buyLabel || "خرید"}</span>
+                      <h3 className="price-desk__quote price-desk__quote--buy">{faMoney(dq.buy)}</h3>
+                    </div>
+                  )}
+                  {dq.sell != null && (
+                    <div>
+                      <span className="price-desk__sub">{dq.sellLabel || "فروش"}</span>
+                      <h3 className="price-desk__quote price-desk__quote--sell">{faMoney(dq.sell)}</h3>
+                    </div>
+                  )}
                 </div>
+                {isMirroredCard(drawerCard) && (
+                  <p className="price-desk__editor-note" style={{ marginTop: 10 }}>
+                    پایه خام از id:{srcId}: {faMoney(drawerCard.buy)} تومان
+                    {dq.unitNote ? ` · ${dq.unitNote}` : ""}
+                  </p>
+                )}
+                {!isMirroredCard(drawerCard) && dq.unitNote && (
+                  <p className="price-desk__editor-note" style={{ marginTop: 10 }}>{dq.unitNote}</p>
+                )}
               </div>
+                );
+              })()}
 
               <div className="price-desk__tabs">
                 <button
@@ -1064,10 +1217,10 @@ export default function AdminPricesTab() {
                   ) : (
                     <div className="price-desk__hint">
                       {drawerCard.goldbridge_item_id === SPECIAL_MOTAFEREGHE_ID
-                        ? "متفرقه: قیمت پایه = بخریدِ id:1 (زنده یا دستی) — گرم ۱۸ = (قیمت + کارمزد) ÷ ۴٫۳۹ برای بفروشید."
+                        ? `متفرقه: قیمت پایه = بخریدِ کارت روزانه id:${drawerCard.price_source_item_id || SOURCE_MIRROR_ITEM_ID} (زنده یا دستی) — گرم ۱۸ = (پایه + کارمزد) ÷ ۴٫۳۹ برای بفروشید.`
                         : drawerCard.goldbridge_item_id === SPECIAL_NAGHD_KARTKHAN_ID
-                          ? "نقد کارتخوان: قیمت نهایی = (بخریدِ id:1 زنده یا دستی + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان."
-                          : `قیمت این کارت همیشه از آیتم id:${drawerCard.price_source_item_id || 1} (زنده یا دستی) گرفته می‌شود.`}
+                          ? `نقد کارتخوان: قیمت نهایی = (بخریدِ کارت روزانه id:${drawerCard.price_source_item_id || SOURCE_MIRROR_ITEM_ID} زنده یا دستی + کارمزد دسته‌بندی) + ۱۰۰٬۰۰۰ تومان.`
+                          : `قیمت این کارت همیشه از آیتم id:${drawerCard.price_source_item_id || SOURCE_MIRROR_ITEM_ID} (زنده یا دستی) گرفته می‌شود.`}
                       {" "}
                       کارمزد/اختلاف هر دسته‌بندی را در تب کمیسیون تنظیم کنید.
                     </div>

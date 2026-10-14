@@ -390,6 +390,21 @@
   min-width: 0;
 }
 
+.price-desk__prices.is-single {
+  grid-template-columns: 1fr;
+}
+
+.price-desk__quote-note {
+  margin: -8px 20px 14px;
+  font-size: 10px;
+  color: var(--pd-muted);
+  line-height: 1.7;
+}
+
+.price-desk__two.is-single {
+  grid-template-columns: 1fr;
+}
+
 .price-desk__price {
   padding: 12px;
   border-radius: 9px;

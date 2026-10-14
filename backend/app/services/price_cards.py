@@ -30,8 +30,10 @@ COIN_ITEM_TYPE = 2
 # Kept in a high id range so they never collide with real goldbridge ids.
 SPECIAL_CARD_MOTAFEREGHE_ID = 900001       # متفرقه — sell only, گرم۱۸
 SPECIAL_CARD_NAGHD_KARTKHAN_ID = 900002    # نقد کارتخوان — buy only, مثقال۱۷
-DEFAULT_PRICE_SOURCE_ITEM_ID = 1
-# نقد کارتخوان is always id:1 (مثقال۱۷) + this fixed markup (تومان).
+# Goldbridge stable alias for the shop's main/daily نقدی card (GET /price).
+# متفرقه / نقد کارتخوان mirror this card's BUY, not legacy id:1.
+DEFAULT_PRICE_SOURCE_ITEM_ID = 900000
+# نقد کارتخوان is always (source BUY + role commission) + this markup (تومان).
 NAGHD_KARTKHAN_MARKUP_TOMAN = 100_000
 
 SPECIAL_MIRRORED_CARDS = (
@@ -335,15 +337,16 @@ def _load_card_snapshots(db: Session) -> list:
 
 
 def ensure_special_mirrored_cards(db: Session | None = None) -> None:
-    """Idempotently create متفرقه / نقد کارتخوان rows (mirror item id 1).
+    """Idempotently create متفرقه / نقد کارتخوان rows (mirror main daily نقدی).
 
     Product identity fields stay synced; admin-controlled visibility
-    (`is_enabled`) and side toggles are only set on first create so
-    «نمایش به مشتری» unticks persist.
+    (`is_enabled`), side toggles, and an already-configured
+    `price_source_item_id` are only set on first create so «نمایش به مشتری»
+    unticks and a live Farshad/main-cash remapped source persist.
 
     After the rows match spec, later calls are a no-op — the old
     always-assign + commit path rewrote these two rows on every WS tick
-    (~4×/s) and blocked id:1 manual saves.
+    (~4×/s) and blocked source-card manual saves.
     """
     global _specials_ready
     if _specials_ready:
@@ -372,11 +375,18 @@ def ensure_special_mirrored_cards(db: Session | None = None) -> None:
                 card.orderable_buy = spec["orderable_buy"]
                 card.orderable_sell = spec["orderable_sell"]
                 card.sort_order = spec["sort_order"]
+                card.price_source_item_id = spec["price_source_item_id"]
                 dirty = True
             if card.display_name != spec["display_name"]:
                 card.display_name = spec["display_name"]
                 dirty = True
-            if card.price_source_item_id != spec["price_source_item_id"]:
+            # Only fill a missing mirror source — never clobber a remapped
+            # main-cash / Farshad day id the shop already relies on.
+            if not card.price_source_item_id:
+                card.price_source_item_id = spec["price_source_item_id"]
+                dirty = True
+            elif int(card.price_source_item_id) == 1 and int(spec["price_source_item_id"]) != 1:
+                # Migrate legacy id:1 mirrors onto the main daily نقدی alias.
                 card.price_source_item_id = spec["price_source_item_id"]
                 dirty = True
             if card.price_label_mode != spec["price_label_mode"]:
