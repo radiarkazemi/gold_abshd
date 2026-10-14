@@ -136,7 +136,7 @@ function adminDisplayQuotes(card) {
       sell: gram18,
       buyLabel: null,
       sellLabel: "فروش مشتری · گرم ۱۸",
-      unitNote: roleName ? `با کارمزد «${roleName}» · پایه ÷ ۴٫۳۹` : "پایه کارت روزانه ÷ ۴٫۳۹",
+      unitNote: "پایه روزانه ÷ ۴٫۳۹",
       single: true,
     };
   }
@@ -164,9 +164,7 @@ function adminDisplayQuotes(card) {
       sell: null,
       buyLabel: "خرید مشتری · مثقال ۱۷",
       sellLabel: null,
-      unitNote: roleName
-        ? `با کارمزد «${roleName}» · پایه + ${faMoney(NAGHD_KARTKHAN_MARKUP_TOMAN)}`
-        : `پایه کارت روزانه + ${faMoney(NAGHD_KARTKHAN_MARKUP_TOMAN)}`,
+      unitNote: `پایه روزانه + ${faMoney(NAGHD_KARTKHAN_MARKUP_TOMAN)}`,
       single: true,
     };
   }
@@ -190,7 +188,7 @@ function adminDisplayQuotes(card) {
     sell: personalized?.sell_price ?? baseSell,
     buyLabel: "خرید مشتری",
     sellLabel: "فروش مشتری",
-    unitNote: roleName ? `با کارمزد «${roleName}»` : null,
+    unitNote: null,
     single: false,
   };
 }
@@ -1344,7 +1342,15 @@ export default function AdminPricesTab() {
                 <p>تنظیمات اختصاصی این کارت قیمت</p>
               </div>
               <button type="button" className="price-desk__close" aria-label="بستن" onClick={closeDrawer}>
-                ×
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    d="M6 6l12 12M18 6L6 18"
+                  />
+                </svg>
               </button>
             </header>
 
@@ -1395,9 +1401,6 @@ export default function AdminPricesTab() {
                     پایه از کارت اصلی id:{srcId}: {faMoney(drawerCard.buy)} تومان
                     {dq.unitNote ? ` · ${dq.unitNote}` : ""}
                   </p>
-                )}
-                {!isMirroredCard(drawerCard) && dq.unitNote && (
-                  <p className="price-desk__editor-note">{dq.unitNote}</p>
                 )}
               </div>
                 );
