@@ -187,15 +187,15 @@
 .price-desk__overview {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 .price-desk__stat {
   background: var(--pd-soft);
   border: 1px solid var(--pd-line);
-  border-radius: 9px;
-  padding: 10px 12px;
+  border-radius: 8px;
+  padding: 8px 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;

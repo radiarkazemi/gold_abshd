@@ -1022,24 +1022,17 @@ export default function AdminPricesTab() {
         </div>
       )}
 
-      <div className="price-desk__notice">
-        {reviewCount > 0 ? (
-          <>
-            <div>
-              <b>{fa(reviewCount)} منبع نیاز به بررسی دارد</b>
-              مجوز خرید و فروش این کارت‌ها از سمت منبع محدود شده است.
-            </div>
-            <button type="button" onClick={() => setFilter("review")}>
-              بررسی کارت‌ها ←
-            </button>
-          </>
-        ) : (
+      {reviewCount > 0 && (
+        <div className="price-desk__notice">
           <div>
-            <b>همه محدودیت‌های منبع بررسی شده‌اند</b>
-            وضعیت سفارش هر کارت از تنظیمات اختصاصی آن مشخص می‌شود.
+            <b>{fa(reviewCount)} منبع نیاز به بررسی دارد</b>
+            مجوز خرید و فروش این کارت‌ها از سمت منبع محدود شده است.
           </div>
-        )}
-      </div>
+          <button type="button" onClick={() => setFilter("review")}>
+            بررسی کارت‌ها ←
+          </button>
+        </div>
+      )}
 
       <div className="price-desk__sectionline">
         <span>{fa(filtered.length)} کارت قیمت</span>
