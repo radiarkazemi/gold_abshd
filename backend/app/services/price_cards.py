@@ -850,6 +850,7 @@ def _role_commissions_for_card(
             "commission_buy_value": buy_value,
             "commission_sell_value": sell_value,
             "can_order": bool(ov.can_order) if ov else True,
+            "is_visible": bool(getattr(ov, "is_visible", True)) if ov else True,
             "is_override": ov is not None,
         })
     return result
@@ -1071,6 +1072,7 @@ def set_card_role_commission(
     can_order: bool = True,
     commission_buy_value: float | None = None,
     commission_sell_value: float | None = None,
+    is_visible: bool = True,
 ):
     from app.models_db import PriceCardCommission, Role, CommissionTypeEnum
 
@@ -1110,6 +1112,7 @@ def set_card_role_commission(
     row.commission_buy_value = buy
     row.commission_sell_value = sell
     row.can_order = bool(can_order)
+    row.is_visible = bool(is_visible)
     db.commit()
 
 
@@ -1137,15 +1140,9 @@ def resolve_commission_for_user(db: Session, user, goldbridge_item_id: int) -> t
 
 
 def resolve_can_order_for_user(db: Session, user, card, effective_item: dict | None) -> bool:
-    """
-    When a card is on manual prices, admin can allow/deny each role
-    (دسته بندی) from placing orders. Live-feed cards ignore this and
-    use the normal orderable_buy/sell toggles for everyone.
-    """
+    """Per-role order permission for this card (live or manual)."""
     from app.models_db import PriceCardCommission
 
-    if not effective_item or effective_item.get("price_source") != "manual":
-        return True
     if not user or not getattr(user, "role_id", None):
         return False
     ov = (
@@ -1184,10 +1181,8 @@ def card_commissions_for_user(db: Session, user) -> list[dict]:
         effective = resolve_effective_item(
             card, _latest_items.get(card.goldbridge_item_id), db, source_card=src
         )
-        is_manual = bool(effective and effective.get("price_source") == "manual")
-        can_order = True
-        if is_manual:
-            can_order = bool(ov.can_order) if ov is not None else True
+        can_order = bool(ov.can_order) if ov is not None else True
+        is_visible = bool(getattr(ov, "is_visible", True)) if ov is not None else True
         buy_value, sell_value = _commission_pair(ov, default_value)
         result.append({
             "goldbridge_item_id": card.goldbridge_item_id,
@@ -1196,6 +1191,7 @@ def card_commissions_for_user(db: Session, user) -> list[dict]:
             "commission_buy_value": buy_value,
             "commission_sell_value": sell_value,
             "can_order": can_order,
+            "is_visible": is_visible,
         })
     return result
 

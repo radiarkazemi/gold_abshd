@@ -456,9 +456,10 @@ class PriceCardCommission(Base):
     commission_value = Column(Float, nullable=False, default=0)  # legacy / one-sided / buy fallback
     commission_buy_value = Column(Float, nullable=True)
     commission_sell_value = Column(Float, nullable=True)
-    # When the card is on manual prices, admin can deny specific roles
-    # from placing orders against that manual quote. Ignored for live feed.
+    # When False, this role cannot place orders on this card.
     can_order = Column(Boolean, nullable=False, default=True)
+    # When False, this card is hidden from this role's customer price feed.
+    is_visible = Column(Boolean, nullable=False, default=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     role = relationship("Role")

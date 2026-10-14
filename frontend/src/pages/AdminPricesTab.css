@@ -17,6 +17,9 @@
   background: var(--bg);
   color: var(--text);
   padding: 0;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
 }
 
 .admin-shell__main:has(.price-desk) .admin-shell__header {
@@ -362,8 +365,8 @@
   background: var(--pd-card);
   border: 1px solid var(--pd-line);
   border-radius: 11px;
-  overflow: hidden;
-  transition: box-shadow 0.2s, transform 0.2s;
+  overflow: clip;
+  transition: box-shadow 0.2s;
   min-width: 0;
 }
 
@@ -375,9 +378,10 @@
   border-color: color-mix(in srgb, var(--buy) 35%, var(--pd-line));
 }
 
-.price-desk__card:hover {
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--pd-ink) 10%, transparent);
-  transform: translateY(-1px);
+@media (hover: hover) and (pointer: fine) {
+  .price-desk__card:hover {
+    box-shadow: 0 6px 16px color-mix(in srgb, var(--pd-ink) 10%, transparent);
+  }
 }
 
 .price-desk__cardhead {
@@ -420,11 +424,15 @@
 .price-desk__pin {
   border: 1px solid var(--pd-line);
   background: var(--pd-soft-2);
-  border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 10px;
+  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
   color: var(--pd-muted);
-  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
 }
 
 .price-desk__pin.is-on {
@@ -433,18 +441,48 @@
   border-color: color-mix(in srgb, var(--buy) 35%, var(--pd-line));
 }
 
+.price-desk__pin-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
 .price-desk__sub {
   color: var(--text-faint);
   font-size: 10px;
 }
 
 .price-desk__symbol {
-  font-size: 18px;
+  width: 34px;
+  height: 34px;
   color: var(--gold);
   background: color-mix(in srgb, var(--gold) 14%, var(--surface));
-  padding: 5px 9px;
   border-radius: 8px;
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.price-desk__symbol svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.price-desk__symbol.is-main {
+  color: var(--gold-bright);
+  background: color-mix(in srgb, var(--gold) 22%, var(--surface));
+}
+
+.price-desk__symbol.is-coin {
+  color: var(--pd-buy);
+  background: color-mix(in srgb, var(--buy) 16%, var(--surface));
+}
+
+.price-desk__symbol.is-special {
+  color: var(--pd-sell);
+  background: color-mix(in srgb, var(--sell) 14%, var(--surface));
 }
 
 .price-desk__source {
@@ -610,10 +648,11 @@
 }
 
 .price-desk__switch {
-  width: 34px;
-  height: 20px;
-  border-radius: 11px;
-  background: var(--pd-chip);
+  width: 36px;
+  height: 22px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pd-ink) 22%, var(--pd-soft));
+  border: 1px solid color-mix(in srgb, var(--pd-ink) 18%, var(--pd-line));
   padding: 2px;
   display: inline-flex;
   align-items: center;
@@ -621,22 +660,37 @@
   position: relative;
 }
 
+.price-desk__switch.is-off {
+  background: color-mix(in srgb, var(--pd-ink) 28%, var(--pd-soft));
+}
+
 .price-desk__switch.is-on {
   background: var(--buy);
+  border-color: color-mix(in srgb, var(--buy) 55%, var(--pd-line));
 }
 
 .price-desk__switch::after {
   content: "";
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: var(--surface);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--pd-ink) 18%, transparent);
+  background: #fff;
+  box-shadow: 0 1px 3px color-mix(in srgb, #000 35%, transparent);
   transition: margin 0.15s ease;
 }
 
 .price-desk__switch.is-on::after {
   margin-right: 14px;
+}
+
+.price-desk__switch:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.price-desk__switch:disabled::after {
+  background: #f3f3f3;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--pd-ink) 20%, transparent);
 }
 
 .price-desk__cardbottom {
@@ -796,6 +850,8 @@
   background: color-mix(in srgb, var(--bg) 55%, transparent);
   z-index: 40;
   display: none;
+  overscroll-behavior: none;
+  touch-action: none;
 }
 
 .price-desk__overlay.is-open {
@@ -809,10 +865,12 @@
   bottom: 0;
   width: min(620px, 100vw);
   height: 100dvh;
+  max-height: 100dvh;
   background: var(--pd-bg);
   display: flex;
   flex-direction: column;
   box-shadow: 15px 0 80px color-mix(in srgb, var(--pd-ink) 18%, transparent);
+  touch-action: pan-y;
 }
 
 .price-desk__drawerhead {
@@ -847,7 +905,10 @@
   padding: 22px 25px;
   overflow: auto;
   flex: 1;
+  min-height: 0;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .price-desk__drawer .price-desk__tabs {
@@ -975,6 +1036,7 @@
   margin-bottom: 10px;
   font-size: 12px;
   color: var(--pd-ink);
+  flex-wrap: wrap;
 }
 
 .price-desk__grouphead small {
@@ -982,18 +1044,90 @@
   color: var(--gold);
 }
 
+.price-desk__group-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+}
+
+.price-desk__radios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.price-desk__radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--pd-line);
+  background: var(--pd-soft);
+  color: var(--pd-muted);
+  font-size: 11px;
+  cursor: pointer;
+  min-height: 34px;
+}
+
+.price-desk__radio input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 1px;
+  height: 1px;
+}
+
+.price-desk__radio-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--pd-ink) 45%, var(--pd-line));
+  background: #fff;
+  box-shadow: inset 0 0 0 2px var(--pd-soft);
+  flex: none;
+}
+
+.price-desk__radio.is-on {
+  border-color: color-mix(in srgb, var(--gold) 45%, var(--pd-line));
+  background: color-mix(in srgb, var(--gold) 12%, var(--pd-card));
+  color: var(--pd-ink);
+}
+
+.price-desk__radio.is-on .price-desk__radio-dot {
+  border-color: var(--gold-bright);
+  background: var(--gold-bright);
+  box-shadow: inset 0 0 0 3px #fff;
+}
+
+.price-desk__radio.is-off .price-desk__radio-dot {
+  border-color: color-mix(in srgb, var(--pd-ink) 55%, var(--pd-line));
+  background: #fff;
+}
+
+.price-desk__radio.is-disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.price-desk__radio.is-disabled .price-desk__radio-dot {
+  border-color: color-mix(in srgb, var(--pd-ink) 40%, var(--pd-line));
+  background: color-mix(in srgb, #fff 70%, var(--pd-muted));
+}
+
 .price-desk__commission {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr auto;
+  grid-template-columns: minmax(160px, 1.4fr) 1fr 1fr auto;
   gap: 8px;
   align-items: end;
 }
 
 .price-desk__commission.is-single {
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: minmax(160px, 1.4fr) 1fr auto;
 }
 
-.price-desk__commission label {
+.price-desk__commission > div > label {
   font-size: 9px;
   color: var(--pd-muted);
   display: block;
@@ -1125,9 +1259,11 @@
     display: none;
   }
   .price-desk__toolbar {
+    position: static;
     flex-direction: column;
     align-items: stretch;
     padding: 4px 0;
+    backdrop-filter: none;
   }
   .price-desk__tabs {
     overflow-x: auto;
@@ -1185,6 +1321,17 @@
   .price-desk__commission-save {
     grid-column: 1 / -1;
   }
+  .price-desk__grouphead {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .price-desk__radios {
+    width: 100%;
+  }
+  .price-desk__radio {
+    flex: 1;
+    justify-content: center;
+  }
   .price-desk__info {
     display: block;
     line-height: 1.9;
@@ -1204,7 +1351,7 @@
   .price-desk__card {
     transition: none;
   }
-  .price-desk__card:hover {
-    transform: none;
+  .price-desk__switch::after {
+    transition: none;
   }
 }

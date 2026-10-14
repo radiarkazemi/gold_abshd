@@ -276,6 +276,7 @@ function draftFromRow(r) {
     commission_buy_value: String(buy),
     commission_sell_value: String(sell),
     can_order: r.can_order !== false,
+    is_visible: r.is_visible !== false,
   };
 }
 
@@ -289,13 +290,74 @@ function Switch({ on, onClick, label, disabled }) {
   return (
     <button
       type="button"
-      className={`price-desk__switch ${on ? "is-on" : ""}`}
+      className={`price-desk__switch ${on ? "is-on" : "is-off"}`}
       role="switch"
       aria-checked={!!on}
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
     />
+  );
+}
+
+function PinIcon({ filled }) {
+  return (
+    <svg className="price-desk__pin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      {filled ? (
+        <path
+          fill="currentColor"
+          d="M16 3a1 1 0 0 1 .8 1.6L14.5 8.5l2.1 2.1a1 1 0 0 1-.2 1.6l-3.2 1.9V19a1 1 0 1 1-2 0v-4.9L8 12.2a1 1 0 0 1-.2-1.6l2.1-2.1L7.2 4.6A1 1 0 0 1 8 3h8z"
+        />
+      ) : (
+        <path
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M9.2 3.8h5.6a.8.8 0 0 1 .7 1.2l-2 3.2 1.8 1.8a.8.8 0 0 1-.2 1.3L12.8 13v4.7a.8.8 0 0 1-1.6 0V13L8.9 11.3a.8.8 0 0 1-.2-1.3l1.8-1.8-2-3.2a.8.8 0 0 1 .7-1.2z"
+        />
+      )}
+    </svg>
+  );
+}
+
+function CardIcon({ card }) {
+  const isMain = isMainCashCard(card);
+  const isSpecial =
+    Number(card.goldbridge_item_id) === SPECIAL_MOTAFEREGHE_ID
+    || Number(card.goldbridge_item_id) === SPECIAL_NAGHD_KARTKHAN_ID;
+  const isCoin = cardTypeKey(card) === "coin";
+  const kind = isMain ? "main" : isSpecial ? "special" : isCoin ? "coin" : "gold";
+  return (
+    <div className={`price-desk__symbol is-${kind}`} aria-hidden="true">
+      <svg viewBox="0 0 24 24" focusable="false">
+        {kind === "main" && (
+          <path
+            fill="currentColor"
+            d="M12 2.6 14.7 8l5.9.5-4.5 3.8 1.4 5.7L12 15.6 6.5 18l1.4-5.7L3.4 8.5 9.3 8 12 2.6z"
+          />
+        )}
+        {kind === "gold" && (
+          <path
+            fill="currentColor"
+            d="M4.5 9.2 12 4.8l7.5 4.4v5.6L12 19.2l-7.5-4.4V9.2zm2.2 1.3v3.4L12 16.8l5.3-2.9v-3.4L12 7.6l-5.3 2.9z"
+          />
+        )}
+        {kind === "coin" && (
+          <>
+            <circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+            <circle cx="12" cy="12" r="4.2" fill="currentColor" />
+          </>
+        )}
+        {kind === "special" && (
+          <path
+            fill="currentColor"
+            d="M10.2 7.2a3.4 3.4 0 0 1 4.8 0l1.1 1.1a1 1 0 1 1-1.4 1.4l-1.1-1.1a1.4 1.4 0 0 0-2 0l-3.2 3.2a1.4 1.4 0 0 0 0 2l1.1 1.1a1 1 0 0 1-1.4 1.4l-1.1-1.1a3.4 3.4 0 0 1 0-4.8l3.2-3.2zm3.6 9.6a3.4 3.4 0 0 1-4.8 0l-1.1-1.1a1 1 0 1 1 1.4-1.4l1.1 1.1a1.4 1.4 0 0 0 2 0l3.2-3.2a1.4 1.4 0 0 0 0-2l-1.1-1.1a1 1 0 1 1 1.4-1.4l1.1 1.1a3.4 3.4 0 0 1 0 4.8l-3.2 3.2z"
+          />
+        )}
+      </svg>
+    </div>
   );
 }
 
@@ -445,6 +507,7 @@ function RoleCommissionEditor({ card, busy, onSave }) {
           || cur.commission_buy_value !== server.commission_buy_value
           || cur.commission_sell_value !== server.commission_sell_value
           || cur.can_order !== server.can_order
+          || cur.is_visible !== server.is_visible
         ) {
           next[r.role_id] = server;
           changed = true;
@@ -492,39 +555,73 @@ function RoleCommissionEditor({ card, busy, onSave }) {
                 {r.role_name}{" "}
                 <small>{r.is_override ? "سفارشی" : "پیش‌فرض نقش"}</small>
               </b>
-              <span className="price-desk__swlabel">
-                مجاز به سفارش{manualMode ? " با قیمت دستی" : ""}
-                <Switch
-                  on={draft.can_order !== false}
-                  disabled={rowBusy}
-                  label={`مجاز به سفارش ${r.role_name}`}
-                  onClick={() => {
-                    dirtyRolesRef.current.add(r.role_id);
-                    setDrafts((prev) => ({
-                      ...prev,
-                      [r.role_id]: { ...draft, can_order: !(draft.can_order !== false) },
-                    }));
-                  }}
-                />
-              </span>
+              <div className="price-desk__group-toggles">
+                <span className="price-desk__swlabel">
+                  نمایش به دسته
+                  <Switch
+                    on={draft.is_visible !== false}
+                    disabled={rowBusy}
+                    label={`نمایش به دسته ${r.role_name}`}
+                    onClick={() => {
+                      dirtyRolesRef.current.add(r.role_id);
+                      setDrafts((prev) => ({
+                        ...prev,
+                        [r.role_id]: { ...draft, is_visible: !(draft.is_visible !== false) },
+                      }));
+                    }}
+                  />
+                </span>
+                <span className="price-desk__swlabel">
+                  مجاز به سفارش{manualMode ? " با قیمت دستی" : ""}
+                  <Switch
+                    on={draft.can_order !== false}
+                    disabled={rowBusy}
+                    label={`مجاز به سفارش ${r.role_name}`}
+                    onClick={() => {
+                      dirtyRolesRef.current.add(r.role_id);
+                      setDrafts((prev) => ({
+                        ...prev,
+                        [r.role_id]: { ...draft, can_order: !(draft.can_order !== false) },
+                      }));
+                    }}
+                  />
+                </span>
+              </div>
             </div>
             <div className={`price-desk__commission ${splitCommission ? "is-split" : "is-single"}`}>
               <div>
                 <label>نوع کارمزد</label>
-                <select
-                  value={draft.commission_type}
-                  disabled={rowBusy}
-                  onChange={(e) => {
-                    dirtyRolesRef.current.add(r.role_id);
-                    setDrafts((prev) => ({
-                      ...prev,
-                      [r.role_id]: { ...draft, commission_type: e.target.value },
-                    }));
-                  }}
-                >
-                  <option value="fixed">ثابت (تومان)</option>
-                  <option value="percentage">درصدی</option>
-                </select>
+                <div className="price-desk__radios" role="radiogroup" aria-label={`نوع کارمزد ${r.role_name}`}>
+                  {[
+                    ["fixed", "ثابت (تومان)"],
+                    ["percentage", "درصدی"],
+                  ].map(([value, label]) => {
+                    const active = (draft.commission_type || "fixed") === value;
+                    return (
+                      <label
+                        key={value}
+                        className={`price-desk__radio ${active ? "is-on" : "is-off"} ${rowBusy ? "is-disabled" : ""}`}
+                      >
+                        <input
+                          type="radio"
+                          name={`commission-type-${card.goldbridge_item_id}-${r.role_id}`}
+                          value={value}
+                          checked={active}
+                          disabled={rowBusy}
+                          onChange={() => {
+                            dirtyRolesRef.current.add(r.role_id);
+                            setDrafts((prev) => ({
+                              ...prev,
+                              [r.role_id]: { ...draft, commission_type: value },
+                            }));
+                          }}
+                        />
+                        <span className="price-desk__radio-dot" aria-hidden="true" />
+                        <span>{label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
               {splitCommission ? (
                 <>
@@ -607,6 +704,7 @@ function RoleCommissionEditor({ card, busy, onSave }) {
                         commissionBuyValue: buyFee,
                         commissionSellValue: sellFee,
                         canOrder: draft.can_order !== false,
+                        isVisible: draft.is_visible !== false,
                       });
                       const saved = (updatedRows || []).find((x) => x.role_id === r.role_id);
                       if (saved) {
@@ -691,10 +789,18 @@ export default function AdminPricesTab() {
       if (e.key === "Escape") closeDrawer();
     };
     document.addEventListener("keydown", onKey);
+    const scroller = document.querySelector(".admin-shell__content");
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    const prevScroller = scroller ? scroller.style.overflow : "";
     document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    if (scroller) scroller.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+      if (scroller) scroller.style.overflow = prevScroller;
     };
   }, [drawerCardId]);
 
@@ -1087,12 +1193,13 @@ export default function AdminPricesTab() {
                       disabled={busy}
                       aria-pressed={pinned}
                       aria-label={pinned ? `برداشتن پین ${c.display_name}` : `پین ${c.display_name}`}
+                      title={pinned ? "برداشتن پین" : "پین"}
                       onClick={() => togglePin(c)}
                     >
-                      {pinned ? "برداشتن پین" : "پین"}
+                      <PinIcon filled={pinned} />
                     </button>
                   )}
-                  <div className="price-desk__symbol">{cardTypeKey(c) === "gold" ? "◇" : "◉"}</div>
+                  <CardIcon card={c} />
                 </div>
               </div>
 

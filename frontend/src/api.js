@@ -674,7 +674,8 @@ export async function setPriceCardManualPrice(goldbridgeItemId, { useManualPrice
 }
 
 export async function setPriceCardRoleCommission(goldbridgeItemId, {
-  roleId, commissionType, commissionValue, commissionBuyValue, commissionSellValue, canOrder = true,
+  roleId, commissionType, commissionValue, commissionBuyValue, commissionSellValue,
+  canOrder = true, isVisible = true,
 }) {
   const buy = commissionBuyValue ?? commissionValue;
   const sell = commissionSellValue ?? commissionValue;
@@ -688,6 +689,7 @@ export async function setPriceCardRoleCommission(goldbridgeItemId, {
       commission_buy_value: Number(buy),
       commission_sell_value: Number(sell),
       can_order: !!canOrder,
+      is_visible: !!isVisible,
     }),
   });
   if (!res.ok) {
