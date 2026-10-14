@@ -126,8 +126,10 @@ class CardCommissionOut(BaseModel):
     commission_value: float = 0.0  # legacy alias of buy
     commission_buy_value: float = 0.0
     commission_sell_value: float = 0.0
-    # False when card is on manual prices and this user's role is denied.
+    # False blocks this role from ordering on this card.
     can_order: bool = True
+    # False hides this card from this role's customer price feed.
+    is_visible: bool = True
 
 
 class OrderLimitsOut(BaseModel):
