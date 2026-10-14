@@ -6,8 +6,13 @@ export const SPECIAL_NAGHD_KARTKHAN_ID = 900002;
 export const MAIN_CASH_ITEM_ID = 900000;
 /** sort_order 1..PIN_SORT_MAX = user-pinned (shown after main daily). */
 export const PIN_SORT_MAX = 50;
-/** Default sort_order when unpinning a card. */
+/** Default sort_order when unpinning a normal card. */
 export const UNPINNED_SORT_ORDER = 100;
+/** Default ranks for specials — must stay ABOVE PIN_SORT_MAX. */
+export const SPECIAL_SORT_ORDER = {
+  [SPECIAL_NAGHD_KARTKHAN_ID]: 60,
+  [SPECIAL_MOTAFEREGHE_ID]: 61,
+};
 
 export function isMainCashCard(cardOrId) {
   const id = typeof cardOrId === "object" && cardOrId
@@ -24,16 +29,21 @@ export function isSpecialMirroredId(id) {
 /** User-pinned via sort_order (main daily is ranked separately). */
 export function isPinnedCard(card) {
   if (!card || isMainCashCard(card)) return false;
-  // Specials keep fixed ranks after pins; their seed sort_order is outside pin range.
-  if (isSpecialMirroredId(card.goldbridge_item_id)) return false;
   const so = Number(card.sort_order) || 0;
   return so > 0 && so <= PIN_SORT_MAX;
+}
+
+/** Restore sort_order when unpinning (specials keep their default ranks). */
+export function unpinSortOrder(card) {
+  const id = Number(card?.goldbridge_item_id);
+  if (SPECIAL_SORT_ORDER[id] != null) return SPECIAL_SORT_ORDER[id];
+  return UNPINNED_SORT_ORDER;
 }
 
 /**
  * Admin / shop list order:
  * 1) main daily نقدی (900000)
- * 2) user-pinned cards
+ * 2) user-pinned cards (incl. pinned specials)
  * 3) نقد کارتخوان
  * 4) متفرقه
  * 5) other enabled/orderable

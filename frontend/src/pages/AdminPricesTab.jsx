@@ -18,11 +18,11 @@ import {
 } from "../utils/priceCommission";
 import {
   MAIN_CASH_ITEM_ID,
-  UNPINNED_SORT_ORDER,
   isMainCashCard,
   isPinnedCard,
   nextPinSortOrder,
   sortPriceCards,
+  unpinSortOrder,
 } from "../utils/priceCardIds";
 import "./AdminPricesTab.css";
 
@@ -304,18 +304,21 @@ function PinIcon({ filled }) {
   return (
     <svg className="price-desk__pin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       {filled ? (
-        <path
-          fill="currentColor"
-          d="M16 3a1 1 0 0 1 .8 1.6L14.5 8.5l2.1 2.1a1 1 0 0 1-.2 1.6l-3.2 1.9V19a1 1 0 1 1-2 0v-4.9L8 12.2a1 1 0 0 1-.2-1.6l2.1-2.1L7.2 4.6A1 1 0 0 1 8 3h8z"
-        />
+        <>
+          <path
+            fill="currentColor"
+            d="M14.7 3.2c.5-.2 1.1 0 1.4.5l1.7 2.9c.2.4.2.9-.1 1.2l-2.2 2.2 1.7 1.7c.4.4.4 1.1-.1 1.4l-3.4 2.1v4.3a1 1 0 1 1-2 0v-4.3L8.3 13c-.5-.3-.6-1-.1-1.4l1.7-1.7-2.2-2.2c-.3-.3-.3-.8-.1-1.2l1.7-2.9c.3-.5.9-.7 1.4-.5l4 1.1z"
+          />
+          <path fill="currentColor" d="M11 14.8h2v6.2a1 1 0 1 1-2 0v-6.2z" />
+        </>
       ) : (
         <path
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.8"
+          strokeWidth="1.9"
           strokeLinecap="round"
           strokeLinejoin="round"
-          d="M9.2 3.8h5.6a.8.8 0 0 1 .7 1.2l-2 3.2 1.8 1.8a.8.8 0 0 1-.2 1.3L12.8 13v4.7a.8.8 0 0 1-1.6 0V13L8.9 11.3a.8.8 0 0 1-.2-1.3l1.8-1.8-2-3.2a.8.8 0 0 1 .7-1.2z"
+          d="M9 4.2h6.2l1.5 2.7-2.3 2.3 1.6 1.6L12.8 13v6.5M9 4.2 7.5 6.9l2.3 2.3L8.2 10.8 11.4 13"
         />
       )}
     </svg>
@@ -864,14 +867,30 @@ export default function AdminPricesTab() {
     busyIdRef.current = card.goldbridge_item_id;
     setBusyId(card.goldbridge_item_id);
     const pinned = isPinnedCard(card);
-    const sortOrder = pinned ? UNPINNED_SORT_ORDER : nextPinSortOrder(cards || []);
+    const sortOrder = pinned ? unpinSortOrder(card) : nextPinSortOrder(cards || []);
+    // Optimistic UI so the pin icon flips immediately.
+    setCards((prev) =>
+      syncMirroredCardQuotes(
+        (prev || []).map((c) =>
+          Number(c.goldbridge_item_id) === Number(card.goldbridge_item_id)
+            ? { ...c, sort_order: sortOrder }
+            : c
+        )
+      )
+    );
     try {
       const updated = await setPriceCardEnabled(card.goldbridge_item_id, !!card.is_enabled, { sortOrder });
+      if (!Array.isArray(updated)) {
+        throw new Error("پاسخ نامعتبر از سرور");
+      }
       setCards(syncMirroredCardQuotes(updated));
       fetchGenRef.current += 1;
       showToast(pinned ? "پین کارت برداشته شد" : "کارت پین شد");
     } catch (e) {
-      alert(e.message || "خطا در پین کردن کارت");
+      // Roll back optimistic sort_order on failure.
+      reload({ force: true });
+      const msg = e?.message || (typeof e === "string" ? e : "خطا در پین کردن کارت");
+      alert(msg);
     } finally {
       busyIdRef.current = null;
       setBusyId(null);

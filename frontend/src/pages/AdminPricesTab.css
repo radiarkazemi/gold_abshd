@@ -436,15 +436,21 @@
 }
 
 .price-desk__pin.is-on {
-  background: color-mix(in srgb, var(--buy) 18%, var(--surface));
+  background: color-mix(in srgb, var(--buy) 28%, var(--surface));
   color: var(--pd-buy);
-  border-color: color-mix(in srgb, var(--buy) 35%, var(--pd-line));
+  border-color: color-mix(in srgb, var(--buy) 55%, var(--pd-line));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--buy) 35%, transparent);
+}
+
+.price-desk__pin.is-on .price-desk__pin-icon {
+  transform: rotate(-35deg);
 }
 
 .price-desk__pin-icon {
-  width: 16px;
-  height: 16px;
+  width: 17px;
+  height: 17px;
   display: block;
+  transition: transform 0.15s ease;
 }
 
 .price-desk__sub {

@@ -625,7 +625,11 @@ export async function setPriceCardEnabled(goldbridgeItemId, isEnabled, extra = {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Failed to update card");
+    const detail = err?.detail;
+    const message = Array.isArray(detail)
+      ? detail.map((d) => d?.msg || JSON.stringify(d)).join(" · ")
+      : (typeof detail === "string" ? detail : null);
+    throw new Error(message || "خطا در به‌روزرسانی کارت");
   }
   return res.json();
 }
