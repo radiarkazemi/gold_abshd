@@ -176,15 +176,15 @@
 .price-desk button.price-desk__btn--gold {
   background: var(--pd-forest);
   color: #1a1508;
-  /* Lighter rim so the edge reads on dark page backgrounds */
-  border: 1px solid color-mix(in srgb, var(--pd-forest) 62%, #fff);
+  /* Pale highlight rim — readable against dark page chrome */
+  border: 2px solid color-mix(in srgb, var(--pd-forest) 45%, #fff);
 }
 
 :root[data-theme="light"] .price-desk button.price-desk__btn--gold {
   background: var(--pd-forest);
   color: #fff;
   /* Darker outline against cream surfaces */
-  border: 1px solid color-mix(in srgb, var(--pd-forest) 50%, #000);
+  border: 2px solid color-mix(in srgb, var(--pd-forest) 45%, #000);
 }
 
 .price-desk button.price-desk__btn:disabled {
