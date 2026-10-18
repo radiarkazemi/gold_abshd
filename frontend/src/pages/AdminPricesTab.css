@@ -162,7 +162,8 @@
   color: var(--pd-sell);
 }
 
-.price-desk__btn {
+/* Beat `.price-desk button { border/background/color }` reset (0,1,1) */
+.price-desk button.price-desk__btn {
   border: 1px solid var(--pd-line);
   background: var(--pd-card);
   border-radius: 8px;
@@ -172,17 +173,19 @@
   color: var(--pd-ink);
 }
 
-.price-desk__btn--gold {
+.price-desk button.price-desk__btn--gold {
   background: var(--pd-forest);
-  color: var(--bg);
-  border-color: var(--pd-forest);
+  color: #1a1508;
+  border: 1px solid color-mix(in srgb, var(--pd-gold) 55%, #000);
 }
 
-:root[data-theme="light"] .price-desk__btn--gold {
+:root[data-theme="light"] .price-desk button.price-desk__btn--gold {
+  background: var(--pd-forest);
   color: #fff;
+  border: 1px solid color-mix(in srgb, var(--pd-forest) 55%, #000);
 }
 
-.price-desk__btn:disabled {
+.price-desk button.price-desk__btn:disabled {
   opacity: 0.55;
   cursor: default;
 }
