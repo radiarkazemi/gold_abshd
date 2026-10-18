@@ -30,8 +30,10 @@ COIN_ITEM_TYPE = 2
 # Kept in a high id range so they never collide with real goldbridge ids.
 SPECIAL_CARD_MOTAFEREGHE_ID = 900001       # متفرقه — sell only, گرم۱۸
 SPECIAL_CARD_NAGHD_KARTKHAN_ID = 900002    # نقد کارتخوان — buy only, مثقال۱۷
-DEFAULT_PRICE_SOURCE_ITEM_ID = 1
-# نقد کارتخوان is always id:1 (مثقال۱۷) + this fixed markup (تومان).
+# Goldbridge stable alias for the shop's main/daily نقدی card (GET /price).
+# متفرقه / نقد کارتخوان mirror this card's BUY, not legacy id:1.
+DEFAULT_PRICE_SOURCE_ITEM_ID = 900000
+# نقد کارتخوان is always (source BUY + role commission) + this markup (تومان).
 NAGHD_KARTKHAN_MARKUP_TOMAN = 100_000
 
 SPECIAL_MIRRORED_CARDS = (
@@ -42,7 +44,8 @@ SPECIAL_MIRRORED_CARDS = (
         "price_label_mode": "gram18_only",
         "orderable_buy": False,
         "orderable_sell": True,
-        "sort_order": 100,
+        # After main daily (0) and user pins (1..50); keep >50 so pins stay distinct.
+        "sort_order": 61,
     },
     {
         "goldbridge_item_id": SPECIAL_CARD_NAGHD_KARTKHAN_ID,
@@ -51,7 +54,7 @@ SPECIAL_MIRRORED_CARDS = (
         "price_label_mode": "mesghal17_only",
         "orderable_buy": True,
         "orderable_sell": False,
-        "sort_order": 101,
+        "sort_order": 60,
     },
 )
 
@@ -335,15 +338,16 @@ def _load_card_snapshots(db: Session) -> list:
 
 
 def ensure_special_mirrored_cards(db: Session | None = None) -> None:
-    """Idempotently create متفرقه / نقد کارتخوان rows (mirror item id 1).
+    """Idempotently create متفرقه / نقد کارتخوان rows (mirror main daily نقدی).
 
     Product identity fields stay synced; admin-controlled visibility
-    (`is_enabled`) and side toggles are only set on first create so
-    «نمایش به مشتری» unticks persist.
+    (`is_enabled`), side toggles, and an already-configured
+    `price_source_item_id` are only set on first create so «نمایش به مشتری»
+    unticks and a live Farshad/main-cash remapped source persist.
 
     After the rows match spec, later calls are a no-op — the old
     always-assign + commit path rewrote these two rows on every WS tick
-    (~4×/s) and blocked id:1 manual saves.
+    (~4×/s) and blocked source-card manual saves.
     """
     global _specials_ready
     if _specials_ready:
@@ -372,11 +376,18 @@ def ensure_special_mirrored_cards(db: Session | None = None) -> None:
                 card.orderable_buy = spec["orderable_buy"]
                 card.orderable_sell = spec["orderable_sell"]
                 card.sort_order = spec["sort_order"]
+                card.price_source_item_id = spec["price_source_item_id"]
                 dirty = True
             if card.display_name != spec["display_name"]:
                 card.display_name = spec["display_name"]
                 dirty = True
-            if card.price_source_item_id != spec["price_source_item_id"]:
+            # Only fill a missing mirror source — never clobber a remapped
+            # main-cash / Farshad day id the shop already relies on.
+            if not card.price_source_item_id:
+                card.price_source_item_id = spec["price_source_item_id"]
+                dirty = True
+            elif int(card.price_source_item_id) == 1 and int(spec["price_source_item_id"]) != 1:
+                # Migrate legacy id:1 mirrors onto the main daily نقدی alias.
                 card.price_source_item_id = spec["price_source_item_id"]
                 dirty = True
             if card.price_label_mode != spec["price_label_mode"]:
@@ -389,7 +400,10 @@ def ensure_special_mirrored_cards(db: Session | None = None) -> None:
             if card.use_manual_price:
                 card.use_manual_price = False
                 dirty = True
-            if card.sort_order is None or card.sort_order == 0:
+            # Seed / migrate old default ranks only. Never touch user pins (1..50).
+            legacy_special_sorts = {0, 50, 51, 52, 60, 61, 100, 101}
+            current_sort = 0 if card.sort_order is None else int(card.sort_order)
+            if current_sort in legacy_special_sorts and current_sort != int(spec["sort_order"]):
                 card.sort_order = spec["sort_order"]
                 dirty = True
             found += 1
@@ -836,6 +850,7 @@ def _role_commissions_for_card(
             "commission_buy_value": buy_value,
             "commission_sell_value": sell_value,
             "can_order": bool(ov.can_order) if ov else True,
+            "is_visible": bool(getattr(ov, "is_visible", True)) if ov else True,
             "is_override": ov is not None,
         })
     return result
@@ -1057,6 +1072,7 @@ def set_card_role_commission(
     can_order: bool = True,
     commission_buy_value: float | None = None,
     commission_sell_value: float | None = None,
+    is_visible: bool = True,
 ):
     from app.models_db import PriceCardCommission, Role, CommissionTypeEnum
 
@@ -1096,6 +1112,7 @@ def set_card_role_commission(
     row.commission_buy_value = buy
     row.commission_sell_value = sell
     row.can_order = bool(can_order)
+    row.is_visible = bool(is_visible)
     db.commit()
 
 
@@ -1123,15 +1140,9 @@ def resolve_commission_for_user(db: Session, user, goldbridge_item_id: int) -> t
 
 
 def resolve_can_order_for_user(db: Session, user, card, effective_item: dict | None) -> bool:
-    """
-    When a card is on manual prices, admin can allow/deny each role
-    (دسته بندی) from placing orders. Live-feed cards ignore this and
-    use the normal orderable_buy/sell toggles for everyone.
-    """
+    """Per-role order permission for this card (live or manual)."""
     from app.models_db import PriceCardCommission
 
-    if not effective_item or effective_item.get("price_source") != "manual":
-        return True
     if not user or not getattr(user, "role_id", None):
         return False
     ov = (
@@ -1170,10 +1181,8 @@ def card_commissions_for_user(db: Session, user) -> list[dict]:
         effective = resolve_effective_item(
             card, _latest_items.get(card.goldbridge_item_id), db, source_card=src
         )
-        is_manual = bool(effective and effective.get("price_source") == "manual")
-        can_order = True
-        if is_manual:
-            can_order = bool(ov.can_order) if ov is not None else True
+        can_order = bool(ov.can_order) if ov is not None else True
+        is_visible = bool(getattr(ov, "is_visible", True)) if ov is not None else True
         buy_value, sell_value = _commission_pair(ov, default_value)
         result.append({
             "goldbridge_item_id": card.goldbridge_item_id,
@@ -1182,6 +1191,7 @@ def card_commissions_for_user(db: Session, user) -> list[dict]:
             "commission_buy_value": buy_value,
             "commission_sell_value": sell_value,
             "can_order": can_order,
+            "is_visible": is_visible,
         })
     return result
 

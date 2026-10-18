@@ -254,6 +254,9 @@ def _patch_price_cards_table():
             "ALTER TABLE price_card_commissions ADD COLUMN IF NOT EXISTS can_order BOOLEAN NOT NULL DEFAULT true"
         ))
         conn.execute(text(
+            "ALTER TABLE price_card_commissions ADD COLUMN IF NOT EXISTS is_visible BOOLEAN NOT NULL DEFAULT true"
+        ))
+        conn.execute(text(
             "ALTER TABLE price_card_commissions ADD COLUMN IF NOT EXISTS commission_buy_value FLOAT"
         ))
         conn.execute(text(

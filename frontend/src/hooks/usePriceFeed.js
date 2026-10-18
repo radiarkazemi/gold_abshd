@@ -29,22 +29,23 @@ export function usePriceFeed() {
 
     function personalizeAll(rawCards) {
       const { commission_type, commission_value, by_card } = commissionRef.current;
-      return (rawCards || []).map((c) => {
+      return (rawCards || []).flatMap((c) => {
         const override = c.goldbridge_item_id != null ? by_card[c.goldbridge_item_id] : null;
+        // Per-role visibility: hide the card entirely for this category.
+        if (override?.is_visible === false) return [];
         const personalized = personalizePrice(
           c,
           override?.commission_type ?? commission_type,
           override?.commission_buy_value ?? override?.commission_value ?? commission_value,
           override?.commission_sell_value ?? override?.commission_value ?? commission_value,
         );
-        // Manual-price role denylist: keep the card visible but block order buttons.
         const canOrder = override?.can_order !== false;
-        if (canOrder) return personalized;
-        return {
+        if (canOrder) return [personalized];
+        return [{
           ...personalized,
           orderable_buy: false,
           orderable_sell: false,
-        };
+        }];
       });
     }
 
@@ -83,6 +84,7 @@ export function usePriceFeed() {
           commission_buy_value: row.commission_buy_value ?? row.commission_value,
           commission_sell_value: row.commission_sell_value ?? row.commission_value,
           can_order: row.can_order !== false,
+          is_visible: row.is_visible !== false,
         };
       }
       commissionRef.current = {

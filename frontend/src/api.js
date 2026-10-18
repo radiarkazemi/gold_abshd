@@ -625,7 +625,11 @@ export async function setPriceCardEnabled(goldbridgeItemId, isEnabled, extra = {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Failed to update card");
+    const detail = err?.detail;
+    const message = Array.isArray(detail)
+      ? detail.map((d) => d?.msg || JSON.stringify(d)).join(" · ")
+      : (typeof detail === "string" ? detail : null);
+    throw new Error(message || "خطا در به‌روزرسانی کارت");
   }
   return res.json();
 }
@@ -674,7 +678,8 @@ export async function setPriceCardManualPrice(goldbridgeItemId, { useManualPrice
 }
 
 export async function setPriceCardRoleCommission(goldbridgeItemId, {
-  roleId, commissionType, commissionValue, commissionBuyValue, commissionSellValue, canOrder = true,
+  roleId, commissionType, commissionValue, commissionBuyValue, commissionSellValue,
+  canOrder = true, isVisible = true,
 }) {
   const buy = commissionBuyValue ?? commissionValue;
   const sell = commissionSellValue ?? commissionValue;
@@ -688,6 +693,7 @@ export async function setPriceCardRoleCommission(goldbridgeItemId, {
       commission_buy_value: Number(buy),
       commission_sell_value: Number(sell),
       can_order: !!canOrder,
+      is_visible: !!isVisible,
     }),
   });
   if (!res.ok) {

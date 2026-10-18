@@ -59,8 +59,10 @@ class SetCardRoleCommissionIn(BaseModel):
     commission_value: float | None = None  # legacy / one-sided: copied to both sides if buy/sell omitted
     commission_buy_value: float | None = None
     commission_sell_value: float | None = None
-    # When the card uses manual prices, False blocks this role from ordering.
+    # False blocks this role from ordering on this card.
     can_order: bool = True
+    # False hides this card from this role's customer price feed.
+    is_visible: bool = True
 
 
 class CustomerPriceCardOut(BaseModel):
